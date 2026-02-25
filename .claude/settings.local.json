@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd E:/cms/backend && npx tsc --noEmit 2>&1)",
+      "Bash(tail:*)",
+      "Bash(cd E:/cms/frontend && npx tsc --noEmit 2>&1)",
+      "Bash(echo EXIT: $?:*)",
+      "Bash(grep:*)",
+      "Bash(sleep 3 && docker exec signage-postgres psql -U signage_dev -d signage_cms_dev -c \"\\\\dt\" 2>&1)",
+      "Bash(cd /e/cms/backend && npx tsc --noEmit 2>&1)",
+      "Bash(cd /e/cms/backend && npm run db:seed 2>&1)",
+      "Bash(head:*)",
+      "Bash(cd /e/cms/frontend && npx tsc --noEmit 2>&1)",
+      "Bash(echo EXIT:$?:*)"
+    ]
+  }
+}

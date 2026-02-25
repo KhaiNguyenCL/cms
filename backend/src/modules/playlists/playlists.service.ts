@@ -1,0 +1,340 @@
+import { query, queryOne } from '../../shared/database/db';
+import { AppError } from '../../shared/middleware/error.middleware';
+import logger from '../../shared/utils/logger';
+import { invalidateContentHashForOrg } from '../device-sync/device-sync.service';
+import type {
+    ListPlaylistsQuery, CreatePlaylistBody, UpdatePlaylistBody,
+    AddItemBody, UpdateItemBody, ReorderItemsBody,
+} from './playlists.schema';
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+export interface PlaylistRow {
+    id: string;
+    organizationId: string;
+    name: string;
+    description: string | null;
+    isDefault: boolean;
+    itemCount?: number;
+    totalDuration?: number;   // sum of durationOverride or media duration (seconds)
+    createdAt: string;
+    updatedAt: string;
+}
+
+export interface PlaylistItemRow {
+    id: string;
+    playlistId: string;
+    mediaId: string;
+    position: number;
+    durationOverride: number | null;
+    transition: string | null;
+    // Joined media fields
+    mediaTitle?: string;
+    mediaType?: string;
+    mediaThumbnailPath?: string | null;
+    mediaDuration?: number | null;
+}
+
+export interface PaginatedPlaylists {
+    data: PlaylistRow[];
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+}
+
+// ─── List playlists ───────────────────────────────────────────────────────────
+
+export async function listPlaylists(
+    organizationId: string,
+    q: ListPlaylistsQuery
+): Promise<PaginatedPlaylists> {
+    const { page, limit, search } = q;
+    const offset = (page - 1) * limit;
+    const conditions: string[] = [`p."organizationId" = $1`];
+    const values: unknown[] = [organizationId];
+    let idx = 2;
+
+    if (search) { conditions.push(`p.name ILIKE $${idx++}`); values.push(`%${search}%`); }
+
+    const where = conditions.join(' AND ');
+
+    const [countRes, rows] = await Promise.all([
+        queryOne<{ count: string }>(
+            `SELECT COUNT(*) as count FROM playlists p WHERE ${where}`, values
+        ),
+        query<PlaylistRow>(
+            `SELECT p.id, p."organizationId", p.name, p.description, p."isDefault",
+                    COUNT(pi.id)::int as "itemCount",
+                    p."createdAt", p."updatedAt"
+             FROM playlists p
+             LEFT JOIN playlist_items pi ON pi."playlistId" = p.id
+             WHERE ${where}
+             GROUP BY p.id
+             ORDER BY p."isDefault" DESC, p."createdAt" DESC
+             LIMIT $${idx++} OFFSET $${idx++}`,
+            [...values, limit, offset]
+        ),
+    ]);
+
+    const total = parseInt(countRes?.count ?? '0');
+    return { data: rows, total, page, limit, totalPages: Math.ceil(total / limit) };
+}
+
+// ─── Get single playlist with items ──────────────────────────────────────────
+
+export async function getPlaylistById(
+    playlistId: string,
+    organizationId: string
+): Promise<{ playlist: PlaylistRow; items: PlaylistItemRow[] }> {
+    const playlist = await queryOne<PlaylistRow>(
+        `SELECT p.id, p."organizationId", p.name, p.description, p."isDefault",
+                COUNT(pi.id)::int as "itemCount",
+                p."createdAt", p."updatedAt"
+         FROM playlists p
+         LEFT JOIN playlist_items pi ON pi."playlistId" = p.id
+         WHERE p.id = $1 AND p."organizationId" = $2
+         GROUP BY p.id`,
+        [playlistId, organizationId]
+    );
+    if (!playlist) throw new AppError(404, 'Playlist không tồn tại');
+
+    const items = await query<PlaylistItemRow>(
+        `SELECT pi.id, pi."playlistId", pi."mediaId", pi.position,
+                pi."durationOverride", pi.transition,
+                m.title as "mediaTitle", m.type as "mediaType",
+                m."thumbnailPath" as "mediaThumbnailPath",
+                m.duration as "mediaDuration"
+         FROM playlist_items pi
+         JOIN media m ON m.id = pi."mediaId"
+         WHERE pi."playlistId" = $1
+         ORDER BY pi.position ASC`,
+        [playlistId]
+    );
+
+    return { playlist, items };
+}
+
+// ─── Create playlist ──────────────────────────────────────────────────────────
+
+export async function createPlaylist(
+    organizationId: string,
+    data: CreatePlaylistBody
+): Promise<PlaylistRow> {
+    // If setting as default, unset any existing default first
+    if (data.isDefault) {
+        await query(
+            `UPDATE playlists SET "isDefault" = false WHERE "organizationId" = $1 AND "isDefault" = true`,
+            [organizationId]
+        );
+    }
+
+    const rows = await query<PlaylistRow>(
+        `INSERT INTO playlists (id, "organizationId", name, description, "isDefault", "createdAt", "updatedAt")
+         VALUES (gen_random_uuid()::text, $1, $2, $3, $4, NOW(), NOW())
+         RETURNING id, "organizationId", name, description, "isDefault", "createdAt", "updatedAt"`,
+        [organizationId, data.name, data.description ?? null, data.isDefault ?? false]
+    );
+
+    logger.info('Playlist created', { playlistId: rows[0].id, organizationId });
+    return { ...rows[0], itemCount: 0 };
+}
+
+// ─── Update playlist ──────────────────────────────────────────────────────────
+
+export async function updatePlaylist(
+    playlistId: string,
+    organizationId: string,
+    data: UpdatePlaylistBody
+): Promise<PlaylistRow> {
+    const fields: string[] = [];
+    const values: unknown[] = [];
+    let idx = 1;
+
+    if (data.name !== undefined) { fields.push(`name = $${idx++}`); values.push(data.name); }
+    if (data.description !== undefined) { fields.push(`description = $${idx++}`); values.push(data.description); }
+    if (data.isDefault !== undefined) { fields.push(`"isDefault" = $${idx++}`); values.push(data.isDefault); }
+
+    if (fields.length === 0) throw new AppError(400, 'Không có dữ liệu để cập nhật');
+
+    // If setting as default, unset others first
+    if (data.isDefault === true) {
+        await query(
+            `UPDATE playlists SET "isDefault" = false WHERE "organizationId" = $1 AND "isDefault" = true AND id != $2`,
+            [organizationId, playlistId]
+        );
+    }
+
+    fields.push(`"updatedAt" = NOW()`);
+    values.push(playlistId, organizationId);
+
+    const rows = await query<PlaylistRow>(
+        `UPDATE playlists SET ${fields.join(', ')}
+         WHERE id = $${idx++} AND "organizationId" = $${idx++}
+         RETURNING id, "organizationId", name, description, "isDefault", "createdAt", "updatedAt"`,
+        values
+    );
+    if (!rows[0]) throw new AppError(404, 'Playlist không tồn tại');
+    logger.info('Playlist updated', { playlistId });
+    return rows[0];
+}
+
+// ─── Delete playlist ──────────────────────────────────────────────────────────
+
+export async function deletePlaylist(playlistId: string, organizationId: string): Promise<void> {
+    const result = await query(
+        `DELETE FROM playlists WHERE id = $1 AND "organizationId" = $2 RETURNING id`,
+        [playlistId, organizationId]
+    );
+    if (!result[0]) throw new AppError(404, 'Playlist không tồn tại');
+    logger.info('Playlist deleted', { playlistId });
+    invalidateContentHashForOrg(organizationId).catch(() => {});
+}
+
+// ─── Add item to playlist ─────────────────────────────────────────────────────
+
+export async function addItem(
+    playlistId: string,
+    organizationId: string,
+    data: AddItemBody
+): Promise<PlaylistItemRow> {
+    // Verify playlist belongs to org
+    const playlist = await queryOne<{ id: string }>(
+        `SELECT id FROM playlists WHERE id = $1 AND "organizationId" = $2`,
+        [playlistId, organizationId]
+    );
+    if (!playlist) throw new AppError(404, 'Playlist không tồn tại');
+
+    // Verify media belongs to org
+    const media = await queryOne<{ id: string }>(
+        `SELECT id FROM media WHERE id = $1 AND "organizationId" = $2`,
+        [data.mediaId, organizationId]
+    );
+    if (!media) throw new AppError(404, 'Media không tồn tại');
+
+    // Get next position (append to end)
+    const maxPos = await queryOne<{ max: number | null }>(
+        `SELECT MAX(position) as max FROM playlist_items WHERE "playlistId" = $1`,
+        [playlistId]
+    );
+    const nextPosition = (maxPos?.max ?? -1) + 1;
+
+    const rows = await query<PlaylistItemRow>(
+        `INSERT INTO playlist_items (id, "playlistId", "mediaId", position, "durationOverride", transition)
+         VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5)
+         RETURNING id, "playlistId", "mediaId", position, "durationOverride", transition`,
+        [playlistId, data.mediaId, nextPosition, data.durationOverride ?? null, data.transition ?? null]
+    );
+
+    // Update playlist updatedAt
+    await query(`UPDATE playlists SET "updatedAt" = NOW() WHERE id = $1`, [playlistId]);
+
+    logger.info('Playlist item added', { playlistId, mediaId: data.mediaId });
+    invalidateContentHashForOrg(organizationId).catch(() => {});
+    return rows[0];
+}
+
+// ─── Update item ──────────────────────────────────────────────────────────────
+
+export async function updateItem(
+    playlistId: string,
+    itemId: string,
+    organizationId: string,
+    data: UpdateItemBody
+): Promise<PlaylistItemRow> {
+    // Verify playlist belongs to org
+    const playlist = await queryOne<{ id: string }>(
+        `SELECT id FROM playlists WHERE id = $1 AND "organizationId" = $2`,
+        [playlistId, organizationId]
+    );
+    if (!playlist) throw new AppError(404, 'Playlist không tồn tại');
+
+    const fields: string[] = [];
+    const values: unknown[] = [];
+    let idx = 1;
+
+    if (data.durationOverride !== undefined) { fields.push(`"durationOverride" = $${idx++}`); values.push(data.durationOverride); }
+    if (data.transition !== undefined) { fields.push(`transition = $${idx++}`); values.push(data.transition); }
+
+    if (fields.length === 0) throw new AppError(400, 'Không có dữ liệu để cập nhật');
+    values.push(itemId, playlistId);
+
+    const rows = await query<PlaylistItemRow>(
+        `UPDATE playlist_items SET ${fields.join(', ')}
+         WHERE id = $${idx++} AND "playlistId" = $${idx++}
+         RETURNING id, "playlistId", "mediaId", position, "durationOverride", transition`,
+        values
+    );
+    if (!rows[0]) throw new AppError(404, 'Playlist item không tồn tại');
+    await query(`UPDATE playlists SET "updatedAt" = NOW() WHERE id = $1`, [playlistId]);
+    invalidateContentHashForOrg(organizationId).catch(() => {});
+    return rows[0];
+}
+
+// ─── Remove item ──────────────────────────────────────────────────────────────
+
+export async function removeItem(
+    playlistId: string,
+    itemId: string,
+    organizationId: string
+): Promise<void> {
+    const playlist = await queryOne<{ id: string }>(
+        `SELECT id FROM playlists WHERE id = $1 AND "organizationId" = $2`,
+        [playlistId, organizationId]
+    );
+    if (!playlist) throw new AppError(404, 'Playlist không tồn tại');
+
+    const result = await query(
+        `DELETE FROM playlist_items WHERE id = $1 AND "playlistId" = $2 RETURNING id, position`,
+        [itemId, playlistId]
+    );
+    if (!result[0]) throw new AppError(404, 'Playlist item không tồn tại');
+
+    // Re-normalize positions (fill the gap)
+    const deletedPos = (result[0] as any).position;
+    await query(
+        `UPDATE playlist_items SET position = position - 1 WHERE "playlistId" = $1 AND position > $2`,
+        [playlistId, deletedPos]
+    );
+    await query(`UPDATE playlists SET "updatedAt" = NOW() WHERE id = $1`, [playlistId]);
+    logger.info('Playlist item removed', { playlistId, itemId });
+    invalidateContentHashForOrg(organizationId).catch(() => {});
+}
+
+// ─── Reorder items ─────────────────────────────────────────────────────────────
+
+export async function reorderItems(
+    playlistId: string,
+    organizationId: string,
+    data: ReorderItemsBody
+): Promise<PlaylistItemRow[]> {
+    const playlist = await queryOne<{ id: string }>(
+        `SELECT id FROM playlists WHERE id = $1 AND "organizationId" = $2`,
+        [playlistId, organizationId]
+    );
+    if (!playlist) throw new AppError(404, 'Playlist không tồn tại');
+
+    // Batch update positions
+    for (const { itemId, position } of data.items) {
+        await query(
+            `UPDATE playlist_items SET position = $1 WHERE id = $2 AND "playlistId" = $3`,
+            [position, itemId, playlistId]
+        );
+    }
+    await query(`UPDATE playlists SET "updatedAt" = NOW() WHERE id = $1`, [playlistId]);
+    invalidateContentHashForOrg(organizationId).catch(() => {});
+
+    // Return updated list
+    return query<PlaylistItemRow>(
+        `SELECT pi.id, pi."playlistId", pi."mediaId", pi.position,
+                pi."durationOverride", pi.transition,
+                m.title as "mediaTitle", m.type as "mediaType",
+                m."thumbnailPath" as "mediaThumbnailPath",
+                m.duration as "mediaDuration"
+         FROM playlist_items pi
+         JOIN media m ON m.id = pi."mediaId"
+         WHERE pi."playlistId" = $1
+         ORDER BY pi.position ASC`,
+        [playlistId]
+    );
+}

@@ -1,0 +1,161 @@
+import { Router } from 'express';
+import * as devController from './devices.controller';
+import { authenticate, authorize } from '../../shared/middleware/auth.middleware';
+import { validate } from '../../shared/middleware/validate.middleware';
+import {
+    listDevicesSchema, updateDeviceSchema,
+    deviceCommandSchema, createGroupSchema, updateGroupSchema, createDeviceSchema,
+    registerDeviceSchema, generatePairingCodeSchema, devicePairSchema,
+    refreshDeviceTokenSchema, batchGeneratePairingCodesSchema,
+} from './devices.schema';
+
+const router = Router();
+
+// ─── DEVICE PAIRING ENDPOINTS (3-STEP FLOW) ───────────────────────────────────
+
+/**
+ * @route   POST /api/devices/register
+ * @desc    STEP 1: Admin registers device profile (REGISTERED status)
+ * @access  Private (ADMIN only)
+ */
+router.post(
+    '/register',
+    authenticate,
+    authorize('ADMIN'),
+    validate(registerDeviceSchema),
+    devController.registerDevice
+);
+
+/**
+ * @route   POST /api/devices/:deviceId/generate-pairing-code
+ * @desc    STEP 2: Admin generates 6-digit pairing code + QR code (5 min TTL)
+ * @access  Private (ADMIN only)
+ */
+router.post(
+    '/:deviceId/generate-pairing-code',
+    authenticate,
+    authorize('ADMIN'),
+    validate(generatePairingCodeSchema),
+    devController.generatePairingCode
+);
+
+/**
+ * @route   POST /api/devices/pair
+ * @desc    STEP 3: Device pairs with code + device signature (HMAC verification)
+ * @access  Public - Device only (no user auth)
+ */
+router.post(
+    '/pair',
+    validate(devicePairSchema),
+    devController.pairDevice
+);
+
+/**
+ * @route   POST /api/devices/refresh-token
+ * @desc    Device refreshes JWT token before expiry (60 days)
+ * @access  Private (Device auth via deviceToken)
+ */
+router.post(
+    '/refresh-token',
+    authenticate,
+    validate(refreshDeviceTokenSchema),
+    devController.refreshDeviceToken
+);
+
+/**
+ * @route   POST /api/devices/batch-generate-pairing-codes
+ * @desc    Batch generate pairing codes for multiple devices (up to 100)
+ * @access  Private (ADMIN only)
+ */
+router.post(
+    '/batch-generate-pairing-codes',
+    authenticate,
+    authorize('ADMIN'),
+    validate(batchGeneratePairingCodesSchema),
+    devController.batchGeneratePairingCodes
+);
+
+// ─── STANDARD DEVICE ENDPOINTS ─────────────────────────────────────────────────
+
+router.use(authenticate);
+
+/**
+ * @route   GET /api/devices
+ * @desc    Danh sách devices (phân trang, filter status/search)
+ * @access  Private (ADMIN, MANAGER)
+ */
+router.get('/', authorize('ADMIN', 'MANAGER'), validate(listDevicesSchema), devController.listDevices);
+
+/**
+ * @route   POST /api/devices
+ * @desc    Tạo device mới với pairingCode tự động (legacy - use /register instead)
+ * @access  Private (ADMIN only)
+ */
+router.post('/', authorize('ADMIN'), validate(createDeviceSchema), devController.createDevice);
+
+/**
+ * @route   GET /api/devices/:id
+ * @desc    Chi tiết device
+ * @access  Private (ADMIN, MANAGER)
+ */
+router.get('/:id', authorize('ADMIN', 'MANAGER'), devController.getDeviceById);
+
+/**
+ * @route   PUT /api/devices/:id
+ * @desc    Cập nhật device (tên, location, timezone, status, settings)
+ * @access  Private (ADMIN, MANAGER)
+ */
+router.put('/:id', authorize('ADMIN', 'MANAGER'), validate(updateDeviceSchema), devController.updateDevice);
+
+/**
+ * @route   DELETE /api/devices/:id
+ * @desc    Xoá/Revoke device (blacklist token)
+ * @access  Private (ADMIN only)
+ */
+router.delete('/:id', authorize('ADMIN'), devController.deleteDevice);
+
+/**
+ * @route   POST /api/devices/:id/command
+ * @desc    Gửi lệnh tới device (RESTART, SCREENSHOT, RELOAD_CONTENT, CLEAR_CACHE)
+ * @access  Private (ADMIN, MANAGER)
+ */
+router.post('/:id/command', authorize('ADMIN', 'MANAGER'), validate(deviceCommandSchema), devController.sendCommand);
+
+/**
+ * @route   GET /api/devices/:id/screenshot
+ * @desc    Trigger chụp màn hình device
+ * @access  Private (ADMIN, MANAGER)
+ */
+router.get('/:id/screenshot', authorize('ADMIN', 'MANAGER'), devController.getScreenshot);
+
+/**
+ * @route   GET /api/devices/:id/logs
+ * @desc    Xem logs của device
+ * @access  Private (ADMIN, MANAGER)
+ */
+router.get('/:id/logs', authorize('ADMIN', 'MANAGER'), devController.getDeviceLogs);
+
+// ─── Device group endpoints ────────────────────────────────────────────────────
+
+/**
+ * @route   GET /api/device-groups
+ * @desc    Danh sách device groups
+ * @access  Private (ADMIN, MANAGER)
+ */
+router.get('/groups/list', authorize('ADMIN', 'MANAGER'), devController.listGroups);
+
+/**
+ * @route   POST /api/device-groups
+ * @desc    Tạo device group mới
+ * @access  Private (ADMIN only)
+ */
+router.post('/groups', authorize('ADMIN'), validate(createGroupSchema), devController.createGroup);
+
+/**
+ * @route   PUT /api/device-groups/:id
+ * @desc    Cập nhật device group
+ * @access  Private (ADMIN only)
+ */
+router.put('/groups/:id', authorize('ADMIN'), validate(updateGroupSchema), devController.updateGroup);
+
+export default router;

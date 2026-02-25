@@ -1,0 +1,313 @@
+// =============================================================================
+//  SignageCMS — Prisma Schema
+//  Source of truth cho cấu trúc DB. Dùng để tạo migrations, KHÔNG dùng PrismaClient.
+//
+//  KIẾN TRÚC DB:
+//  ┌─────────────────────────────────────────────────────────────────────────┐
+//  │  Prisma CLI (prisma)   →  tạo + apply migrations                       │
+//  │  PrismaClient          →  KHÔNG DÙNG ở runtime (binary không chạy trên │
+//  │                            Windows host; dùng raw `pg` driver thay thế) │
+//  │  pg driver             →  tất cả runtime queries trong src/             │
+//  └─────────────────────────────────────────────────────────────────────────┘
+//
+//  WORKFLOW MIGRATION:
+//    1. Sửa schema này
+//    2. npx prisma migrate dev --name <tên>   ← tạo file SQL migration
+//    3. Review file SQL trong prisma/migrations/
+//    4. npx prisma migrate deploy             ← apply lên DB
+//
+//  KHÔNG BAO GIỜ:
+//    - import PrismaClient vào runtime code
+//    - dùng prisma db push (bỏ qua migration history)
+// =============================================================================
+
+generator client {
+  // Generator được giữ lại để `prisma migrate` hoạt động.
+  // PrismaClient được tạo ra nhưng KHÔNG được import trong src/.
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  MULTI-TENANCY
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Organization {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  settings  Json?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users        User[]
+  devices      Device[]
+  deviceGroups DeviceGroup[]
+  media        Media[]
+  playlists    Playlist[]
+  schedules    Schedule[]
+
+  @@map("organizations")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  USERS
+// ─────────────────────────────────────────────────────────────────────────────
+
+model User {
+  id             String     @id @default(uuid())
+  organizationId String
+  email          String     @unique
+  passwordHash   String
+  role           UserRole   @default(MANAGER)
+  status         UserStatus @default(ACTIVE)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  media        Media[]
+
+  @@index([organizationId])
+  @@map("users")
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  MANAGER
+  VIEWER
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  DEVICES
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Device {
+  id             String       @id @default(uuid())
+  organizationId String
+  name           String
+  location       String?
+  timezone       String       @default("Asia/Ho_Chi_Minh")
+  pairingCode    String?
+  androidId      String?      @unique
+  model          String?
+  osVersion      String?
+  appVersion     String?
+  status         DeviceStatus @default(OFFLINE)
+  lastSeen       DateTime?
+  settings       Json?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  groupMembers DeviceGroupMember[]
+  playbackLogs PlaybackLog[]
+  healthReports DeviceHealth[]
+
+  @@index([organizationId, status])
+  @@index([lastSeen])
+  @@map("devices")
+}
+
+enum DeviceStatus {
+  ONLINE
+  OFFLINE
+  ERROR
+}
+
+model DeviceGroup {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String
+  description    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  members      DeviceGroupMember[]
+  schedules    Schedule[]
+
+  @@index([organizationId])
+  @@map("device_groups")
+}
+
+model DeviceGroupMember {
+  deviceId String
+  groupId  String
+
+  device Device      @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  group  DeviceGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@id([deviceId, groupId])
+  @@map("device_group_members")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  MEDIA CONTENT
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Media {
+  id             String      @id @default(uuid())
+  organizationId String
+  uploadedById   String
+  title          String
+  description    String?
+  type           MediaType
+  filePath       String
+  fileSize       BigInt
+  mimeType       String
+  fileHash       String      // SHA-256 của file — dùng để detect thay đổi
+  duration       Int?        // giây, cho video
+  width          Int?
+  height         Int?
+  thumbnailPath  String?
+  tags           String[]
+  metadata       Json?
+  status         MediaStatus @default(PROCESSING)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  uploadedBy    User           @relation(fields: [uploadedById], references: [id])
+  playlistItems PlaylistItem[]
+  playbackLogs  PlaybackLog[]
+
+  @@index([organizationId, type, status])
+  @@index([fileHash])
+  @@map("media")
+}
+
+enum MediaType {
+  VIDEO
+  IMAGE
+  HTML
+  URL
+}
+
+enum MediaStatus {
+  PROCESSING
+  READY
+  ERROR
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  PLAYLISTS
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Playlist {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String
+  description    String?
+  isDefault      Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  items        PlaylistItem[]
+  schedules    Schedule[]
+
+  @@index([organizationId])
+  @@map("playlists")
+}
+
+model PlaylistItem {
+  id               String  @id @default(uuid())
+  playlistId       String
+  mediaId          String
+  position         Int
+  durationOverride Int?    // override media duration (giây)
+  transition       String? // fade, slide, ...
+
+  playlist Playlist @relation(fields: [playlistId], references: [id], onDelete: Cascade)
+  media    Media    @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+
+  @@index([playlistId, position])
+  @@map("playlist_items")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  SCHEDULES
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Schedule {
+  id             String         @id @default(uuid())
+  organizationId String
+  name           String
+  playlistId     String
+  targetType     ScheduleTarget
+  targetDeviceId String?
+  targetGroupId  String?
+  startDate      DateTime
+  endDate        DateTime?
+  startTime      String?        // "08:00" — 24h
+  endTime        String?        // "18:00" — 24h
+  daysOfWeek     Int[]          // [1,2,3,4,5] Mon=1 … Sun=7
+  priority       Int            @default(0)
+  isActive       Boolean        @default(true)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  playlist     Playlist     @relation(fields: [playlistId], references: [id])
+  deviceGroup  DeviceGroup? @relation(fields: [targetGroupId], references: [id])
+
+  @@index([organizationId, isActive])
+  @@index([startDate, endDate])
+  @@map("schedules")
+}
+
+enum ScheduleTarget {
+  ALL
+  DEVICE
+  GROUP
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  ANALYTICS
+// ─────────────────────────────────────────────────────────────────────────────
+
+model PlaybackLog {
+  id             String   @id @default(uuid())
+  deviceId       String
+  mediaId        String
+  playedAt       DateTime @default(now())
+  durationPlayed Int
+  completed      Boolean  @default(false)
+
+  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  media  Media  @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId, playedAt(sort: Desc)])
+  @@index([mediaId, playedAt(sort: Desc)])
+  @@index([playedAt(sort: Desc)])
+  @@map("playback_logs")
+}
+
+model DeviceHealth {
+  id           String   @id @default(uuid())
+  deviceId     String
+  cpuUsage     Float?
+  memoryUsage  Float?
+  storageTotal BigInt?
+  storageUsed  BigInt?
+  networkType  String?
+  isOnline     Boolean  @default(true)
+  reportedAt   DateTime @default(now())
+
+  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId, reportedAt(sort: Desc)])
+  @@map("device_health")
+}

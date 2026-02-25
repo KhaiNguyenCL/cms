@@ -1,0 +1,836 @@
+================================================================
+  DIGITAL SIGNAGE CMS - QUY TRÌNH THIẾT KẾ & TRIỂN KHAI
+================================================================
+  Version: 1.2  |  Ngày: 2026-02-25  |  Stack: Node.js + React + Hybrid Player
+  Cập nhật: Phản ánh trạng thái thực tế + các cải tiến kiến trúc
+================================================================
+
+LEGEND:
+  [x] = Hoàn thành
+  [~] = Hoàn thành một phần (xem ghi chú)
+  [ ] = Chưa làm
+  [!] = BUG / Cần fix ngay
+
+
+================================================================
+  CRITICAL FIXES - SỬA TRƯỚC KHI TIẾP TỤC
+================================================================
+*** Đây là những lỗi thiết kế phát hiện qua review - phải fix trước ***
+
+[x] FIX-01: syncRequired luôn trả về false (ĐÃ FIX 2026-02-25)
+    - Đã thêm computeDeviceContentHash() — SHA-256 của schedules+playlists+media
+    - Cache hash trong Redis (TTL 60s) để không query DB mỗi heartbeat
+    - Heartbeat nhận currentContentHash từ device, so sánh với server hash
+    - getDeviceSync trả về contentHash để device lưu và gửi lại
+    - invalidateContentHashForOrg() được gọi khi: schedule/playlist/media thay đổi
+    - Files đã sửa:
+      + backend/src/shared/cache/redis.ts (thêm RedisKeys.deviceContentHash)
+      + backend/src/modules/device-sync/device-sync.schema.ts (thêm currentContentHash)
+      + backend/src/modules/device-sync/device-sync.service.ts (logic chính)
+      + backend/src/modules/schedules/schedules.service.ts (invalidate)
+      + backend/src/modules/playlists/playlists.service.ts (invalidate)
+      + backend/src/modules/media/media.service.ts (invalidate)
+
+[x] FIX-02: Refresh token lưu sai nơi (ĐÃ FIX 2026-02-25)
+    - Backend set HttpOnly cookie tên 'cms_rt' (path: /api/auth, SameSite: strict)
+    - Login/register/refresh trả về { accessToken, user } trong body — không có refreshToken
+    - Backend logout đọc token từ cookie để revoke, sau đó clearCookie
+    - Frontend: xóa toàn bộ localStorage logic, chỉ giữ accessToken trong memory
+    - AuthGuard: silent refresh chỉ cần gọi POST /api/auth/refresh-token (cookie tự gửi)
+    - Files đã sửa:
+      + backend: app.ts (thêm cookie-parser)
+      + backend: auth.controller.ts (set/clear cookie helper)
+      + backend: auth.service.ts (trả về user info kèm tokens)
+      + frontend: api/client.ts (xóa localStorage, xóa getRefreshToken/setRefreshToken)
+      + frontend: api/auth.api.ts (bỏ refreshToken khỏi request body)
+      + frontend: store/slices/authSlice.ts (bỏ setRefreshToken)
+      + frontend: components/guards/AuthGuard.tsx (bỏ localStorage check)
+      + frontend: pages/auth/LoginPage.tsx (bỏ refreshToken từ setCredentials)
+      + frontend: types/index.ts (cập nhật AuthTokens, User type)
+
+[x] FIX-03: Thiếu rate limiting trên device endpoints (ĐÃ FIX 2026-02-25)
+    - Đã thêm 6 rate limiters trong device-sync.routes.ts, key theo deviceId (không phải IP)
+      + /register: IP-based, 10 req/15min (public, chặn brute-force pairing code)
+      + /heartbeat: deviceId-based, 4 req/min (device ping mỗi 30s, có buffer retry)
+      + /sync: deviceId-based, 12 req/hour (chỉ gọi khi boot + syncRequired=true)
+      + /playback-log: deviceId-based, 200 req/min (log từng media item phát xong)
+      + /playback-logs/batch: deviceId-based, 20 req/hour (flush offline logs)
+      + /offline: deviceId-based, 20 req/hour (clean shutdown notification)
+    - Đã fix: duplicate route mounting trong app.ts (line 76 đã xóa)
+    - Đã fix: refreshTokenSchema yêu cầu body.refreshToken (đã xóa, refresh dùng cookie)
+    - Files đã sửa:
+      + backend: modules/device-sync/device-sync.routes.ts (6 limiters + deviceKey fn)
+      + backend: shared/app.ts (xóa duplicate /api/device mounting)
+      + backend: modules/auth/auth.schema.ts (xóa refreshTokenSchema)
+      + backend: modules/auth/auth.routes.ts (xóa validate(refreshTokenSchema))
+
+[x] FIX-04: Media URL không có signed token (ĐÃ FIX 2026-02-25)
+    - HMAC-SHA256 signed URL — payload: {mediaId}:{type}:{expires_unix}, key: MEDIA_SIGN_SECRET ?? JWT_SECRET+':media'
+    - URL format: /api/media/{id}/file?expires={ts}&sig={base64url}
+    - Cả /file và /thumbnail đều yêu cầu token hợp lệ (verifyMediaToken)
+    - Device nhận signed URL từ sync payload (1h TTL) — không còn disk path nữa
+    - Admin API (listMedia, getMediaById, upload) trả về signedUrl + thumbnailUrl
+    - config.server.url đọc từ env SERVER_URL (fallback http://localhost:PORT)
+    - Files đã sửa:
+      + backend: config/index.ts (thêm server.url)
+      + backend: modules/media/media.signing.ts (NEW — signMediaUrl, verifyMediaToken)
+      + backend: modules/media/media.controller.ts (token check + signed URL trong responses)
+      + backend: modules/device-sync/device-sync.service.ts (sync payload dùng signed URL)
+
+[x] FIX-05: Node.js đang serve static media files (ĐÃ FIX 2026-02-25)
+    - Pattern: X-Accel-Redirect — Node.js validate signed token, trả header, Nginx serve file
+    - Luồng production: Client → Nginx → Node.js (token check) → X-Accel-Redirect header
+      → Nginx serve file từ disk trực tiếp (KHÔNG qua Node.js event loop)
+    - Dev mode (NGINX_ACCEL=false): Node.js stream trực tiếp như cũ
+    - Nginx `location /internal/storage/ { internal; alias /app/storage/; }` — không accessible từ client
+    - mp4 pseudo-streaming cho video seek support
+    - Files đã sửa:
+      + backend: config/index.ts (thêm nginx.accel + nginx.accelPrefix)
+      + backend: modules/media/media.controller.ts (X-Accel-Redirect trong getMediaFile + getThumbnail)
+      + backend: Dockerfile (NEW — multi-stage build)
+      + docker: docker/nginx/nginx.conf (NEW — full production nginx config)
+      + docker: docker-compose.yml (thêm app + nginx services, storage_data volume)
+
+[x] FIX-06: Prisma schema vs Raw pg driver không nhất quán (ĐÃ FIX 2026-02-25)
+    - Pattern đã chọn: Prisma = migration tool only; pg driver = runtime queries
+    - schema.prisma đã được align với DB thực (migration_init.sql):
+      + Xóa: DeviceRegStatus enum, PairingLog model, PairingStatus enum
+      + Xóa khỏi Device: description, deviceStatus, pairedAt, pairedByUserId,
+        pairedFromIp, lastPairedAt, pairingAttempts, tokenExpiresAt
+      + Thêm documentation header giải thích rõ tại sao không dùng PrismaClient
+    - Xóa src/shared/database/prisma.ts (dead code, không import ở đâu)
+    - Fix package.json (dependency đúng chỗ):
+      + pg: devDependencies → dependencies (RUNTIME driver)
+      + @prisma/client: dependencies → devDependencies (migration tool only)
+      + Xóa db:push script (tránh bypass migration history)
+    - Fix MediaRow.fileHash: string|null → string (DB column là NOT NULL)
+    - Merge migration_init.sql vào init.sql để Docker tự tạo tables khi khởi tạo
+
+[x] FIX-07: Thiếu XSS sanitization cho text input (ĐÃ FIX 2026-02-25)
+    - Không dùng thư viện ngoài — regex đủ cho plain-text fields của CMS
+    - stripHtml(): strip HTML comments + tags, trim whitespace
+    - sanitizeStrings(): đệ quy trên object/array, no-op với non-string values
+    - Áp dụng tự động trong validate.middleware.ts (body + params sau Zod parse)
+    - Bao phủ tất cả routes dùng validate() — không cần sửa từng schema/controller
+    - Files đã sửa:
+      + backend: shared/utils/sanitize.ts (NEW — stripHtml, sanitizeStrings)
+      + backend: shared/middleware/validate.middleware.ts (gọi sanitizeStrings)
+
+
+================================================================
+  PHASE 0: INFRASTRUCTURE SETUP (DONE ✅)
+================================================================
+[x] PostgreSQL 15 chạy trên Docker (port 5433 host → 5432 container)
+[x] Redis 7 chạy trên Docker (port 6379)
+[x] pgAdmin chạy tại localhost:5050
+[x] docker-compose.yml đã cấu hình với healthcheck
+
+
+================================================================
+  PHASE 1: BACKEND - NODE.JS API SERVER (85% DONE)
+================================================================
+
+1.1  PROJECT SETUP (DONE ✅)
+─────────────────────────────
+[x] Khởi tạo Node.js + TypeScript 5.7
+[x] Dependencies: Express, raw pg, ioredis, BullMQ, Socket.IO,
+    multer, sharp, zod, bcrypt, jsonwebtoken, helmet, winston
+[x] tsconfig.json strict mode
+[x] Folder structure theo module pattern
+[x] .env với đầy đủ config (DB, Redis, JWT, Storage, Upload limits)
+[x] Logger Winston (level theo NODE_ENV)
+[x] Graceful shutdown (SIGTERM/SIGINT)
+
+GHI CHÚ QUAN TRỌNG - DATABASE DRIVER:
+  - Dùng raw 'pg' driver (KHÔNG dùng Prisma Client)
+  - Prisma chỉ dùng để: npx prisma migrate (tạo/cập nhật tables)
+  - Lý do: Prisma binary không hoạt động trên Windows dev
+  - Tất cả query là raw SQL với parameterized inputs ($1, $2, ...)
+  - Helper: query(), queryOne(), withTransaction() trong shared/database/db.ts
+
+
+1.2  DATABASE SCHEMA (DONE ✅)
+────────────────────────────────
+[x] 11 models: Organization, User, Device, DeviceGroup,
+    DeviceGroupMember, Media, Playlist, PlaylistItem,
+    Schedule, PlaybackLog, DeviceHealth, PairingLog
+[x] Multi-tenancy: mọi entity đều có organizationId
+[x] Indexes cho performance: (orgId, status), lastSeen, tokenExpiresAt
+[x] JSON fields cho flexible metadata (device.settings, org.settings)
+[x] Migrate đã chạy, tables đã tạo trong PostgreSQL
+[ ] Seed data mẫu để test (chưa làm)
+
+
+1.3  SECURITY - XÁC THỰC & PHÂN QUYỀN (~85% DONE)
+────────────────────────────────────────────────────
+*** ĐÂY LÀ MODULE QUAN TRỌNG NHẤT ***
+
+[x] JWT Authentication
+    - Access token: 15 phút
+    - Refresh token: 30 ngày, lưu hash trong Redis
+    - Token blacklist khi logout (Redis SET)
+    - Device token: 365 ngày (separate JWT type: 'device')
+
+[!] Refresh Token Transport - CẦN FIX (xem FIX-02)
+    - Hiện tại: Lưu trong localStorage (SAI)
+    - Phải sửa: HttpOnly cookie từ backend
+
+[x] Password Security
+    - bcrypt cost factor 12
+    - Login attempt limiting: max 5 lần, lockout 15 phút
+    - Lưu attempts trong Redis với TTL
+
+[x] Multi-Tenancy Isolation
+    - organizationId có trong mọi JWT payload
+    - Mọi query được filter theo org
+    - Middleware authenticateJWT inject req.user với orgId
+
+[x] Device Authentication
+    - Pairing code: 6 số, TTL 5 phút, lưu trong Redis
+    - Device JWT riêng biệt (type: 'device')
+    - Pairing log đầy đủ (3 lần thất bại → lockout 10 phút)
+
+[x] Role-Based Access Control (RBAC)
+    - SUPER_ADMIN, ADMIN, MANAGER, VIEWER
+    - Middleware authorize(...roles) cho từng endpoint
+    - Device role: chỉ access /api/device/* endpoints
+
+[~] API Security (90% done)
+    [x] Rate limiting: 100 req/15 phút (global)
+    [x] Rate limiting: 5 req/phút (login endpoint)
+    [!] Rate limiting thiếu trên /api/device/* (xem FIX-03)
+    [x] Helmet.js (security headers)
+    [x] CORS whitelist (từ .env CORS_ORIGINS)
+    [x] Input validation + Zod schemas
+    [x] SQL Injection: raw pg với parameterized inputs
+    [!] XSS sanitization cho text fields chưa có (xem FIX-07)
+
+[~] File Upload Security (80% done)
+    [x] Validate MIME type (multer fileFilter, không tin extension)
+    [x] Giới hạn: video 2GB, image 50MB
+    [x] Lưu file với UUID name
+    [x] Allowed: jpeg, png, gif, webp, mp4, webm, quicktime
+    [ ] Scan virus (ClamAV) - tùy chọn, chưa làm
+
+[~] Audit Logging (30% done)
+    [x] Auth events đã log (login, logout, pairing)
+    [ ] CRUD events (create, update, delete media/playlist/schedule)
+    [ ] Device events (connect, disconnect, errors)
+    Ghi chú: Thêm vào từng service, log qua Winston với metadata
+
+
+1.4  CORE API MODULES (DONE ✅)
+──────────────────────────────────
+[x] Auth Module
+    POST   /api/auth/register
+    POST   /api/auth/login           (rate limited: 5/phút)
+    POST   /api/auth/logout
+    POST   /api/auth/refresh-token   [!] cần chuyển sang cookie
+    POST   /api/auth/forgot-password
+    POST   /api/auth/reset-password
+
+[x] Organizations Module
+    GET    /api/organizations/me
+    PUT    /api/organizations/me
+    GET    /api/organizations/me/stats
+
+[x] Users Module
+    GET    /api/users                (ADMIN+)
+    POST   /api/users                (ADMIN+)
+    GET    /api/users/:id            (ADMIN+)
+    PUT    /api/users/:id            (ADMIN+)
+    DELETE /api/users/:id            (ADMIN only)
+
+[x] Devices Module
+    GET    /api/devices
+    POST   /api/devices/generate-pairing-code
+    POST   /api/devices/pair
+    GET    /api/devices/:id
+    PUT    /api/devices/:id
+    DELETE /api/devices/:id
+    POST   /api/devices/:id/command  (restart, screenshot, clear_cache)
+    GET    /api/devices/:id/screenshot
+    GET    /api/devices/:id/logs
+
+[x] Device Groups Module
+    GET    /api/device-groups
+    POST   /api/device-groups
+    GET    /api/device-groups/:id
+    PUT    /api/device-groups/:id
+    DELETE /api/device-groups/:id
+    POST   /api/device-groups/:id/members
+
+[x] Media Module
+    GET    /api/media                (paginated, filter: type/status/search)
+    POST   /api/media/upload         (ADMIN/MANAGER, MIME validation)
+    GET    /api/media/:id
+    PUT    /api/media/:id            (title, description, tags)
+    DELETE /api/media/:id            (ADMIN only, xóa file + DB)
+    GET    /api/media/:id/thumbnail  (public)
+    GET    /api/media/:id/file       (public) [!] cần auth + Nginx (FIX-05)
+
+[x] Playlists Module
+    GET    /api/playlists
+    POST   /api/playlists
+    GET    /api/playlists/:id        (bao gồm items + media metadata)
+    PUT    /api/playlists/:id
+    DELETE /api/playlists/:id
+    PUT    /api/playlists/:id/items  (reorder items, batch update)
+
+[x] Schedules Module
+    GET    /api/schedules            (filter: isActive, targetType, search)
+    POST   /api/schedules
+    GET    /api/schedules/:id
+    PUT    /api/schedules/:id
+    DELETE /api/schedules/:id
+    Helper: getActiveSchedulesForDevice() → resolve ALL/DEVICE/GROUP targets
+
+[x] Analytics Module
+    GET    /api/analytics/overview
+    GET    /api/analytics/playback   (filter: dateFrom, dateTo)
+    GET    /api/analytics/devices    (health stats)
+    GET    /api/analytics/content    (top content)
+
+[~] Device Sync API (90% done)
+    POST   /api/device/register         [x] Pairing flow đầy đủ
+    POST   /api/device/heartbeat        [!] syncRequired luôn false (FIX-01)
+    GET    /api/device/sync             [x] Trả về schedules + playlists + media
+    POST   /api/device/playback-log     [x] Single log
+    POST   /api/device/playback-logs/batch [x] Batch offline logs (max 500)
+    POST   /api/device/offline          [x] Clean shutdown notification
+    GET    /api/device/media/:id/url    [!] Signed URL chưa implement (FIX-04)
+    POST   /api/device/refresh-token    [x] Làm mới device JWT
+
+
+1.5  REAL-TIME (WebSocket / Socket.IO) (~60% DONE)
+────────────────────────────────────────────────────
+[x] Socket.IO server setup
+[x] Namespace /device (Android TV, xác thực bằng device JWT)
+[x] Namespace /admin (Dashboard, xác thực bằng user JWT)
+[x] Room: device:{deviceId} (target từng device)
+[x] Room: org:{orgId} (broadcast toàn org)
+[x] Events device → server:
+    device.status, device.error, device.screenshot, device.playback
+[x] Helper functions:
+    pushCommandToDevice(deviceId, command, payload)
+    broadcastContentUpdate(orgId, eventType, data)
+    isDeviceOnline(deviceId)
+[~] Events server → device (được define nhưng chưa được GỌI tự động):
+    [ ] Gọi pushCommandToDevice() sau khi admin tạo/sửa schedule
+    [ ] Gọi broadcastContentUpdate() sau khi upload media mới
+    [ ] Gọi khi playlist được update
+    Ghi chú: Các hàm helper đã có, cần tích hợp vào service layer
+[ ] Heartbeat ping mechanism (server ping device mỗi 30s)
+[ ] Auto-reconnect tracking phía server
+
+
+1.6  BACKGROUND JOBS (BullMQ) (~40% DONE)
+────────────────────────────────────────────
+[x] Queue setup: 5 queues với config retry, backoff, concurrency
+[x] Worker video-transcoding: ffmpeg H.264, thumbnail ở 2s mark
+    Ghi chú: Cần ffmpeg binary, có fallback nếu không có
+[x] Worker thumbnail-generation: Sharp (320x180 webp)
+[~] Worker device-notification:
+    [x] Push qua Socket.IO (WebSocket)
+    [x] Fallback: set pendingSync flag trong device.settings
+    [ ] Retry logic khi device offline
+[x] Worker cleanup-logs: xóa PlaybackLog cũ hơn N ngày
+[~] Worker generate-reports: stub có, chưa implement query
+[x] Scheduler cron:
+    Daily 03:00  → cleanup-logs (>90 ngày)
+    Daily 04:00  → reports daily
+    Weekly Mon   → reports weekly
+    Monthly 1st  → reports monthly
+
+
+================================================================
+  PHASE 2: FRONTEND - REACT ADMIN DASHBOARD (~40% DONE)
+================================================================
+
+2.1  PROJECT SETUP (DONE ✅)
+──────────────────────────────
+[x] Vite 7 + React 19 + TypeScript
+[x] Material-UI 7 + Emotion
+[x] React Router DOM 7 (lazy-loaded routes)
+[x] Redux Toolkit 2 (auth state)
+[x] TanStack React Query 5 (server state)
+[x] Axios 1.13 với interceptors
+[x] Socket.IO client
+[x] ESLint + Prettier
+[x] MUI Theme (Inter font, custom palette)
+
+
+2.2  SECURITY - FRONTEND (~60% DONE)
+───────────────────────────────────────
+[x] Access token trong memory (biến JS, không localStorage)
+[!] Refresh token đang lưu localStorage → phải chuyển HttpOnly cookie (FIX-02)
+[x] Axios interceptor tự động refresh token khi nhận 401
+[x] Request queue trong lúc đang refresh (tránh duplicate)
+[x] AuthGuard component redirect về /login nếu chưa auth
+[ ] Role guard: ẩn/hiện UI elements theo role (ADMIN/MANAGER/VIEWER)
+[ ] Sanitize data trước khi render (tránh XSS)
+[ ] Content Security Policy headers (cấu hình trên Nginx/production)
+
+
+2.3  PAGES & COMPONENTS (~35% DONE)
+─────────────────────────────────────
+[x] Auth Pages
+    [x] LoginPage (UI hoàn chỉnh, form validation, error handling)
+    [ ] ForgotPasswordPage
+    [ ] ResetPasswordPage
+
+[~] DashboardPage (UI có, data binding cần review)
+    [x] Stat cards (devices online/offline, storage, playlists)
+    [x] Device online rate
+    [x] Recent activity list
+    [ ] Kết nối WebSocket để cập nhật realtime
+
+[~] DevicesPage (UI có, cần bổ sung)
+    [x] Danh sách thiết bị với status chip
+    [x] Actions menu (view, edit, delete)
+    [x] Group assignment dialog
+    [ ] Pairing code dialog (generate + display QR code)
+    [ ] Device detail drawer (info, logs, screenshot)
+    [ ] Remote control buttons (restart, clear cache)
+    [ ] Realtime status update qua WebSocket
+
+[ ] MediaPage (/media)
+    [ ] Grid/List view với pagination
+    [ ] Upload file: drag & drop, progress bar, MIME validation
+    [ ] Preview: lightbox cho image, inline player cho video
+    [ ] Edit metadata (title, description, tags)
+    [ ] Filter: type, status, ngày upload, search
+
+[ ] PlaylistsPage (/playlists)
+    [ ] Danh sách playlists với item count
+    [ ] Playlist builder: drag-drop media vào playlist
+    [ ] Cài duration từng item, chọn transition
+    [ ] Preview thứ tự phát
+
+[ ] SchedulesPage (/schedules)
+    [ ] Danh sách schedules + status active/inactive
+    [ ] Form tạo/sửa: chọn playlist, target (all/device/group)
+    [ ] Cài giờ phát, ngày trong tuần, ngày bắt đầu/kết thúc
+    [ ] Priority setting
+    [ ] Calendar view (tùy chọn, phase sau)
+
+[ ] AnalyticsPage (/analytics)
+    [ ] Overview metrics (total plays, uptime %)
+    [ ] Biểu đồ playback theo ngày/tuần/tháng (Recharts)
+    [ ] Top content được phát nhiều nhất
+    [ ] Device uptime heatmap
+    [ ] Export CSV
+
+[ ] UsersPage (/users) - ADMIN only
+    [ ] Danh sách users + role badges
+    [ ] Invite/create user
+    [ ] Edit role, deactivate account
+
+[ ] SettingsPage (/settings)
+    [ ] Organization info
+    [ ] Storage usage bar
+    [ ] API keys (tương lai)
+
+
+================================================================
+  PHASE 3: CLIENT PLAYER - HYBRID ARCHITECTURE
+================================================================
+
+KIẾN TRÚC QUYẾT ĐỊNH:
+═══════════════════════
+Giữ hybrid (Android Shell + Web Player PWA) vì:
+- Cập nhật nội dung/logic không cần deploy APK mới
+- Web tech đủ mạnh cho video/image/HTML playback
+- Android TV system WebView (Android 7+) đã ổn định
+- Giảm thời gian phát triển đáng kể
+
+Android Shell (Kotlin - "Smart Shell"):
+  ├── KioskManager       ← Boot receiver, navigation bar, screen lock
+  ├── SetupActivity      ← Nhập server URL + pairing code (lần đầu)
+  ├── PlayerActivity     ← WebView host + native bridge
+  │     ├── WebView      → Web Player PWA (toàn bộ content logic)
+  │     └── JavascriptInterface → Bridge native ↔ web
+  └── HealthReporter     ← CPU/RAM/network metrics native
+
+Web Player (PWA - Vite + TypeScript):
+  ├── PlayerEngine       ← Điều phối phát, schedule resolution
+  ├── ContentRenderer    ← Video/Image/HTML/URL rendering
+  ├── SyncManager        ← API sync + WebSocket
+  ├── OfflineManager     ← Service Worker + IndexedDB
+  └── CacheManager       ← Cache API strategy
+
+Deployment:
+  /api     → Backend API (Node.js)
+  /admin   → React Admin Dashboard
+  /player  → Web Player PWA ← Android Shell mở URL này
+
+GHI CHÚ VỀ VIDEO PERFORMANCE:
+  HTML5 <video> trong WebView đủ tốt cho nội dung signage thông thường.
+  Nếu cần hiệu suất cao hơn (4K, decode hardware, DRM):
+  → Xem xét thêm ExoPlayer Activity trong Shell (phase sau)
+  → JavascriptInterface để Web Player trigger native video playback
+
+
+─────────────────────────────────────
+3.1  ANDROID SHELL APK (Kotlin)
+─────────────────────────────────────
+[ ] Project setup (Kotlin, minSDK 23, targetSDK 34, Android TV)
+
+[ ] SetupActivity (hiện 1 lần duy nhất)
+    - Nhập Server URL
+    - Nhập Pairing Code (6 số)
+    - Gọi POST /api/device/register
+    - Lưu { deviceId, token, serverUrl } → EncryptedSharedPreferences
+    - Sau khi pair xong → chuyển sang PlayerActivity
+
+[ ] PlayerActivity
+    - Full-screen WebView trỏ tới:
+      {serverUrl}/player?deviceId={deviceId}&token={token}
+    - JavascriptInterface: bridge cho native commands:
+      + shell.restart()         ← Web Player gọi khi nhận command
+      + shell.getDeviceInfo()   ← Trả về model, osVersion, androidId
+      + shell.reportHealth()    ← Gửi metrics từ native layer
+    - Auto-restart WebView nếu crash hoặc không response > 30s
+    - Không cho phép navigate ra ngoài serverUrl domain
+
+[ ] KioskMode
+    - BOOT_COMPLETED receiver → auto-launch khi TV bật
+    - Ẩn status bar, navigation bar (FLAG_LAYOUT_NO_LIMITS)
+    - Chặn Home, Back, Recent apps buttons
+    - Wake lock: SCREEN_BRIGHT_WAKE_LOCK (màn hình luôn bật)
+    - Set app làm default launcher (optional, cần system permission)
+
+[ ] HealthReporter (coroutine, mỗi 60 giây)
+    - Thu thập: CPU usage, RAM total/used, storage total/used
+    - Network type (WiFi/Ethernet/None)
+    - Gửi qua JavascriptInterface → Web Player → /api/device/heartbeat
+
+[ ] Error Recovery
+    - WebView crash → restart sau 5 giây
+    - Network lost → tiếp tục offline (Web Player handle)
+    - Server unreachable > 24h → hiển thị offline screen native
+
+3.2  SECURITY - ANDROID SHELL
+───────────────────────────────
+[ ] EncryptedSharedPreferences (Android Keystore) cho token
+[ ] Certificate pinning: reject SSL cert không phải của server
+[ ] Chặn WebView file:// và content:// URL schemes
+[ ] Disable WebView debugging trong production (không setWebContentsDebuggingEnabled)
+[ ] Không cho phép postMessage từ origin khác serverUrl
+[ ] Remote wipe command: xóa token + cache, hiển thị setup screen
+[ ] ProGuard/R8 obfuscation cho production build
+
+
+─────────────────────────────────────
+3.3  WEB PLAYER (PWA)
+─────────────────────────────────────
+[ ] Project setup: Vite + TypeScript (project riêng: /player)
+[ ] PWA manifest: name, icons, display: standalone, orientation: landscape
+[ ] Full-screen layout: 100vw × 100vh, đen background
+[ ] Responsive: 1080p và 4K (dùng viewport units, không pixel cứng)
+[ ] Build output deploy vào /player trên Nginx
+
+3.4  STARTUP FLOW (Web Player)
+────────────────────────────────
+[ ] Đọc deviceId + token từ URL params (truyền từ Android Shell)
+[ ] Nếu không có params → đọc từ IndexedDB (lần khởi động sau)
+[ ] Nếu vẫn không có → hiển thị màn hình "Cần cấu hình thiết bị"
+[ ] Verify token còn hạn → POST /api/device/heartbeat
+[ ] Load schedule từ IndexedDB (offline-first)
+[ ] Bắt đầu phát nội dung ngay (không chờ sync online)
+[ ] Song song: kết nối WebSocket + sync schedule mới nhất
+[ ] Cập nhật nội dung nếu schedule mới khác với cache
+
+3.5  CONTENT PLAYER ENGINE
+────────────────────────────
+[ ] PlayerEngine: state machine (LOADING → PLAYING → TRANSITIONING)
+[ ] Playlist loop: lặp vô tận, không skip item lỗi (dùng placeholder)
+[ ] Duration timer: auto-advance sau X giây (hoặc video ended)
+[ ] ContentRenderer theo type:
+    - VIDEO: HTML5 <video>, preload next item trong background
+    - IMAGE: <img>, preload ảnh kế tiếp
+    - HTML:  <iframe sandbox="allow-scripts allow-same-origin">
+    - URL:   <iframe> với X-Frame-Options check
+[ ] Transitions: fade (default), slide-left, slide-right, zoom-in
+[ ] Emergency override: schedule priority cao nhất, interrupt ngay lập tức
+[ ] Error handling: media 404/decode error → skip + log, không dừng playlist
+
+3.6  SCHEDULE RESOLUTION (Client-side)
+────────────────────────────────────────
+[ ] Nhận schedules array từ /api/device/sync
+[ ] Filter: isActive + startDate/endDate + daysOfWeek + startTime/endTime
+[ ] Sort by priority DESC
+[ ] Lấy schedule priority cao nhất đang active
+[ ] Fallback: defaultPlaylist nếu không có schedule active
+[ ] Re-evaluate mỗi 1 phút (không cần sync lại server)
+[ ] Xử lý timezone của device (từ device.timezone, default Asia/Ho_Chi_Minh)
+
+3.7  SYNC MANAGER
+───────────────────
+[ ] GET /api/device/sync khi:
+    - Khởi động lần đầu
+    - Nhận WebSocket event: schedule.update / content.update
+    - heartbeat trả về syncRequired: true (FIX-01 đã fix)
+    - Mỗi 30 phút (background refresh)
+[ ] Gửi currentContentHash để server biết có cần trả full payload không
+[ ] Sau sync: tính toán media nào cần download thêm / xóa bớt
+[ ] POST /api/device/heartbeat mỗi 30 giây
+[ ] POST /api/device/playback-log sau mỗi item phát xong
+
+3.8  OFFLINE STRATEGY
+───────────────────────
+*** THIẾT KẾ OFFLINE-FIRST TỪ ĐẦU ***
+
+[ ] SERVICE WORKER (sw.ts)
+    Đăng ký khi player load lần đầu
+    Chiến lược cache:
+    + /player/* (app shell JS/CSS)  → Cache First, update khi version mới
+    + /api/device/sync              → Network First + Fallback IndexedDB
+    + /media/files/*                → Cache First (đã pre-download)
+    + /api/device/heartbeat         → Network Only (không cache)
+    + Playback logs offline         → Background Sync (flush khi online)
+
+[ ] INDEXEDDB SCHEMA (idb version 1)
+    'device-info'   → { deviceId, token, serverUrl, timezone }
+    'schedule'      → { id: 'current', data: SyncPayload, contentHash, savedAt }
+    'media-meta'    → { id, checksum, size, cachedAt, expiresAt }
+    'pending-logs'  → { id (auto), deviceId, mediaId, playedAt, duration, completed }
+    'settings'      → { defaultPlaylistId, maxOfflineDays: 7, contentHash }
+
+[ ] CONTENT PRE-DOWNLOAD
+    Sau khi sync: tính diff media mới cần tải
+    1. Lấy danh sách mediaId từ schedules active + upcoming 24h
+    2. Check mediaId nào chưa có trong Cache API
+    3. Tải tuần tự (không parallel để tránh flood bandwidth)
+    4. Mỗi file: GET signed URL → download → verify SHA-256 → lưu Cache API
+    5. Xóa media không còn trong schedule nào (giải phóng storage)
+    6. Progress bar: "Đang tải nội dung: 3/10 (45%)"
+    7. Bắt đầu phát TRƯỚC khi tải xong (dùng stream nếu cache miss)
+
+[ ] OFFLINE DETECTION
+    Khi offline:
+    - Đọc schedule từ IndexedDB
+    - Load media từ Cache API (đã pre-download)
+    - Tiếp tục phát bình thường
+    - Indicator nhỏ ở góc: "● Offline" (màu vàng)
+    - Queue playback logs vào IndexedDB pending-logs
+    - Nếu offline > 7 ngày: phát fallback screen (logo + thông báo)
+
+    Khi có mạng lại:
+    - Sync schedule + download media mới
+    - Flush pending-logs qua batch API (max 500/request)
+    - Kết nối lại WebSocket
+
+[ ] STORAGE QUOTA MANAGEMENT
+    - Kiểm tra navigator.storage.estimate() trước khi download
+    - Nếu còn < 500MB: xóa media từ schedule đã qua (oldest first)
+    - Ưu tiên: active schedule > upcoming 24h > upcoming 7 ngày > cũ
+
+3.9  WEBSOCKET (Web Player)
+─────────────────────────────
+[ ] Kết nối Socket.IO namespace /device với device JWT
+[ ] Events nhận và xử lý:
+    + schedule.update   → re-sync + download media mới
+    + content.update    → reload playlist items
+    + command.restart   → gọi shell.restart() qua JavascriptInterface
+    + command.reload    → window.location.reload()
+    + command.screenshot → capture canvas → POST /api/device/screenshot
+    + command.clear_cache → xóa Cache API + IndexedDB → reload
+[ ] Auto-reconnect: exponential backoff (1s, 2s, 4s, 8s... max 60s)
+[ ] Heartbeat ping mỗi 30 giây để giữ kết nối
+
+3.10 HEALTH MONITORING (Web Player)
+─────────────────────────────────────
+[ ] Báo cáo mỗi 60 giây qua POST /api/device/heartbeat:
+    - currentMediaId, currentPlaylistId
+    - isPlaying, errorCount
+    - Dữ liệu hardware từ shell.reportHealth()
+[ ] Log lỗi playback: video decode error, 404 not found, iFrame blocked
+[ ] Gửi errors qua POST /api/device/status
+
+3.11 SECURITY - WEB PLAYER
+────────────────────────────
+[ ] Token lưu trong IndexedDB (KHÔNG localStorage, KHÔNG cookie)
+[ ] Mọi API call: Authorization: Bearer <token>
+[ ] Verify SHA-256 checksum sau khi download media
+[ ] Content-Security-Policy strict:
+    default-src 'self'; script-src 'self'; img-src 'self' blob:;
+    media-src 'self' blob:; frame-src 'self' <server-domain>;
+[ ] Chặn postMessage từ origin không phải serverUrl
+[ ] Media download dùng signed URL (hết hạn 1 giờ, xem FIX-04)
+[ ] Không log token vào console
+
+
+================================================================
+  PHASE 4: TESTING
+================================================================
+
+4.1  BACKEND TESTING
+──────────────────────
+[ ] Unit test services (Jest)
+    - auth.service: JWT generation, password hashing, pairing logic
+    - device-sync.service: contentHash comparison, schedule resolution
+    - media.service: MIME validation, file hash calculation
+[ ] Integration test API (Supertest)
+    - Auth flow: register → login → refresh → logout
+    - Multi-tenancy: user A không đọc data org B
+    - Device pairing flow: generate code → register → heartbeat → sync
+[ ] Test rate limiting (login lockout, device rate limit)
+[ ] Test file upload validation (wrong MIME, too large)
+[ ] Load test: 1000 devices gửi heartbeat cùng lúc (k6)
+[ ] Load test: 100 devices GET /sync cùng lúc
+
+4.2  FRONTEND TESTING
+───────────────────────
+[ ] Component unit tests (Vitest + Testing Library)
+[ ] E2E flow (Playwright):
+    - Login → upload media → tạo playlist → tạo schedule
+    - Pairing flow: generate code → verify device appears
+[ ] Test role-based UI: VIEWER không thấy nút xóa
+
+4.3  CLIENT PLAYER TESTING
+─────────────────────────────
+[ ] Unit test PlayerEngine (schedule resolution, playlist loop)
+[ ] Unit test Service Worker cache strategies
+[ ] Unit test SyncManager (contentHash comparison)
+[ ] Test offline mode: ngắt mạng, kiểm tra phát tiếp được
+[ ] Test reconnect: có mạng lại → logs flush đúng
+[ ] Test pre-download: upload media mới → TV tự tải
+[ ] Test storage quota đầy: media cũ bị xóa đúng thứ tự ưu tiên
+[ ] Test Android Shell: kiosk mode, boot receiver
+[ ] Test nhiều thiết bị (5-10 TV giả lập + 1-2 TV thật)
+[ ] Manual test trên Android TV thật
+
+4.4  SECURITY TESTING
+───────────────────────
+[ ] Test SQL injection (parameterized queries bảo vệ)
+[ ] Test XSS: inject <script> vào title/description
+[ ] Test unauthorized: không có token, token hết hạn, token sai org
+[ ] Test cross-tenant: user org A gọi API với ID của org B
+[ ] Test file upload bypass: đổi extension, sai MIME
+[ ] Test brute force: lockout sau 5 lần sai
+[ ] Test signed URL: media URL hết hạn → 401
+[ ] npm audit (scan dependencies vulnerabilities)
+
+
+================================================================
+  PHASE 5: DEPLOYMENT (PRODUCTION)
+================================================================
+
+5.1  INFRASTRUCTURE
+─────────────────────
+[ ] Provision servers
+[ ] Nginx: reverse proxy + SSL termination + static file serving
+    - /api/*     → proxy_pass Node.js :3000
+    - /admin/*   → static React build
+    - /player/*  → static Web Player PWA
+    - /media/files/* → X-Accel-Redirect (serve file từ /storage/media)
+[ ] PostgreSQL primary + replica (read replica cho analytics)
+[ ] Redis với persistence (appendonly)
+[ ] NAS/Storage với backup tự động
+
+5.2  DEPLOYMENT
+─────────────────
+[ ] CI/CD pipeline (GitHub Actions)
+[ ] Docker images cho production (multi-stage build)
+[ ] Backend: PM2 cluster mode hoặc Docker
+[ ] Environment variables qua secrets manager
+[ ] Health check endpoint: GET /health
+[ ] Build + sign Android Shell APK (1 lần)
+[ ] Distribute APK qua USB hoặc MDM
+
+5.3  MONITORING
+─────────────────
+[ ] Prometheus + Grafana (API latency, queue depth, device count)
+[ ] Sentry (error tracking: backend + frontend + player)
+[ ] Alert: device offline > 15 phút → notify admin
+[ ] Alert: queue depth > 100 → scale workers
+[ ] Log aggregation (ELK hoặc Loki)
+[ ] Backup: database daily, storage weekly, test restore monthly
+
+
+================================================================
+  CÁC NGUYÊN TẮC BẢO MẬT XUYÊN SUỐT
+================================================================
+
+1.  NEVER trust client input → validate & sanitize mọi thứ (Zod + DOMPurify)
+2.  NEVER store plaintext password → bcrypt cost 12+
+3.  NEVER log sensitive data (password, token, PII)
+4.  NEVER expose stack trace trong production response
+5.  NEVER store refresh token trong localStorage → HttpOnly cookie
+6.  ALWAYS dùng HTTPS (TLS 1.2+) cho mọi communication
+7.  ALWAYS set Content-Security-Policy headers
+8.  ALWAYS rate-limit authentication + device endpoints
+9.  ALWAYS kiểm tra permission (org isolation) trước khi trả data
+10. ALWAYS validate file type bằng MIME, không phải extension
+11. ALWAYS dùng parameterized queries (raw pg $1, $2...)
+12. ALWAYS verify checksum SHA-256 sau khi download media
+13. ALWAYS dùng signed URL cho media (expire 1 giờ)
+14. NEVER cache token/user info trong Service Worker
+15. ALWAYS rotate secrets định kỳ (JWT secret, DB password)
+16. ALWAYS run npm audit trước khi deploy
+
+
+================================================================
+  KIẾN TRÚC TỔNG QUAN (QUICK REFERENCE)
+================================================================
+
+REQUEST PIPELINE (Backend):
+  Request
+    → Helmet (security headers)
+    → CORS (whitelist check)
+    → Rate Limit (global 100/15min)
+    → Body Parser
+    → Route-specific Rate Limit (auth: 5/min, device: custom)
+    → authenticateJWT / authenticateDevice
+    → authorize(...roles)
+    → validate(ZodSchema)
+    → Service Layer (business logic)
+    → Raw pg (parameterized SQL)
+    → Response
+
+DATABASE PATTERN:
+  schema.prisma  → dùng để MIGRATE (npx prisma migrate dev)
+  raw pg pool    → dùng để QUERY (query(), queryOne(), withTransaction())
+  Redis          → JWT blacklist, refresh tokens, pairing codes, rate limit counters
+
+DEVICE LIFECYCLE:
+  1. Admin → generate pairing code (6 digits, 5min TTL, Redis)
+  2. Android Shell → POST /api/device/register {pairingCode, androidId, ...}
+  3. Server → issue device JWT (365 days) + update device record
+  4. Player → load, verify token, sync schedule
+  5. Player → heartbeat (30s) + playback-log (mỗi item)
+  6. Server → push updates qua WebSocket khi content thay đổi
+  7. Admin → remote command (restart/screenshot) qua WebSocket → Shell
+
+SYNC FLOW (sau FIX-01):
+  heartbeat {currentContentHash}
+    → server tính hash mới
+    → nếu khác: syncRequired: true
+    → device gọi GET /api/device/sync
+    → server trả full payload + contentHash mới
+    → device cập nhật IndexedDB + download media mới
+
+
+================================================================
+  HƯỚNG DẪN SỬ DỤNG FILE NÀY
+================================================================
+
+- Mở file này mỗi khi bắt đầu session
+- Làm CRITICAL FIXES trước khi tiếp tục phase mới
+- Check [x] khi hoàn thành task, [~] nếu partial
+- Ghi chú vấn đề gặp phải ngay trong file
+- Thứ tự làm: Critical Fixes → Phase 1 còn lại → Phase 2 → Phase 3 → 4 → 5
+
+NEXT ACTION (2026-02-25):
+  1. [x] FIX-01: syncRequired + contentHash (DONE)
+  2. [x] FIX-02: refresh token → HttpOnly cookie (DONE)
+  3. [x] FIX-03: rate limit device endpoints (DONE)
+  4. [x] FIX-04: signed media URLs (DONE)
+  5. [x] FIX-05: Nginx serve static files via X-Accel-Redirect (DONE)
+  6. [x] FIX-06: Align Prisma schema + fix dependencies (DONE)
+  7. [x] FIX-07: XSS sanitization (DONE)
+  8. [ ] Phase 1.5: WebSocket push events vào service layer
+  9. [ ] Frontend: bind data cho MediaPage + PlaylistsPage
+
+================================================================
