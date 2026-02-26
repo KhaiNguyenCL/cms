@@ -33,6 +33,13 @@ export const playlistsApi = {
         return data.data;
     },
 
+    updateItem: async (playlistId: string, itemId: string, payload: { durationOverride?: number | null; transition?: string | null }) => {
+        const { data } = await apiClient.put<ApiResponse<PlaylistItem>>(
+            `/playlists/${playlistId}/items/${itemId}`, payload
+        );
+        return data.data;
+    },
+
     removeItem: async (playlistId: string, itemId: string) => {
         await apiClient.delete(`/playlists/${playlistId}/items/${itemId}`);
     },

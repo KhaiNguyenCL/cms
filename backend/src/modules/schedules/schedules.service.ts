@@ -2,6 +2,7 @@ import { query, queryOne } from '../../shared/database/db';
 import { AppError } from '../../shared/middleware/error.middleware';
 import logger from '../../shared/utils/logger';
 import { invalidateContentHashForOrg } from '../device-sync/device-sync.service';
+import { findOrCreateAutoPlaylist } from '../playlists/playlists.service';
 import type { ListSchedulesQuery, CreateScheduleBody, UpdateScheduleBody } from './schedules.schema';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -115,10 +116,17 @@ export async function createSchedule(
     organizationId: string,
     data: CreateScheduleBody
 ): Promise<ScheduleRow> {
+    // Resolve playlistId: either direct or auto-create from mediaId
+    let resolvedPlaylistId = data.playlistId;
+    if (!resolvedPlaylistId && data.mediaId) {
+        resolvedPlaylistId = await findOrCreateAutoPlaylist(organizationId, data.mediaId);
+    }
+    if (!resolvedPlaylistId) throw new AppError(400, 'playlistId hoặc mediaId là bắt buộc');
+
     // Verify playlist belongs to org
     const playlist = await queryOne<{ id: string }>(
         `SELECT id FROM playlists WHERE id = $1 AND "organizationId" = $2`,
-        [data.playlistId, organizationId]
+        [resolvedPlaylistId, organizationId]
     );
     if (!playlist) throw new AppError(404, 'Playlist không tồn tại');
 
@@ -157,7 +165,7 @@ export async function createSchedule(
                    "startDate", "endDate", "startTime", "endTime",
                    "daysOfWeek", priority, "isActive", "createdAt", "updatedAt"`,
         [
-            organizationId, data.name, data.playlistId,
+            organizationId, data.name, resolvedPlaylistId,
             data.targetType, data.targetDeviceId ?? null, data.targetGroupId ?? null,
             data.startDate, data.endDate ?? null, data.startTime ?? null, data.endTime ?? null,
             data.daysOfWeek ?? [], data.priority ?? 0, data.isActive ?? true,

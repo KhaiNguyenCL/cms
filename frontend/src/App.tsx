@@ -31,6 +31,7 @@ const UsersPage = lazy(() => import('@pages/users/UsersPage'));
 const SettingsPage = lazy(() => import('@pages/settings/SettingsPage'));
 const SuperAdminPage = lazy(() => import('@pages/superadmin/SuperAdminPage'));
 const NotFoundPage = lazy(() => import('@pages/NotFoundPage'));
+const PlayerPage = lazy(() => import('@pages/player/PlayerPage'));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -63,6 +64,8 @@ function AppRoutes() {
             {/* Public */}
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
+            {/* Android TV WebView player — device JWT, no admin auth */}
+            <Route path="/player" element={<PlayerPage />} />
 
             {/* Protected — requires auth */}
             <Route element={<AuthGuard />}>

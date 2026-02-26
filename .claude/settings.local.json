@@ -11,7 +11,18 @@
       "Bash(cd /e/cms/backend && npm run db:seed 2>&1)",
       "Bash(head:*)",
       "Bash(cd /e/cms/frontend && npx tsc --noEmit 2>&1)",
-      "Bash(echo EXIT:$?:*)"
+      "Bash(echo EXIT:$?:*)",
+      "Bash(cd E:\\\\cms\\\\backend && npx prisma migrate dev --name add_playlist_is_auto_generated 2>&1)",
+      "Bash(cd /e/cms/backend && npx prisma migrate dev --name add_playlist_is_auto_generated 2>&1)",
+      "Bash(cd /e/cms/backend && npx prisma migrate dev --name add_playlist_is_auto_generated --create-only 2>&1)",
+      "Bash(PGPASSWORD=dev_password123 psql:*)",
+      "Bash(PGPASSWORD=postgres psql:*)",
+      "Bash(docker exec:*)",
+      "Bash(docker:*)",
+      "mcp__ide__getDiagnostics"
+    ],
+    "additionalDirectories": [
+      "E:\\player"
     ]
   }
 }

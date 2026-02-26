@@ -9,7 +9,7 @@ import {
 } from '@mui/material';
 import {
     Add, QueueMusic, MoreVert, Delete, VideoFile, Image, Language, PlayArrow,
-    Search, CheckCircle, AddCircle, DragIndicator,
+    Search, CheckCircle, AddCircle, DragIndicator, AllInclusive,
 } from '@mui/icons-material';
 import { playlistsApi } from '@api/playlists.api';
 import { mediaApi } from '@api/media.api';
@@ -83,11 +83,15 @@ function AddMediaDialog({
         onError: () => dispatch(pushToast({ severity: 'error', message: 'Failed to add media' })),
     });
 
+    // loopForever: Set of mediaIds that should loop forever (86400s)
+    const [loopForever, setLoopForever] = useState<Set<string>>(new Set());
+
     const toggleSelect = (mediaId: string) => {
         setSelected(prev => {
             const next = new Map(prev);
             if (next.has(mediaId)) {
                 next.delete(mediaId);
+                setLoopForever(lf => { const s = new Set(lf); s.delete(mediaId); return s; });
             } else {
                 next.set(mediaId, 10); // default 10s
             }
@@ -103,8 +107,23 @@ function AddMediaDialog({
         });
     };
 
+    const toggleLoop = (mediaId: string) => {
+        setLoopForever(prev => {
+            const next = new Set(prev);
+            if (next.has(mediaId)) {
+                next.delete(mediaId);
+                setSelected(s => { const m = new Map(s); m.set(mediaId, 10); return m; });
+            } else {
+                next.add(mediaId);
+                setSelected(s => { const m = new Map(s); m.set(mediaId, 86400); return m; });
+            }
+            return next;
+        });
+    };
+
     const handleClose = () => {
         setSelected(new Map());
+        setLoopForever(new Set());
         setSearch('');
         setPage(1);
         onClose();
@@ -216,15 +235,32 @@ function AddMediaDialog({
                                                 {/* Duration input (only for selected) */}
                                                 {isSelected && (
                                                     <Box onClick={(e) => e.stopPropagation()} mt={0.5}>
-                                                        <TextField
-                                                            label="Duration (s)"
-                                                            type="number"
-                                                            size="small"
-                                                            value={selected.get(media.id) ?? 10}
-                                                            onChange={(e) => setDuration(media.id, parseInt(e.target.value) || 10)}
-                                                            inputProps={{ min: 1, max: 3600 }}
-                                                            sx={{ width: '100%', '& .MuiInputBase-input': { py: 0.5 } }}
-                                                        />
+                                                        <Stack direction="row" alignItems="center" gap={0.5}>
+                                                            <Tooltip title={loopForever.has(media.id) ? 'Tắt hiện mãi' : 'Hiện mãi (86400s)'}>
+                                                                <IconButton
+                                                                    size="small"
+                                                                    color={loopForever.has(media.id) ? 'primary' : 'default'}
+                                                                    onClick={() => toggleLoop(media.id)}
+                                                                    sx={{ p: 0.5 }}
+                                                                >
+                                                                    <AllInclusive sx={{ fontSize: 16 }} />
+                                                                </IconButton>
+                                                            </Tooltip>
+                                                            {!loopForever.has(media.id) && (
+                                                                <TextField
+                                                                    label="Giây"
+                                                                    type="number"
+                                                                    size="small"
+                                                                    value={selected.get(media.id) ?? 10}
+                                                                    onChange={(e) => setDuration(media.id, parseInt(e.target.value) || 10)}
+                                                                    inputProps={{ min: 1, max: 86400 }}
+                                                                    sx={{ flex: 1, '& .MuiInputBase-input': { py: 0.5 } }}
+                                                                />
+                                                            )}
+                                                            {loopForever.has(media.id) && (
+                                                                <Typography variant="caption" color="primary" fontWeight={700}>Hiện mãi</Typography>
+                                                            )}
+                                                        </Stack>
                                                     </Box>
                                                 )}
                                             </CardContent>

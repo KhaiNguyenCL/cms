@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
+import path from 'path';
 import rateLimit from 'express-rate-limit';
 import config from '../config';
 import logger from './utils/logger';
@@ -74,9 +75,25 @@ app.use('/api/schedules', scheduleRoutes); // authenticate applied inside router
 app.use('/api/device-groups', deviceGroupRoutes); // authenticate applied inside router
 app.use('/api/analytics', analyticsRoutes); // authenticate applied inside router
 
-// ── 404 handler ───────────────────────────────────────────────
-app.use((_req, res) => {
-    res.status(404).json({ error: 'Route not found' });
+// ── Serve built frontend (SPA) ────────────────────────────────
+// In production: run `npm run build` in /frontend first.
+// Android WebView loads ${serverUrl}/player which is handled here.
+const frontendDist = path.resolve(__dirname, '../../../frontend/dist');
+app.use(express.static(frontendDist));
+
+// SPA fallback — all non-API, non-asset routes return index.html
+app.get(/^\/(?!api\/).*/, (_req, res) => {
+    const indexPath = path.join(frontendDist, 'index.html');
+    res.sendFile(indexPath, (err) => {
+        if (err) res.status(404).json({ error: 'Frontend not built. Run: cd frontend && npm run build' });
+    });
+});
+
+// ── 404 handler (API routes only) ────────────────────────────
+app.use((req, res) => {
+    if (req.path.startsWith('/api/')) {
+        res.status(404).json({ error: 'Route not found' });
+    }
 });
 
 // ── Global error handler ──────────────────────────────────────

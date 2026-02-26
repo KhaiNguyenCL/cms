@@ -155,6 +155,10 @@ export async function uploadMedia(
 
     const displayTitle = title || path.basename(file.originalname, ext);
 
+    // Videos start as PROCESSING — the transcoding worker will set them READY.
+    // Images are already processed above (sharp), so they go straight to READY.
+    const initialStatus = mediaType === 'VIDEO' ? 'PROCESSING' : 'READY';
+
     const rows = await query<MediaRow>(
         `INSERT INTO media (
             id, "organizationId", "uploadedById", title, description, type,
@@ -165,7 +169,7 @@ export async function uploadMedia(
             gen_random_uuid()::text, $1, $2, $3, NULL, $4,
             $5, $6, $7, $8,
             NULL, $9, $10, $11,
-            $12, $13, 'READY', NOW(), NOW()
+            $12, $13, $14, NOW(), NOW()
          )
          RETURNING id, "organizationId", "uploadedById", title, description, type,
                    "filePath", "fileSize", "mimeType", "fileHash", duration, width, height,
@@ -176,12 +180,28 @@ export async function uploadMedia(
             width, height, thumbnailPath,
             [],   // tags: text[] — pg driver handles JS array natively
             {},   // metadata: jsonb — pg driver handles JS object natively
+            initialStatus,
         ]
     );
 
     logger.info('Media uploaded', { mediaId: rows[0].id, type: mediaType, size: file.size });
-    // Media mới có thể được thêm vào playlist → invalidate hash
-    invalidateContentHashForOrg(organizationId).catch(() => {});
+
+    if (mediaType === 'VIDEO') {
+        // Enqueue background transcoding (extracts metadata + thumbnail + re-encodes)
+        const { enqueueVideoTranscoding } = await import('../../shared/jobs');
+        await enqueueVideoTranscoding({
+            mediaId: rows[0].id,
+            organizationId,
+            filePath: finalPath,
+            mimeType: file.mimetype,
+            outputDir: mediaDir,
+        });
+        logger.info('Video transcoding job enqueued', { mediaId: rows[0].id });
+    } else {
+        // Image is READY immediately — invalidate content hash now
+        invalidateContentHashForOrg(organizationId).catch(() => {});
+    }
+
     return rows[0];
 }
 

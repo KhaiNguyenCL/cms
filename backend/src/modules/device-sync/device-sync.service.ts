@@ -124,6 +124,14 @@ export async function invalidateContentHashForOrg(organizationId: string): Promi
     }
     await pipeline.exec();
     logger.debug('Content hash cache invalidated', { organizationId, deviceCount: devices.length });
+
+    // Push real-time update to all connected devices and admin dashboard clients
+    try {
+        const { broadcastContentUpdate } = await import('../../shared/socket/socket.server');
+        broadcastContentUpdate(organizationId, 'content.update');
+    } catch {
+        // Socket.IO not yet initialized (e.g., test environment) — fall through
+    }
 }
 
 // ─── 1. Register device (first pairing via pairingCode) ──────────────────────

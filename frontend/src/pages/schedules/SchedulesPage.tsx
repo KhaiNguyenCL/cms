@@ -10,15 +10,17 @@ import {
 } from '@mui/material';
 import {
     Add, Delete, EventNote, Search, CalendarMonth, AccessTime,
-    Edit, Devices, Groups, Public, Circle,
+    Edit, Devices, Groups, Public, Circle, QueueMusic, Image as ImageIcon, VideoFile,
 } from '@mui/icons-material';
+import { Autocomplete } from '@mui/material';
 import { schedulesApi, type CreateSchedulePayload } from '@api/schedules.api';
 import { playlistsApi } from '@api/playlists.api';
+import { mediaApi } from '@api/media.api';
 import { devicesApi } from '@api/devices.api';
 import { deviceGroupsApi } from '@api/device-groups.api';
 import { useAppDispatch } from '@store/hooks';
 import { pushToast } from '@store/slices/uiSlice';
-import type { Schedule } from '@/types';
+import type { Schedule, Media } from '@/types';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -64,7 +66,7 @@ function formatDate(d: string | null) {
 
 const EMPTY_FORM: CreateSchedulePayload = {
     name: '',
-    playlistId: '',
+    playlistId: undefined,
     targetType: 'ALL',
     targetDeviceId: null,
     targetGroupId: null,
@@ -88,6 +90,12 @@ function ScheduleFormDialog({
 }) {
     const dispatch = useAppDispatch();
     const qc = useQueryClient();
+
+    // source: 'playlist' = chọn playlist, 'media' = chọn media trực tiếp
+    const [source, setSource] = useState<'playlist' | 'media'>('playlist');
+    const [selectedMedia, setSelectedMedia] = useState<Media | null>(null);
+    const [mediaSearch, setMediaSearch] = useState('');
+
     const [form, setForm] = useState<CreateSchedulePayload>(
         editing
             ? {
@@ -109,11 +117,15 @@ function ScheduleFormDialog({
 
     // Reset form when dialog opens
     const handleOpen = () => {
+        const isAutoPlaylist = editing?.playlistName?.startsWith('[Auto] ');
+        setSource(isAutoPlaylist ? 'media' : 'playlist');
+        setSelectedMedia(null);
+        setMediaSearch('');
         setForm(
             editing
                 ? {
                     name: editing.name,
-                    playlistId: editing.playlistId,
+                    playlistId: isAutoPlaylist ? undefined : editing.playlistId,
                     targetType: editing.targetType,
                     targetDeviceId: editing.targetDeviceId,
                     targetGroupId: editing.targetGroupId,
@@ -132,9 +144,16 @@ function ScheduleFormDialog({
     const { data: playlistsData } = useQuery({
         queryKey: ['playlists-all'],
         queryFn: () => playlistsApi.list({ limit: 100 }),
-        enabled: open,
+        enabled: open && source === 'playlist',
     });
     const playlists = playlistsData?.data ?? [];
+
+    const { data: mediaData } = useQuery({
+        queryKey: ['media-schedule', mediaSearch],
+        queryFn: () => mediaApi.list({ limit: 30, search: mediaSearch || undefined }),
+        enabled: open && source === 'media',
+    });
+    const mediaList: Media[] = mediaData?.data ?? [];
 
     const { data: devicesData } = useQuery({
         queryKey: ['devices-all'],
@@ -150,10 +169,15 @@ function ScheduleFormDialog({
     });
 
     const mutation = useMutation({
-        mutationFn: () =>
-            editing
-                ? schedulesApi.update(editing.id, form)
-                : schedulesApi.create(form),
+        mutationFn: () => {
+            const payload: CreateSchedulePayload =
+                source === 'media' && selectedMedia
+                    ? { ...form, playlistId: undefined, mediaId: selectedMedia.id }
+                    : form;
+            return editing
+                ? schedulesApi.update(editing.id, payload)
+                : schedulesApi.create(payload);
+        },
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: ['schedules'] });
             dispatch(pushToast({ severity: 'success', message: editing ? 'Schedule updated!' : 'Schedule created!' }));
@@ -174,7 +198,8 @@ function ScheduleFormDialog({
     const field = <K extends keyof CreateSchedulePayload>(key: K) => (value: CreateSchedulePayload[K]) =>
         setForm(prev => ({ ...prev, [key]: value }));
 
-    const isValid = form.name && form.playlistId && form.startDate;
+    const isValid = form.name && form.startDate &&
+        (source === 'playlist' ? !!form.playlistId : !!selectedMedia);
 
     return (
         <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth TransitionProps={{ onEnter: handleOpen }}>
@@ -189,19 +214,68 @@ function ScheduleFormDialog({
                         fullWidth required
                     />
 
-                    {/* Playlist */}
-                    <FormControl fullWidth required>
-                        <InputLabel>Playlist</InputLabel>
-                        <Select
-                            value={form.playlistId}
-                            label="Playlist"
-                            onChange={(e) => field('playlistId')(e.target.value)}
+                    {/* Source: Playlist or Direct Media */}
+                    <Box>
+                        <Typography variant="caption" color="text.secondary" display="block" mb={1}>
+                            Nội dung phát
+                        </Typography>
+                        <ToggleButtonGroup
+                            value={source}
+                            exclusive
+                            onChange={(_, v) => { if (v) { setSource(v); setSelectedMedia(null); field('playlistId')(undefined as any); } }}
+                            size="small"
+                            sx={{ mb: 1.5 }}
                         >
-                            {playlists.map(p => (
-                                <MuiMenuItem key={p.id} value={p.id}>{p.name}</MuiMenuItem>
-                            ))}
-                        </Select>
-                    </FormControl>
+                            <ToggleButton value="playlist" sx={{ px: 2, fontWeight: 600 }}>
+                                <QueueMusic sx={{ fontSize: 16, mr: 0.5 }} /> Playlist
+                            </ToggleButton>
+                            <ToggleButton value="media" sx={{ px: 2, fontWeight: 600 }}>
+                                <ImageIcon sx={{ fontSize: 16, mr: 0.5 }} /> Media trực tiếp
+                            </ToggleButton>
+                        </ToggleButtonGroup>
+
+                        {source === 'playlist' ? (
+                            <FormControl fullWidth required>
+                                <InputLabel>Playlist</InputLabel>
+                                <Select
+                                    value={form.playlistId ?? ''}
+                                    label="Playlist"
+                                    onChange={(e) => field('playlistId')(e.target.value)}
+                                >
+                                    {playlists.map(p => (
+                                        <MuiMenuItem key={p.id} value={p.id}>{p.name}</MuiMenuItem>
+                                    ))}
+                                </Select>
+                                <FormHelperText>Media trong playlist sẽ phát theo thứ tự, lặp lại</FormHelperText>
+                            </FormControl>
+                        ) : (
+                            <Autocomplete
+                                options={mediaList}
+                                value={selectedMedia}
+                                onChange={(_, v) => setSelectedMedia(v)}
+                                onInputChange={(_, v) => setMediaSearch(v)}
+                                getOptionLabel={(o) => o.title}
+                                isOptionEqualToValue={(a, b) => a.id === b.id}
+                                renderOption={(props, option) => (
+                                    <Box component="li" {...props} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                        {option.type === 'VIDEO'
+                                            ? <VideoFile sx={{ fontSize: 18, color: 'text.secondary' }} />
+                                            : <ImageIcon sx={{ fontSize: 18, color: 'text.secondary' }} />}
+                                        <Box>
+                                            <Typography variant="body2" fontWeight={600}>{option.title}</Typography>
+                                            <Typography variant="caption" color="text.secondary">{option.type}</Typography>
+                                        </Box>
+                                    </Box>
+                                )}
+                                renderInput={(params) => (
+                                    <TextField {...params} label="Tìm media" required
+                                        placeholder="Gõ tên media..."
+                                    />
+                                )}
+                                noOptionsText="Không tìm thấy media"
+                            />
+                        )}
+                    </Box>
 
                     <Divider><Typography variant="caption" color="text.secondary">Target</Typography></Divider>
 
@@ -499,14 +573,26 @@ export default function SchedulesPage() {
                                         )}
                                     </TableCell>
 
-                                    {/* Playlist */}
+                                    {/* Playlist / Direct media */}
                                     <TableCell>
-                                        <Chip
-                                            label={s.playlistName ?? s.playlistId.slice(0, 8) + '…'}
-                                            size="small"
-                                            variant="outlined"
-                                            sx={{ fontWeight: 600, fontSize: '0.65rem' }}
-                                        />
+                                        {s.playlistName?.startsWith('[Auto] ') ? (
+                                            <Chip
+                                                icon={<ImageIcon sx={{ fontSize: 12 }} />}
+                                                label={s.playlistName.slice(7)}
+                                                size="small"
+                                                color="secondary"
+                                                variant="outlined"
+                                                sx={{ fontWeight: 600, fontSize: '0.65rem' }}
+                                            />
+                                        ) : (
+                                            <Chip
+                                                icon={<QueueMusic sx={{ fontSize: 12 }} />}
+                                                label={s.playlistName ?? s.playlistId?.slice(0, 8) + '…'}
+                                                size="small"
+                                                variant="outlined"
+                                                sx={{ fontWeight: 600, fontSize: '0.65rem' }}
+                                            />
+                                        )}
                                     </TableCell>
 
                                     {/* Target */}

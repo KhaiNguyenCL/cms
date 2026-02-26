@@ -19,7 +19,8 @@ export const listSchedulesSchema = z.object({
 export const createScheduleSchema = z.object({
     body: z.object({
         name: z.string().min(1).max(200),
-        playlistId: z.string().min(1),
+        playlistId: z.string().min(1).optional(),
+        mediaId: z.string().min(1).optional(),
         targetType: z.enum(SCHEDULE_TARGETS).default('ALL'),
         targetDeviceId: z.string().optional().nullable(),
         targetGroupId: z.string().optional().nullable(),
@@ -32,6 +33,9 @@ export const createScheduleSchema = z.object({
         priority: z.number().int().min(0).max(100).optional().default(0),
         isActive: z.boolean().optional().default(true),
     }).superRefine((d, ctx) => {
+        if (!d.playlistId && !d.mediaId) {
+            ctx.addIssue({ code: 'custom', path: ['playlistId'], message: 'playlistId hoặc mediaId là bắt buộc' });
+        }
         if (d.targetType === 'DEVICE' && !d.targetDeviceId) {
             ctx.addIssue({ code: 'custom', path: ['targetDeviceId'], message: 'targetDeviceId bắt buộc khi targetType=DEVICE' });
         }
@@ -62,5 +66,5 @@ export const updateScheduleSchema = z.object({
 });
 
 export type ListSchedulesQuery = z.infer<typeof listSchedulesSchema>['query'];
-export type CreateScheduleBody = z.infer<typeof createScheduleSchema>['body'];
+export type CreateScheduleBody = z.infer<typeof createScheduleSchema>['body'] & { mediaId?: string };
 export type UpdateScheduleBody = z.infer<typeof updateScheduleSchema>['body'];

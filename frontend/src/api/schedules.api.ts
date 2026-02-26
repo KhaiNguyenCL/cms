@@ -3,7 +3,8 @@ import type { ApiResponse, PaginatedResponse, Schedule } from '@/types';
 
 export interface CreateSchedulePayload {
     name: string;
-    playlistId: string;
+    playlistId?: string;
+    mediaId?: string;
     targetType?: 'ALL' | 'DEVICE' | 'GROUP';
     targetDeviceId?: string | null;
     targetGroupId?: string | null;

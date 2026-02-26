@@ -55,8 +55,9 @@ export function initSocketIO(server: http.Server): SocketIOServer {
         const deviceId = socket.user.userId;
         const orgId = socket.user.organizationId;
 
-        // Device joins its own private room
+        // Device joins its own private room + org-wide room (for content broadcasts)
         socket.join(deviceRoom(deviceId));
+        socket.join(orgRoom(orgId));
         logger.info('Device connected via WebSocket', { deviceId });
 
         // Notify admin dashboard that this device is online
@@ -111,6 +112,12 @@ export function initSocketIO(server: http.Server): SocketIOServer {
 
         socket.on('disconnect', (reason) => {
             logger.info('Device disconnected', { deviceId, reason });
+
+            // Update device status to OFFLINE in DB
+            import('../../modules/device-sync/device-sync.service')
+                .then(({ markDeviceOffline }) => markDeviceOffline(deviceId, orgId))
+                .catch((err) => logger.error('Failed to mark device offline', { deviceId, err }));
+
             io!.of('/admin').to(orgRoom(orgId)).emit('device.status', {
                 deviceId,
                 status: 'OFFLINE',

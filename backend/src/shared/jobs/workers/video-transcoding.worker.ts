@@ -15,6 +15,7 @@ import fs from 'fs';
 import bullmqConnection from '../bullmq.connection';
 import { QUEUE_NAMES, VideoTranscodingJobData } from '../queues';
 import { query } from '../../database/db';
+import { invalidateContentHashForOrg } from '../../../modules/device-sync/device-sync.service';
 import logger from '../../utils/logger';
 import config from '../../../config';
 
@@ -74,6 +75,7 @@ export const videoTranscodingWorker = new Worker<VideoTranscodingJobData>(
                 `UPDATE media SET status = 'READY', duration = $1, width = $2, height = $3, "updatedAt" = NOW() WHERE id = $4`,
                 [meta.duration, meta.width, meta.height, mediaId]
             );
+            invalidateContentHashForOrg(job.data.organizationId).catch(() => {});
             return { mediaId, status: 'READY', note: 'ffmpeg unavailable, original file kept' };
         }
 
@@ -122,6 +124,10 @@ export const videoTranscodingWorker = new Worker<VideoTranscodingJobData>(
 
         await job.updateProgress(100);
         logger.info('Video transcoding completed', { mediaId, outputMp4, duration: meta.duration });
+
+        // Invalidate content hash so connected devices get push notification
+        invalidateContentHashForOrg(job.data.organizationId).catch(() => {});
+
         return { mediaId, outputMp4, thumbnailPath: thumbPath, ...meta };
     },
     {

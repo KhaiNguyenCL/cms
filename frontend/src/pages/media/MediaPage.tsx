@@ -368,6 +368,11 @@ export default function MediaPage() {
     const { data, isLoading } = useQuery({
         queryKey: ['media', page, search, typeFilter],
         queryFn: () => mediaApi.list({ page, limit: LIMIT, search: search || undefined, type: typeFilter || undefined }),
+        // Poll every 3s while any item is still transcoding, stop once all are READY/ERROR
+        refetchInterval: (query) => {
+            const items = (query.state.data as typeof data)?.data;
+            return Array.isArray(items) && items.some(m => m.status === 'PROCESSING') ? 3_000 : false;
+        },
     });
 
     const deleteMutation = useMutation({

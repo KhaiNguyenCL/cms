@@ -33,7 +33,7 @@ export const addItemSchema = z.object({
     params: z.object({ id: z.string().min(1) }),
     body: z.object({
         mediaId: z.string().min(1),
-        durationOverride: z.number().int().min(1).max(3600).optional().nullable(),
+        durationOverride: z.number().int().min(1).max(86400).optional().nullable(),
         transition: z.string().max(50).optional().nullable(),
     }),
 });
@@ -41,7 +41,7 @@ export const addItemSchema = z.object({
 export const updateItemSchema = z.object({
     params: z.object({ id: z.string().min(1), itemId: z.string().min(1) }),
     body: z.object({
-        durationOverride: z.number().int().min(1).max(3600).optional().nullable(),
+        durationOverride: z.number().int().min(1).max(86400).optional().nullable(),
         transition: z.string().max(50).optional().nullable(),
     }).refine(d => Object.keys(d).length > 0, { message: 'Phải cung cấp ít nhất một trường' }),
 });

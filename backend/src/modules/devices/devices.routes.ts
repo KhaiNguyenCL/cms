@@ -1,7 +1,18 @@
 import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
 import * as devController from './devices.controller';
 import { authenticate, authorize } from '../../shared/middleware/auth.middleware';
 import { validate } from '../../shared/middleware/validate.middleware';
+
+// Max 10 commands per device per minute per IP — prevents command spam
+const commandRateLimit = rateLimit({
+    windowMs: 60_000,
+    max: 10,
+    keyGenerator: (req) => `${req.ip}:${req.params.id}`,
+    message: { error: 'Quá nhiều lệnh được gửi. Vui lòng thử lại sau.' },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
 import {
     listDevicesSchema, updateDeviceSchema,
     deviceCommandSchema, createGroupSchema, updateGroupSchema, createDeviceSchema,
@@ -119,7 +130,7 @@ router.delete('/:id', authorize('ADMIN'), devController.deleteDevice);
  * @desc    Gửi lệnh tới device (RESTART, SCREENSHOT, RELOAD_CONTENT, CLEAR_CACHE)
  * @access  Private (ADMIN, MANAGER)
  */
-router.post('/:id/command', authorize('ADMIN', 'MANAGER'), validate(deviceCommandSchema), devController.sendCommand);
+router.post('/:id/command', commandRateLimit, authorize('ADMIN', 'MANAGER'), validate(deviceCommandSchema), devController.sendCommand);
 
 /**
  * @route   GET /api/devices/:id/screenshot

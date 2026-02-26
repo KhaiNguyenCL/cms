@@ -1,14 +1,17 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
+import { useSocket } from '@hooks/useSocket';
 import {
     Box, Drawer, AppBar, Toolbar, Typography, IconButton, Avatar,
     List, ListItemButton, ListItemIcon, ListItemText, Tooltip,
     Divider, Menu, MenuItem, Badge, useTheme, useMediaQuery,
+    Dialog, DialogTitle, DialogContent, DialogActions, Button,
 } from '@mui/material';
 import {
     Dashboard, Tv, PermMedia, QueueMusic, CalendarMonth, BarChart,
     People, Settings, Menu as MenuIcon, LightMode, DarkMode,
-    NotificationsNone, Logout, ChevronLeft, AdminPanelSettings,
+    NotificationsNone, Logout, ChevronLeft, AdminPanelSettings, Close,
 } from '@mui/icons-material';
 import { useAppDispatch, useAppSelector } from '@store/hooks';
 import { toggleColorMode, setSidebarOpen } from '@store/slices/uiSlice';
@@ -45,6 +48,44 @@ export default function DashboardLayout() {
     const user = useAppSelector((s) => s.auth.user);
 
     const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+
+    // Real-time: connect to /admin Socket.IO namespace and invalidate cache on content changes
+    const queryClient = useQueryClient();
+    const { socket } = useSocket();
+    const [screenshot, setScreenshot] = useState<{ deviceId: string; url: string; timestamp: string } | null>(null);
+
+    useEffect(() => {
+        if (!socket) return;
+
+        const invalidateContent = () => {
+            queryClient.invalidateQueries({ queryKey: ['playlists'] });
+            queryClient.invalidateQueries({ queryKey: ['schedules'] });
+            queryClient.invalidateQueries({ queryKey: ['media'] });
+        };
+
+        // Refresh device list only on meaningful status transitions (not every heartbeat)
+        const handleDeviceStatus = (data: { deviceId: string; status: string }) => {
+            if (data.status === 'ONLINE' || data.status === 'OFFLINE') {
+                queryClient.invalidateQueries({ queryKey: ['devices'] });
+            }
+        };
+
+        const handleScreenshot = (data: { deviceId: string; url: string; timestamp: string }) => {
+            setScreenshot(data);
+        };
+
+        socket.on('content.update', invalidateContent);
+        socket.on('schedule.update', invalidateContent);
+        socket.on('device.status', handleDeviceStatus);
+        socket.on('device.screenshot', handleScreenshot);
+
+        return () => {
+            socket.off('content.update', invalidateContent);
+            socket.off('schedule.update', invalidateContent);
+            socket.off('device.status', handleDeviceStatus);
+            socket.off('device.screenshot', handleScreenshot);
+        };
+    }, [socket, queryClient]);
 
     const drawerWidth = sidebarOpen ? DRAWER_WIDTH : COLLAPSED_WIDTH;
 
@@ -184,6 +225,7 @@ export default function DashboardLayout() {
     );
 
     return (
+        <>
         <Box sx={{ display: 'flex', minHeight: '100vh' }}>
             {/* ── Permanent sidebar (desktop) ── */}
             {!isMobile && (
@@ -266,5 +308,38 @@ export default function DashboardLayout() {
                 </Box>
             </Box>
         </Box>
+
+        {/* Screenshot dialog — shown when a device pushes a screenshot result */}
+        <Dialog open={Boolean(screenshot)} onClose={() => setScreenshot(null)} maxWidth="md" fullWidth>
+            <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', pb: 1 }}>
+                <Box>
+                    <Typography variant="h6" fontWeight={700}>Device Screenshot</Typography>
+                    <Typography variant="caption" color="text.secondary">
+                        Device {screenshot?.deviceId?.slice(0, 8)}…
+                        {screenshot?.timestamp ? ` · ${new Date(screenshot.timestamp).toLocaleString()}` : ''}
+                    </Typography>
+                </Box>
+                <IconButton size="small" onClick={() => setScreenshot(null)} sx={{ mt: -0.5 }}>
+                    <Close fontSize="small" />
+                </IconButton>
+            </DialogTitle>
+            <DialogContent sx={{ p: 0, bgcolor: 'grey.900' }}>
+                {screenshot?.url ? (
+                    <img
+                        src={screenshot.url}
+                        alt="Device screenshot"
+                        style={{ width: '100%', display: 'block', maxHeight: '70vh', objectFit: 'contain' }}
+                    />
+                ) : (
+                    <Box sx={{ p: 6, textAlign: 'center' }}>
+                        <Typography color="grey.500">No screenshot URL received from device</Typography>
+                    </Box>
+                )}
+            </DialogContent>
+            <DialogActions sx={{ p: 2 }}>
+                <Button onClick={() => setScreenshot(null)}>Close</Button>
+            </DialogActions>
+        </Dialog>
+        </>
     );
 }
