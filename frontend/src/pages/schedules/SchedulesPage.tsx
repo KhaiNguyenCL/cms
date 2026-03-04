@@ -62,22 +62,28 @@ function formatDate(d: string | null) {
     return new Date(d).toLocaleDateString();
 }
 
-// ── Create / Edit Schedule Dialog ─────────────────────────────────────────────
+/** Parse date from API (ISO timestamp or YYYY-MM-DD) → YYYY-MM-DD in local timezone */
+function toLocalDateStr(d: string | null | undefined): string {
+    if (!d) return '';
+    return new Date(d).toLocaleDateString('en-CA'); // en-CA = YYYY-MM-DD
+}
 
-const EMPTY_FORM: CreateSchedulePayload = {
-    name: '',
-    playlistId: undefined,
-    targetType: 'ALL',
-    targetDeviceId: null,
-    targetGroupId: null,
-    startDate: new Date().toISOString().slice(0, 10),
-    endDate: null,
-    startTime: null,
-    endTime: null,
-    daysOfWeek: [],
-    priority: 0,
-    isActive: true,
-};
+function makeEmptyForm(): CreateSchedulePayload {
+    return {
+        name: '',
+        playlistId: undefined,
+        targetType: 'ALL',
+        targetDeviceId: null,
+        targetGroupId: null,
+        startDate: new Date().toLocaleDateString('en-CA'),
+        endDate: null,
+        startTime: null,
+        endTime: null,
+        daysOfWeek: [],
+        priority: 0,
+        isActive: true,
+    };
+}
 
 function ScheduleFormDialog({
     open,
@@ -104,23 +110,38 @@ function ScheduleFormDialog({
                 targetType: editing.targetType,
                 targetDeviceId: editing.targetDeviceId,
                 targetGroupId: editing.targetGroupId,
-                startDate: editing.startDate?.slice(0, 10) ?? '',
-                endDate: editing.endDate?.slice(0, 10) ?? null,
+                startDate: toLocalDateStr(editing.startDate),
+                endDate: toLocalDateStr(editing.endDate) || null,
                 startTime: editing.startTime,
                 endTime: editing.endTime,
                 daysOfWeek: editing.daysOfWeek ?? [],
                 priority: editing.priority,
                 isActive: editing.isActive,
             }
-            : EMPTY_FORM
+            : makeEmptyForm()
     );
 
     // Reset form when dialog opens
     const handleOpen = () => {
         const isAutoPlaylist = editing?.playlistName?.startsWith('[Auto] ');
         setSource(isAutoPlaylist ? 'media' : 'playlist');
-        setSelectedMedia(null);
         setMediaSearch('');
+
+        // Restore the selected media for direct-media schedules using the
+        // directMediaId/Title/Type fields returned by the backend LATERAL join.
+        if (isAutoPlaylist && editing?.directMediaId && editing?.directMediaTitle) {
+            setSelectedMedia({
+                id: editing.directMediaId,
+                title: editing.directMediaTitle,
+                type: (editing.directMediaType ?? 'VIDEO') as any,
+                // Unused fields — only id/title/type are needed by the Autocomplete
+                organizationId: '', status: 'READY', filePath: '', mimeType: '',
+                fileSize: 0, duration: null, width: null, height: null,
+                thumbnailPath: null, tags: [], createdAt: '', updatedAt: '',
+            });
+        } else {
+            setSelectedMedia(null);
+        }
         setForm(
             editing
                 ? {
@@ -129,15 +150,15 @@ function ScheduleFormDialog({
                     targetType: editing.targetType,
                     targetDeviceId: editing.targetDeviceId,
                     targetGroupId: editing.targetGroupId,
-                    startDate: editing.startDate?.slice(0, 10) ?? '',
-                    endDate: editing.endDate?.slice(0, 10) ?? null,
+                    startDate: toLocalDateStr(editing.startDate),
+                    endDate: toLocalDateStr(editing.endDate) || null,
                     startTime: editing.startTime,
                     endTime: editing.endTime,
                     daysOfWeek: editing.daysOfWeek ?? [],
                     priority: editing.priority,
                     isActive: editing.isActive,
                 }
-                : EMPTY_FORM
+                : makeEmptyForm()
         );
     };
 
@@ -256,8 +277,8 @@ function ScheduleFormDialog({
                                 onInputChange={(_, v) => setMediaSearch(v)}
                                 getOptionLabel={(o) => o.title}
                                 isOptionEqualToValue={(a, b) => a.id === b.id}
-                                renderOption={(props, option) => (
-                                    <Box component="li" {...props} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                renderOption={({ key, ...props }, option) => (
+                                    <Box key={key} component="li" {...props} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                         {option.type === 'VIDEO'
                                             ? <VideoFile sx={{ fontSize: 18, color: 'text.secondary' }} />
                                             : <ImageIcon sx={{ fontSize: 18, color: 'text.secondary' }} />}

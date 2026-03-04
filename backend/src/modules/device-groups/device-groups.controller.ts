@@ -28,7 +28,8 @@ export async function createGroup(req: Request, res: Response, next: NextFunctio
     } catch (err) { next(err); }
 }
 
-// ─── Update group ─────────────────────────────────────────────────────────────
+// ─── Update group ─────────
+// ────────────────────────────────────────────────────
 
 export async function updateGroup(req: Request, res: Response, next: NextFunction) {
     try {

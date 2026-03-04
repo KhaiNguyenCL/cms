@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import config from '../../config';
 import { AppError } from './error.middleware';
+import { queryOne } from '../database/db';
 
 export interface JwtPayload {
     userId: string;
@@ -19,7 +20,7 @@ declare global {
     }
 }
 
-export function authenticate(req: Request, _res: Response, next: NextFunction) {
+export async function authenticate(req: Request, _res: Response, next: NextFunction) {
     const authHeader = req.headers.authorization;
     if (!authHeader?.startsWith('Bearer ')) {
         return next(new AppError(401, 'Authorization token required'));
@@ -33,6 +34,19 @@ export function authenticate(req: Request, _res: Response, next: NextFunction) {
             return next(new AppError(403, 'Invalid token type'));
         }
         req.user = payload;
+
+        if (payload.role === 'SUPER_ADMIN') {
+            const overrideOrgId = req.headers['x-organization-id'] as string | undefined;
+            if (overrideOrgId && overrideOrgId !== payload.organizationId) {
+                const org = await queryOne<{ isActive: boolean }>(
+                    `SELECT "isActive" FROM organizations WHERE id = $1`, [overrideOrgId]
+                );
+                if (!org) return next(new AppError(400, 'Target organization not found'));
+                if (!org.isActive) return next(new AppError(400, 'Target organization is inactive'));
+                req.user = { ...payload, organizationId: overrideOrgId };
+            }
+        }
+
         next();
     } catch {
         return next(new AppError(401, 'Invalid or expired token'));
@@ -52,7 +66,14 @@ export function authenticateDevice(req: Request, _res: Response, next: NextFunct
             return next(new AppError(403, 'Invalid token type'));
         }
         req.user = payload;
-        next();
+
+        // Check if device has been reset/blacklisted
+        import('../cache/redis').then(({ default: redis, RedisKeys }) => {
+            redis.get(RedisKeys.deviceBlacklist(payload.userId)).then(blacklisted => {
+                if (blacklisted) return next(new AppError(401, 'Device token revoked — re-pairing required'));
+                next();
+            }).catch(() => next()); // Redis failure → allow through
+        }).catch(() => next());
     } catch {
         return next(new AppError(401, 'Invalid or expired device token'));
     }

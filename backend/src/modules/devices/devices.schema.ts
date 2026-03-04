@@ -2,7 +2,12 @@ import { z } from 'zod';
 
 export const DEVICE_STATUSES = ['ONLINE', 'OFFLINE', 'ERROR'] as const;
 export const DEVICE_REG_STATUSES = ['REGISTERED', 'PAIRED', 'REVOKED', 'REPLACED'] as const;
-export const DEVICE_COMMANDS = ['RESTART', 'SCREENSHOT', 'RELOAD_CONTENT', 'CLEAR_CACHE'] as const;
+export const DEVICE_COMMANDS = [
+    'RESTART', 'SCREENSHOT', 'RELOAD_CONTENT', 'CLEAR_CACHE',
+    'SLEEP', 'WAKE_UP', 'VIEWER_RESTART', 'DOWNLOAD_CONTENT',
+    'SET_VOLUME',
+    'EXIT_APP',
+] as const;
 
 // ─── STEP 1: Register Device ──────────────────────────────────────────────────
 

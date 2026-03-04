@@ -75,12 +75,77 @@ export interface Device {
     osVersion: string | null;
     appVersion: string | null;
     status: DeviceStatus;
+    isLicensed: boolean;
     lastSeen: string | null;
+    lastOfflineAt: string | null;
     location: string | null;
     timezone: string;
     settings: Record<string, unknown> | null;
+    storeId: string | null;
+    storeName?: string | null;
     createdAt: string;
     updatedAt: string;
+}
+
+// ─── Stores ───────────────────────────────────────────────────────────────────
+
+export interface Store {
+    id: string;
+    organizationId: string;
+    name: string;
+    description: string | null;
+    address: string | null;
+    contact: string | null;
+    openDate: string | null;
+    closeDate: string | null;
+    playlistId: string | null;
+    playlistName: string | null;
+    startEpoch: number | null;       // Unix ms — null means stopped
+    totalDurationMs: number | null;
+    deviceCount: number;
+    onlineCount: number;
+    devices?: StoreDevice[];
+    createdAt: string;
+    updatedAt: string;
+}
+
+export interface StoreDevice {
+    id: string;
+    name: string;
+    status: string;
+    location: string | null;
+    model: string | null;
+}
+
+export interface DeviceHealth {
+    cpuUsage: number | null;
+    memoryUsage: number | null;
+    storageTotal: number | null;
+    storageUsed: number | null;
+    networkType: string | null;
+    ipAddress: string | null;
+    macAddress: string | null;
+    heapMemory: number | null;
+    networkConnected: boolean | null;
+    reportedAt: string | null;
+}
+
+export interface NowPlaying {
+    mediaId: string;
+    mediaTitle: string;
+    mediaType: string;
+    playedAt: string;
+    durationPlayed: number;
+    completed: boolean;
+}
+
+export interface DeviceComment {
+    id: string;
+    deviceId: string;
+    userId: string | null;
+    userName: string | null;
+    comment: string;
+    createdAt: string;
 }
 
 export interface DeviceGroup {
@@ -94,7 +159,7 @@ export interface DeviceGroup {
 
 // ─── Media ────────────────────────────────────────────────────────────────────
 
-export type MediaType = 'IMAGE' | 'VIDEO' | 'WEBPAGE';
+export type MediaType = 'IMAGE' | 'VIDEO';
 export type MediaStatus = 'PROCESSING' | 'READY' | 'ERROR';
 
 export interface Media {
@@ -163,6 +228,10 @@ export interface Schedule {
     playlistName?: string;
     targetDeviceName?: string;
     targetGroupName?: string;
+    // For direct-media schedules (auto-generated playlist) — first item info
+    directMediaId?: string | null;
+    directMediaTitle?: string | null;
+    directMediaType?: string | null;
     createdAt: string;
     updatedAt: string;
 }

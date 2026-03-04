@@ -2,7 +2,7 @@ import { Router } from 'express';
 import * as orgController from './organizations.controller';
 import { authenticate, authorize } from '../../shared/middleware/auth.middleware';
 import { validate } from '../../shared/middleware/validate.middleware';
-import { updateOrganizationSchema } from './organizations.schema';
+import { updateOrganizationSchema, addPointsSchema, updateDevicePinSchema } from './organizations.schema';
 
 const router = Router();
 
@@ -35,6 +35,26 @@ router.put(
  */
 router.get('/me/stats', authorize('ADMIN', 'MANAGER'), orgController.getOrganizationStats);
 
+
+/**
+ * @route   PATCH /api/organizations/me/device-pin
+ * @desc    Cập nhật PIN admin cho thiết bị (4–8 chữ số)
+ * @access  Private (ADMIN only)
+ */
+router.patch(
+    '/me/device-pin',
+    authorize('ADMIN'),
+    validate(updateDevicePinSchema),
+    orgController.updateDevicePin
+);
+
+/**
+ * @route   GET /api/organizations/me/license
+ * @desc    Lấy thông tin license hiện tại + 30 giao dịch gần nhất
+ * @access  Private (ADMIN, MANAGER)
+ */
+router.get('/me/license', authorize('ADMIN', 'MANAGER'), orgController.getMyLicenseInfo);
+
 /**
  * @route   GET /api/organizations/all
  * @desc    Liệt kê tất cả organizations (kèm stats)
@@ -48,5 +68,25 @@ router.get('/all', authorize('SUPER_ADMIN'), orgController.listAllOrganizations)
  * @access  SUPER_ADMIN only
  */
 router.patch('/:id/status', authorize('SUPER_ADMIN'), orgController.setOrganizationStatus);
+
+
+/**
+ * @route   GET /api/organizations/:id/license
+ * @desc    Lấy thông tin license của bất kỳ org
+ * @access  SUPER_ADMIN only
+ */
+router.get('/:id/license', authorize('SUPER_ADMIN'), orgController.getOrgLicenseInfo);
+
+/**
+ * @route   POST /api/organizations/:id/license/add-points
+ * @desc    Thêm points vào org (PURCHASE hoặc ADJUSTMENT)
+ * @access  SUPER_ADMIN only
+ */
+router.post(
+    '/:id/license/add-points',
+    authorize('SUPER_ADMIN'),
+    validate(addPointsSchema),
+    orgController.addPoints
+);
 
 export default router;

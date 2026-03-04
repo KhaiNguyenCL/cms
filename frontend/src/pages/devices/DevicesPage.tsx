@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
     Box, Typography, Card, CardContent, Stack, Button, TextField,
@@ -7,17 +7,53 @@ import {
     DialogActions, InputAdornment, Pagination, Avatar, Skeleton,
     Menu, MenuItem, Tabs, Tab, Grid, Divider, List, ListItem,
     ListItemAvatar, ListItemText, Select, FormControl, InputLabel,
+    LinearProgress, Slider,
 } from '@mui/material';
 import {
     Add, Search, MoreVert, Tv, CheckCircle, ErrorOutline,
-    PowerSettingsNew, Refresh, Screenshot, Groups, Delete,
-    Edit, PersonAdd, Circle,
+    PowerSettingsNew, Refresh, Screenshot, Delete,
+    Edit, PersonAdd, Circle, LinkOff, InfoOutlined,
 } from '@mui/icons-material';
 import { devicesApi } from '@api/devices.api';
-import { deviceGroupsApi, type DeviceGroup, type DeviceGroupDetail } from '@api/device-groups.api';
 import { useAppDispatch } from '@store/hooks';
 import { pushToast } from '@store/slices/uiSlice';
-import type { Device } from '@/types';
+import type { Device, DeviceHealth, NowPlaying, DeviceComment } from '@/types';
+
+// ── License chip + toggle ─────────────────────────────────────────────────────
+
+function LicenseChip({ device }: { device: Device }) {
+    const dispatch = useAppDispatch();
+    const qc = useQueryClient();
+
+    const mutation = useMutation({
+        mutationFn: (isLicensed: boolean) => devicesApi.setLicense(device.id, isLicensed),
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ['devices'] });
+            qc.invalidateQueries({ queryKey: ['org-license'] });
+        },
+        onError: () => dispatch(pushToast({ severity: 'error', message: 'Cập nhật license thất bại' })),
+    });
+
+    const isLicensed = device.isLicensed !== false;
+
+    const handleToggle = () => {
+        if (isLicensed) {
+            if (!window.confirm(`Hủy license cho "${device.name}"?\nThiết bị sẽ ngừng nhận nội dung và không tính phí.`)) return;
+        }
+        mutation.mutate(!isLicensed);
+    };
+
+    return (
+        <Chip
+            label={isLicensed ? 'Licensed' : 'Unlicensed'}
+            color={isLicensed ? 'success' : 'default'}
+            size="small"
+            onClick={handleToggle}
+            disabled={mutation.isPending}
+            sx={{ fontWeight: 600, fontSize: '0.7rem', cursor: 'pointer' }}
+        />
+    );
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -33,9 +69,11 @@ function StatusChip({ status }: { status: Device['status'] }) {
 
 // ── Device Actions menu ───────────────────────────────────────────────────────
 
-function DeviceActions({ device, onAssignGroup }: { device: Device; onAssignGroup: (d: Device) => void }) {
+function DeviceActions({ device }: { device: Device }) {
     const dispatch = useAppDispatch();
+    const qc = useQueryClient();
     const [anchor, setAnchor] = useState<null | HTMLElement>(null);
+    const [newPairingCode, setNewPairingCode] = useState<string | null>(null);
 
     const sendCmd = async (command: string) => {
         setAnchor(null);
@@ -47,16 +85,58 @@ function DeviceActions({ device, onAssignGroup }: { device: Device; onAssignGrou
         }
     };
 
+    const handleReset = async () => {
+        setAnchor(null);
+        if (!window.confirm(`Reset "${device.name}"?\nDevice sẽ bị ngắt kết nối và cần ghép cặp lại.`)) return;
+        try {
+            const result = await devicesApi.reset(device.id);
+            qc.invalidateQueries({ queryKey: ['devices'] });
+            setNewPairingCode(result.pairingCode);
+        } catch {
+            dispatch(pushToast({ severity: 'error', message: 'Reset thất bại' }));
+        }
+    };
+
+    const handleDelete = async () => {
+        setAnchor(null);
+        if (!window.confirm(`Xóa device "${device.name}"?\nHành động này không thể hoàn tác.`)) return;
+        try {
+            await devicesApi.delete(device.id);
+            qc.invalidateQueries({ queryKey: ['devices'] });
+            dispatch(pushToast({ severity: 'success', message: `Device "${device.name}" đã được xóa` }));
+        } catch {
+            dispatch(pushToast({ severity: 'error', message: 'Xóa device thất bại' }));
+        }
+    };
+
     return (
         <>
             <IconButton size="small" onClick={(e) => setAnchor(e.currentTarget)}>
                 <MoreVert fontSize="small" />
             </IconButton>
+
+            {/* Pairing code dialog — shown after successful reset */}
+            <Dialog open={Boolean(newPairingCode)} onClose={() => setNewPairingCode(null)} maxWidth="xs" fullWidth>
+                <DialogTitle>Device đã được reset</DialogTitle>
+                <DialogContent>
+                    <Typography variant="body2" color="text.secondary" mb={2}>
+                        Nhập mã này trên TV để ghép cặp lại <strong>{device.name}</strong>:
+                    </Typography>
+                    <Box sx={{
+                        textAlign: 'center', py: 3, borderRadius: 2,
+                        bgcolor: 'action.hover', border: '1px solid', borderColor: 'divider',
+                    }}>
+                        <Typography variant="h2" fontWeight={700} letterSpacing={6} fontFamily="monospace">
+                            {newPairingCode}
+                        </Typography>
+                    </Box>
+                </DialogContent>
+                <DialogActions sx={{ p: 2 }}>
+                    <Button variant="contained" onClick={() => setNewPairingCode(null)}>Đóng</Button>
+                </DialogActions>
+            </Dialog>
+
             <Menu anchorEl={anchor} open={Boolean(anchor)} onClose={() => setAnchor(null)}>
-                <MenuItem onClick={() => { onAssignGroup(device); setAnchor(null); }}>
-                    <Groups sx={{ mr: 1, fontSize: 18 }} /> Assign to Group
-                </MenuItem>
-                <Divider />
                 <MenuItem onClick={() => sendCmd('RESTART')}>
                     <PowerSettingsNew sx={{ mr: 1, fontSize: 18 }} /> Restart
                 </MenuItem>
@@ -69,75 +149,19 @@ function DeviceActions({ device, onAssignGroup }: { device: Device; onAssignGrou
                 <MenuItem onClick={() => sendCmd('CLEAR_CACHE')}>
                     <Refresh sx={{ mr: 1, fontSize: 18 }} /> Clear Cache
                 </MenuItem>
+                <Divider />
+                <MenuItem onClick={handleReset} sx={{ color: 'warning.main' }}>
+                    <LinkOff sx={{ mr: 1, fontSize: 18 }} /> Reset (Re-pair)
+                </MenuItem>
+                <MenuItem onClick={handleDelete} sx={{ color: 'error.main' }}>
+                    <Delete sx={{ mr: 1, fontSize: 18 }} /> Xóa device
+                </MenuItem>
             </Menu>
         </>
     );
 }
 
-// ── Assign to Group dialog ────────────────────────────────────────────────────
-
-function AssignGroupDialog({
-    device,
-    open,
-    onClose,
-}: { device: Device | null; open: boolean; onClose: () => void }) {
-    const dispatch = useAppDispatch();
-    const qc = useQueryClient();
-    const [selectedGroupId, setSelectedGroupId] = useState('');
-
-    const { data: groups = [] } = useQuery({
-        queryKey: ['device-groups-all'],
-        queryFn: () => deviceGroupsApi.listAll(),
-        enabled: open,
-    });
-
-    const addMutation = useMutation({
-        mutationFn: () => deviceGroupsApi.addDevice(selectedGroupId, device!.id),
-        onSuccess: () => {
-            qc.invalidateQueries({ queryKey: ['device-groups'] });
-            qc.invalidateQueries({ queryKey: ['devices'] });
-            dispatch(pushToast({ severity: 'success', message: `${device!.name} added to group` }));
-            setSelectedGroupId('');
-            onClose();
-        },
-        onError: () => dispatch(pushToast({ severity: 'error', message: 'Failed to assign group' })),
-    });
-
-    return (
-        <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
-            <DialogTitle>Assign "{device?.name}" to Group</DialogTitle>
-            <DialogContent sx={{ pt: 2 }}>
-                <FormControl fullWidth size="small">
-                    <InputLabel>Select group</InputLabel>
-                    <Select
-                        value={selectedGroupId}
-                        label="Select group"
-                        onChange={(e) => setSelectedGroupId(e.target.value)}
-                    >
-                        {groups.map(g => (
-                            <MenuItem key={g.id} value={g.id}>
-                                <Stack direction="row" justifyContent="space-between" width="100%">
-                                    <span>{g.name}</span>
-                                    <Chip label={`${g.deviceCount} devices`} size="small" sx={{ ml: 1 }} />
-                                </Stack>
-                            </MenuItem>
-                        ))}
-                    </Select>
-                </FormControl>
-            </DialogContent>
-            <DialogActions sx={{ p: 2 }}>
-                <Button onClick={onClose}>Cancel</Button>
-                <Button
-                    variant="contained"
-                    disabled={!selectedGroupId || addMutation.isPending}
-                    onClick={() => addMutation.mutate()}
-                >
-                    Assign
-                </Button>
-            </DialogActions>
-        </Dialog>
-    );
-}
+// ── Create Device dialog ──────────────────────────────────────────────────────
 
 // ── Create Device dialog ──────────────────────────────────────────────────────
 
@@ -180,12 +204,406 @@ function CreateDeviceDialog({ open, onClose }: { open: boolean; onClose: () => v
     );
 }
 
+// ── Device Detail dialog ──────────────────────────────────────────────────────
+
+function formatBytes(bytes: number | null | undefined): string {
+    if (bytes === null || bytes === undefined) return '—';
+    if (bytes >= 1_073_741_824) return `${(bytes / 1_073_741_824).toFixed(1)} GB`;
+    if (bytes >= 1_048_576) return `${(bytes / 1_048_576).toFixed(0)} MB`;
+    return `${bytes} B`;
+}
+
+function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
+    return (
+        <Stack direction="row" sx={{ py: 1, borderBottom: '1px solid', borderColor: 'divider' }}>
+            <Typography variant="body2" color="text.secondary" sx={{ width: 140, flexShrink: 0 }}>{label}</Typography>
+            <Box flex={1}><Typography variant="body2" fontWeight={500} component="span">{value}</Typography></Box>
+        </Stack>
+    );
+}
+
+function HealthBar({ value, label }: { value: number | null; label?: string }) {
+    const pct = value ?? 0;
+    const color = pct > 80 ? 'error.main' : pct > 60 ? 'warning.main' : 'success.main';
+    return (
+        <Stack direction="row" alignItems="center" gap={1}>
+            <LinearProgress
+                variant="determinate"
+                value={pct}
+                sx={{ flex: 1, height: 6, borderRadius: 3, '& .MuiLinearProgress-bar': { bgcolor: color } }}
+            />
+            <Typography variant="body2" fontWeight={600} sx={{ minWidth: 40, textAlign: 'right' }}>
+                {value !== null ? `${value}%` : '—'}
+            </Typography>
+            {label && <Typography variant="caption" color="text.secondary">{label}</Typography>}
+        </Stack>
+    );
+}
+
+function DeviceManageDialog({ device, open, onClose }: { device: Device | null; open: boolean; onClose: () => void }) {
+    const [tab, setTab] = React.useState(0);
+    const dispatch = useAppDispatch();
+    const qc = useQueryClient();
+
+    // Reset tab when dialog opens
+    React.useEffect(() => { if (open) setTab(0); }, [open]);
+
+    // Health data — load for tabs 2, 3, 4
+    const { data: health, isLoading: healthLoading } = useQuery<DeviceHealth | null>({
+        queryKey: ['device-health', device?.id],
+        queryFn: () => device ? devicesApi.getHealth(device.id) : Promise.resolve(null),
+        enabled: open && Boolean(device?.id) && (tab === 2 || tab === 3 || tab === 4),
+        staleTime: 30_000,
+    });
+
+    // Now playing — tab 1
+    const { data: nowPlaying } = useQuery<NowPlaying | null>({
+        queryKey: ['device-now-playing', device?.id],
+        queryFn: () => device ? devicesApi.getNowPlaying(device.id) : Promise.resolve(null),
+        enabled: open && Boolean(device?.id) && tab === 1,
+        staleTime: 60_000,
+    });
+
+    // Comments — tab 1
+    const { data: comments = [] } = useQuery<DeviceComment[]>({
+        queryKey: ['device-comments', device?.id],
+        queryFn: () => device ? devicesApi.getComments(device.id) : Promise.resolve([]),
+        enabled: open && Boolean(device?.id) && tab === 1,
+    });
+
+    // Volume state
+    const [volume, setVolume] = React.useState(50);
+    const volumeMutation = useMutation({
+        mutationFn: () => devicesApi.sendCommand(device!.id, 'SET_VOLUME', { volume }),
+        onSuccess: () => dispatch(pushToast({ severity: 'success', message: `Đã gửi lệnh đặt âm lượng ${volume}%` })),
+        onError: () => dispatch(pushToast({ severity: 'error', message: 'Gửi lệnh thất bại' })),
+    });
+
+    // Info form
+    const [infoName, setInfoName] = React.useState('');
+    const [infoLocation, setInfoLocation] = React.useState('');
+    React.useEffect(() => {
+        if (device) { setInfoName(device.name); setInfoLocation(device.location ?? ''); }
+    }, [device]);
+
+    const updateInfoMutation = useMutation({
+        mutationFn: () => devicesApi.update(device!.id, { name: infoName, location: infoLocation }),
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ['devices'] });
+            dispatch(pushToast({ severity: 'success', message: 'Đã lưu thông tin thiết bị' }));
+        },
+        onError: () => dispatch(pushToast({ severity: 'error', message: 'Lưu thất bại' })),
+    });
+
+
+    // Comment input — tab 1
+    const [commentText, setCommentText] = React.useState('');
+    const addCommentMutation = useMutation({
+        mutationFn: () => devicesApi.addComment(device!.id, commentText),
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ['device-comments', device?.id] });
+            setCommentText('');
+        },
+        onError: () => dispatch(pushToast({ severity: 'error', message: 'Gửi ghi chú thất bại' })),
+    });
+
+    const sendCmd = async (command: string, payload?: Record<string, unknown>) => {
+        try {
+            await devicesApi.sendCommand(device!.id, command, payload);
+            dispatch(pushToast({ severity: 'success', message: `Đã gửi lệnh ${command}` }));
+        } catch {
+            dispatch(pushToast({ severity: 'error', message: 'Gửi lệnh thất bại' }));
+        }
+    };
+
+    if (!device) return null;
+
+    const storagePercent = (health?.storageTotal && health.storageUsed != null)
+        ? Math.round((health.storageUsed / health.storageTotal) * 100)
+        : null;
+    const heapMB = health?.heapMemory ? Math.round(health.heapMemory / 1_048_576) : null;
+
+    return (
+        <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth
+            PaperProps={{ sx: { height: '82vh', display: 'flex', flexDirection: 'column' } }}>
+
+            {/* Fixed header */}
+            <DialogTitle sx={{ pb: 0, flexShrink: 0 }}>
+                <Stack direction="row" gap={1.5} alignItems="center">
+                    <Avatar sx={{ bgcolor: device.status === 'ONLINE' ? 'success.main' : 'grey.700', width: 44, height: 44 }}>
+                        <Tv />
+                    </Avatar>
+                    <Box flex={1} minWidth={0}>
+                        <Typography variant="h6" fontWeight={700} noWrap>{device.name}</Typography>
+                        <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+                            {device.id}
+                        </Typography>
+                    </Box>
+                    <Stack direction="row" gap={0.5} flexShrink={0}>
+                        <StatusChip status={device.status} />
+                        <LicenseChip device={device} />
+                    </Stack>
+                </Stack>
+                <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mt: 1 }} variant="scrollable" scrollButtons="auto">
+                    <Tab label="Điều khiển" />
+                    <Tab label="Nội dung" />
+                    <Tab label="Phần cứng" />
+                    <Tab label="Hiệu năng" />
+                    <Tab label="Mạng" />
+                </Tabs>
+            </DialogTitle>
+
+            <DialogContent dividers sx={{ flex: 1, overflowY: 'auto', p: 2.5 }}>
+
+                {/* ── Tab 0: Điều khiển ── */}
+                {tab === 0 && (
+                    <Stack spacing={3}>
+                        <Box>
+                            <Typography variant="overline" color="text.secondary" fontWeight={700} display="block" mb={1}>
+                                Lệnh nhanh
+                            </Typography>
+                            <Stack direction="row" flexWrap="wrap" gap={1}>
+                                {[
+                                    { cmd: 'SLEEP', label: 'Sleep' },
+                                    { cmd: 'WAKE_UP', label: 'Wake Up' },
+                                    { cmd: 'RESTART', label: 'Restart' },
+                                    { cmd: 'VIEWER_RESTART', label: 'Viewer Restart' },
+                                    { cmd: 'CLEAR_CACHE', label: 'Clear Storage' },
+                                    { cmd: 'DOWNLOAD_CONTENT', label: 'Download Content' },
+                                ].map(({ cmd, label }) => (
+                                    <Button key={cmd} variant="outlined" size="small" onClick={() => sendCmd(cmd)}>
+                                        {label}
+                                    </Button>
+                                ))}
+                                <Button
+                                    variant="outlined"
+                                    size="small"
+                                    color="error"
+                                    onClick={() => {
+                                        if (window.confirm(`Thoát ứng dụng trên "${device.name}"?\nMàn hình sẽ trở về launcher của Android TV.`)) {
+                                            sendCmd('EXIT_APP');
+                                        }
+                                    }}
+                                >
+                                    Thoát ứng dụng
+                                </Button>
+                            </Stack>
+                        </Box>
+
+                        <Divider />
+
+                        <Box>
+                            <Typography variant="overline" color="text.secondary" fontWeight={700} display="block" mb={1}>
+                                Âm lượng
+                            </Typography>
+                            <Stack direction="row" alignItems="center" gap={2}>
+                                <Slider
+                                    value={volume}
+                                    onChange={(_, v) => setVolume(v as number)}
+                                    min={0} max={100}
+                                    sx={{ flex: 1 }}
+                                    valueLabelDisplay="auto"
+                                />
+                                <Typography variant="body2" fontWeight={600} sx={{ minWidth: 36 }}>{volume}%</Typography>
+                                <Button variant="contained" size="small"
+                                    onClick={() => volumeMutation.mutate()}
+                                    disabled={volumeMutation.isPending}>
+                                    Apply
+                                </Button>
+                            </Stack>
+                        </Box>
+
+                        <Divider />
+
+                        <Box>
+                            <Typography variant="overline" color="text.secondary" fontWeight={700} display="block" mb={1}>
+                                Thông tin thiết bị
+                            </Typography>
+                            <Stack spacing={1.5}>
+                                <TextField label="Tên thiết bị" value={infoName} onChange={e => setInfoName(e.target.value)} size="small" fullWidth />
+                                <TextField label="Địa chỉ / Vị trí" value={infoLocation} onChange={e => setInfoLocation(e.target.value)} size="small" fullWidth />
+                                <Box>
+                                    <Button variant="contained" size="small"
+                                        onClick={() => updateInfoMutation.mutate()}
+                                        disabled={updateInfoMutation.isPending}>
+                                        Lưu
+                                    </Button>
+                                </Box>
+                            </Stack>
+                        </Box>
+
+                    </Stack>
+                )}
+
+                {/* ── Tab 1: Nội dung ── */}
+                {tab === 1 && (
+                    <Stack spacing={3}>
+                        <Box>
+                            <Typography variant="overline" color="text.secondary" fontWeight={700} display="block" mb={1}>
+                                Đang phát
+                            </Typography>
+                            {nowPlaying ? (
+                                <Card variant="outlined" sx={{ p: 2 }}>
+                                    <Stack spacing={0.5}>
+                                        <Typography variant="body1" fontWeight={600}>{nowPlaying.mediaTitle}</Typography>
+                                        <Typography variant="caption" color="text.secondary">
+                                            {nowPlaying.mediaType} · {Math.round(nowPlaying.durationPlayed / 60)} phút · {nowPlaying.completed ? '✓ Hoàn thành' : 'Bị ngắt'}
+                                        </Typography>
+                                        <Typography variant="caption" color="text.secondary">
+                                            Phát lúc: {new Date(nowPlaying.playedAt).toLocaleString('vi-VN')}
+                                        </Typography>
+                                    </Stack>
+                                </Card>
+                            ) : (
+                                <Typography variant="body2" color="text.disabled">Chưa có dữ liệu phát</Typography>
+                            )}
+                        </Box>
+
+                        <Divider />
+
+                        <Box>
+                            <Typography variant="overline" color="text.secondary" fontWeight={700} display="block" mb={1}>
+                                Ghi chú
+                            </Typography>
+                            <Stack spacing={1}>
+                                {comments.map(c => (
+                                    <Card key={c.id} variant="outlined" sx={{ p: 1.5 }}>
+                                        <Stack direction="row" justifyContent="space-between" mb={0.5}>
+                                            <Typography variant="caption" fontWeight={600}>{c.userName ?? 'Unknown'}</Typography>
+                                            <Typography variant="caption" color="text.secondary">
+                                                {new Date(c.createdAt).toLocaleString('vi-VN')}
+                                            </Typography>
+                                        </Stack>
+                                        <Typography variant="body2">{c.comment}</Typography>
+                                    </Card>
+                                ))}
+                                {comments.length === 0 && (
+                                    <Typography variant="body2" color="text.disabled">Chưa có ghi chú</Typography>
+                                )}
+                            </Stack>
+                            <Stack direction="row" gap={1} mt={2} alignItems="flex-end">
+                                <TextField
+                                    placeholder="Nhập ghi chú..."
+                                    value={commentText}
+                                    onChange={e => setCommentText(e.target.value)}
+                                    size="small" fullWidth multiline maxRows={3}
+                                />
+                                <Button variant="contained" size="small"
+                                    disabled={!commentText.trim() || addCommentMutation.isPending}
+                                    onClick={() => addCommentMutation.mutate()}>
+                                    Gửi
+                                </Button>
+                            </Stack>
+                        </Box>
+                    </Stack>
+                )}
+
+                {/* ── Tab 2: Phần cứng ── */}
+                {tab === 2 && (
+                    <Stack spacing={0}>
+                        <InfoRow label="Model" value={device.model ?? '—'} />
+                        <InfoRow label="Android ID" value={
+                            device.androidId
+                                ? <Typography variant="body2" fontFamily="monospace" fontWeight={500} component="span">{device.androidId}</Typography>
+                                : '—'
+                        } />
+                        <InfoRow label="OS Version" value={device.osVersion ?? '—'} />
+                        <InfoRow label="App Version" value={device.appVersion ?? '—'} />
+                        <InfoRow label="IP Address" value={health?.ipAddress ?? '—'} />
+                        <InfoRow label="MAC Address" value={health?.macAddress ?? '—'} />
+                        <InfoRow label="Múi giờ" value={device.timezone} />
+                        <InfoRow label="Tắt lần cuối" value={device.lastOfflineAt ? new Date(device.lastOfflineAt).toLocaleString('vi-VN') : '—'} />
+                        <InfoRow label="Pairing Code" value={
+                            device.pairingCode
+                                ? <Chip label={device.pairingCode} size="small" sx={{ fontFamily: 'monospace', fontWeight: 700, letterSpacing: 2 }} />
+                                : <Typography variant="body2" color="text.disabled" component="span">Đã ghép cặp</Typography>
+                        } />
+                        <InfoRow label="Tạo lúc" value={new Date(device.createdAt).toLocaleString('vi-VN')} />
+                        <InfoRow label="Last Seen" value={device.lastSeen ? new Date(device.lastSeen).toLocaleString('vi-VN') : '—'} />
+                    </Stack>
+                )}
+
+                {/* ── Tab 3: Hiệu năng ── */}
+                {tab === 3 && (
+                    <Box>
+                        {healthLoading ? (
+                            <Box>{[1, 2, 3, 4].map(i => <Skeleton key={i} height={48} sx={{ mb: 0.5 }} />)}</Box>
+                        ) : !health ? (
+                            <Typography variant="body2" color="text.disabled" sx={{ py: 2 }}>
+                                Chưa có dữ liệu — thiết bị chưa gửi heartbeat.
+                            </Typography>
+                        ) : (
+                            <Stack spacing={0}>
+                                <Stack direction="row" alignItems="center" gap={1} py={1.5} sx={{ borderBottom: '1px solid', borderColor: 'divider' }}>
+                                    <Typography variant="body2" color="text.secondary" sx={{ width: 160, flexShrink: 0 }}>CPU</Typography>
+                                    <Box flex={1}><HealthBar value={health.cpuUsage} /></Box>
+                                </Stack>
+                                <Stack direction="row" alignItems="center" gap={1} py={1.5} sx={{ borderBottom: '1px solid', borderColor: 'divider' }}>
+                                    <Typography variant="body2" color="text.secondary" sx={{ width: 160, flexShrink: 0 }}>RAM</Typography>
+                                    <Box flex={1}><HealthBar value={health.memoryUsage} /></Box>
+                                </Stack>
+                                <Stack direction="row" alignItems="center" gap={1} py={1.5} sx={{ borderBottom: '1px solid', borderColor: 'divider' }}>
+                                    <Typography variant="body2" color="text.secondary" sx={{ width: 160, flexShrink: 0 }}>Heap Memory</Typography>
+                                    <Box flex={1}>
+                                        <Typography variant="body2" fontWeight={500}>{heapMB !== null ? `${heapMB} MB` : '—'}</Typography>
+                                    </Box>
+                                </Stack>
+                                <Stack direction="row" alignItems="center" gap={1} py={1.5}>
+                                    <Typography variant="body2" color="text.secondary" sx={{ width: 160, flexShrink: 0 }}>Bộ nhớ lưu trữ</Typography>
+                                    <Box flex={1}>
+                                        {health.storageTotal ? (
+                                            <Stack spacing={0.5}>
+                                                <HealthBar value={storagePercent} />
+                                                <Typography variant="caption" color="text.secondary">
+                                                    {formatBytes(health.storageUsed)} / {formatBytes(health.storageTotal)}
+                                                </Typography>
+                                            </Stack>
+                                        ) : <Typography variant="body2">—</Typography>}
+                                    </Box>
+                                </Stack>
+                            </Stack>
+                        )}
+                        {health?.reportedAt && (
+                            <Typography variant="caption" color="text.disabled" display="block" mt={1}>
+                                Cập nhật lúc {new Date(health.reportedAt).toLocaleTimeString('vi-VN')}
+                            </Typography>
+                        )}
+                    </Box>
+                )}
+
+                {/* ── Tab 4: Mạng ── */}
+                {tab === 4 && (
+                    <Stack spacing={3}>
+                        {healthLoading ? (
+                            <Box>{[1, 2, 3].map(i => <Skeleton key={i} height={40} sx={{ mb: 0.5 }} />)}</Box>
+                        ) : (
+                            <Stack spacing={0}>
+                                <InfoRow label="Loại mạng" value={health?.networkType ?? '—'} />
+                                <InfoRow label="Kết nối" value={
+                                    health?.networkConnected === true ? 'Đã kết nối' :
+                                    health?.networkConnected === false ? 'Mất kết nối' : '—'
+                                } />
+                                <InfoRow label="IP Address" value={health?.ipAddress ?? '—'} />
+                            </Stack>
+                        )}
+
+                    </Stack>
+                )}
+            </DialogContent>
+
+            <DialogActions sx={{ p: 2, flexShrink: 0 }}>
+                <Button onClick={onClose}>Đóng</Button>
+            </DialogActions>
+        </Dialog>
+    );
+}
+
 // ── Devices tab ───────────────────────────────────────────────────────────────
 
 function DevicesTab({ onAddDevice }: { onAddDevice: () => void }) {
     const [search, setSearch] = useState('');
     const [page, setPage] = useState(1);
-    const [assignDevice, setAssignDevice] = useState<Device | null>(null);
+    const [detailDevice, setDetailDevice] = useState<Device | null>(null);
     const LIMIT = 10;
 
     const { data, isLoading } = useQuery({
@@ -193,33 +611,6 @@ function DevicesTab({ onAddDevice }: { onAddDevice: () => void }) {
         queryFn: () => devicesApi.list({ page, limit: LIMIT, search: search || undefined }),
         refetchInterval: 15_000,
     });
-
-    // Load all groups for group tag display
-    const { data: allGroups = [] } = useQuery({
-        queryKey: ['device-groups-all'],
-        queryFn: () => deviceGroupsApi.listAll(),
-    });
-
-    // Build a map of deviceId → group names by fetching all group details
-    // (lightweight: just use group list with device members)
-    const { data: groupDetails } = useQuery({
-        queryKey: ['device-group-details-map'],
-        queryFn: async () => {
-            if (!allGroups.length) return {};
-            const details = await Promise.all(allGroups.map(g => deviceGroupsApi.get(g.id)));
-            const map: Record<string, string[]> = {};
-            for (const g of details) {
-                for (const d of g.devices) {
-                    if (!map[d.id]) map[d.id] = [];
-                    map[d.id].push(g.name);
-                }
-            }
-            return map;
-        },
-        enabled: allGroups.length > 0,
-    });
-
-    const groupMap: Record<string, string[]> = groupDetails ?? {};
 
     return (
         <Card>
@@ -243,7 +634,7 @@ function DevicesTab({ onAddDevice }: { onAddDevice: () => void }) {
                             <TableRow>
                                 <TableCell sx={{ fontWeight: 700 }}>Device</TableCell>
                                 <TableCell sx={{ fontWeight: 700 }}>Status</TableCell>
-                                <TableCell sx={{ fontWeight: 700 }}>Group(s)</TableCell>
+                                <TableCell sx={{ fontWeight: 700 }}>License</TableCell>
                                 <TableCell sx={{ fontWeight: 700 }}>Model</TableCell>
                                 <TableCell sx={{ fontWeight: 700 }}>Location</TableCell>
                                 <TableCell sx={{ fontWeight: 700 }}>Last Seen</TableCell>
@@ -280,24 +671,8 @@ function DevicesTab({ onAddDevice }: { onAddDevice: () => void }) {
                                         {/* Status */}
                                         <TableCell><StatusChip status={device.status} /></TableCell>
 
-                                        {/* Groups */}
-                                        <TableCell>
-                                            <Stack direction="row" gap={0.5} flexWrap="wrap">
-                                                {(groupMap[device.id] ?? []).length > 0
-                                                    ? (groupMap[device.id]).map(gName => (
-                                                        <Chip
-                                                            key={gName}
-                                                            label={gName}
-                                                            size="small"
-                                                            icon={<Groups sx={{ fontSize: 14 }} />}
-                                                            color="secondary"
-                                                            sx={{ fontWeight: 600, fontSize: '0.65rem' }}
-                                                        />
-                                                    ))
-                                                    : <Typography variant="caption" color="text.disabled">—</Typography>
-                                                }
-                                            </Stack>
-                                        </TableCell>
+                                        {/* License */}
+                                        <TableCell><LicenseChip device={device} /></TableCell>
 
                                         <TableCell><Typography variant="body2">{device.model ?? '—'}</Typography></TableCell>
                                         <TableCell><Typography variant="body2">{device.location ?? '—'}</Typography></TableCell>
@@ -314,7 +689,14 @@ function DevicesTab({ onAddDevice }: { onAddDevice: () => void }) {
                                             />
                                         </TableCell>
                                         <TableCell align="right">
-                                            <DeviceActions device={device} onAssignGroup={setAssignDevice} />
+                                            <Stack direction="row" justifyContent="flex-end" alignItems="center">
+                                                <Tooltip title="Chi tiết">
+                                                    <IconButton size="small" onClick={() => setDetailDevice(device)}>
+                                                        <InfoOutlined fontSize="small" />
+                                                    </IconButton>
+                                                </Tooltip>
+                                                <DeviceActions device={device} />
+                                            </Stack>
                                         </TableCell>
                                     </TableRow>
                                 ))}
@@ -340,296 +722,29 @@ function DevicesTab({ onAddDevice }: { onAddDevice: () => void }) {
                 )}
             </CardContent>
 
-            <AssignGroupDialog device={assignDevice} open={Boolean(assignDevice)} onClose={() => setAssignDevice(null)} />
+            <DeviceManageDialog device={detailDevice} open={Boolean(detailDevice)} onClose={() => setDetailDevice(null)} />
         </Card>
-    );
-}
-
-// ── Group detail dialog ───────────────────────────────────────────────────────
-
-function GroupDetailDialog({
-    groupId,
-    open,
-    onClose,
-}: { groupId: string; open: boolean; onClose: () => void }) {
-    const dispatch = useAppDispatch();
-    const qc = useQueryClient();
-
-    const { data, isLoading, refetch } = useQuery({
-        queryKey: ['device-group', groupId],
-        queryFn: () => deviceGroupsApi.get(groupId),
-        enabled: open,
-    });
-
-    const removeMutation = useMutation({
-        mutationFn: (deviceId: string) => deviceGroupsApi.removeDevice(groupId, deviceId),
-        onSuccess: () => {
-            refetch();
-            qc.invalidateQueries({ queryKey: ['device-groups'] });
-            qc.invalidateQueries({ queryKey: ['device-group-details-map'] });
-            dispatch(pushToast({ severity: 'success', message: 'Device removed from group' }));
-        },
-    });
-
-    return (
-        <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-            <DialogTitle>
-                <Stack direction="row" gap={1} alignItems="center">
-                    <Groups color="secondary" />
-                    <Box>
-                        {isLoading ? <Skeleton width={140} /> : <Typography variant="h6" fontWeight={700}>{data?.name}</Typography>}
-                        <Typography variant="caption" color="text.secondary">{data?.deviceCount ?? 0} devices</Typography>
-                    </Box>
-                </Stack>
-            </DialogTitle>
-            <DialogContent dividers sx={{ p: 0, minHeight: 150 }}>
-                {isLoading
-                    ? <Box p={2}>{[1, 2, 3].map(i => <Skeleton key={i} height={52} sx={{ mb: 1 }} />)}</Box>
-                    : !data?.devices.length
-                        ? (
-                            <Box textAlign="center" py={4}>
-                                <Tv sx={{ fontSize: 36, color: 'text.secondary', mb: 1 }} />
-                                <Typography variant="body2" color="text.secondary">No devices in this group</Typography>
-                            </Box>
-                        )
-                        : (
-                            <List disablePadding>
-                                {data.devices.map((d, idx) => (
-                                    <Box key={d.id}>
-                                        <ListItem
-                                            secondaryAction={
-                                                <Tooltip title="Remove from group">
-                                                    <IconButton edge="end" size="small" color="error"
-                                                        onClick={() => removeMutation.mutate(d.id)}>
-                                                        <Delete fontSize="small" />
-                                                    </IconButton>
-                                                </Tooltip>
-                                            }
-                                        >
-                                            <ListItemAvatar>
-                                                <Avatar sx={{ width: 36, height: 36, bgcolor: d.status === 'ONLINE' ? 'success.main' : 'grey.700' }}>
-                                                    <Tv sx={{ fontSize: 18 }} />
-                                                </Avatar>
-                                            </ListItemAvatar>
-                                            <ListItemText
-                                                secondaryTypographyProps={{ component: 'div' }}
-                                                primary={<Typography variant="body2" fontWeight={600}>{d.name}</Typography>}
-                                                secondary={
-                                                    <Stack direction="row" gap={1} alignItems="center">
-                                                        <StatusChip status={d.status as Device['status']} />
-                                                        {d.location && <Typography variant="caption" color="text.secondary">{d.location}</Typography>}
-                                                    </Stack>
-                                                }
-                                            />
-                                        </ListItem>
-                                        {idx < data.devices.length - 1 && <Divider component="li" />}
-                                    </Box>
-                                ))}
-                            </List>
-                        )}
-            </DialogContent>
-            <DialogActions sx={{ p: 2 }}>
-                <Button onClick={onClose}>Close</Button>
-            </DialogActions>
-        </Dialog>
-    );
-}
-
-// ── Groups tab ────────────────────────────────────────────────────────────────
-
-function CreateGroupDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-    const dispatch = useAppDispatch();
-    const qc = useQueryClient();
-    const [name, setName] = useState('');
-    const [description, setDescription] = useState('');
-
-    const mutation = useMutation({
-        mutationFn: () => deviceGroupsApi.create({ name, description: description || null }),
-        onSuccess: () => {
-            qc.invalidateQueries({ queryKey: ['device-groups'] });
-            dispatch(pushToast({ severity: 'success', message: `Group "${name}" created` }));
-            setName(''); setDescription('');
-            onClose();
-        },
-        onError: () => dispatch(pushToast({ severity: 'error', message: 'Failed to create group' })),
-    });
-
-    return (
-        <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
-            <DialogTitle>New Device Group</DialogTitle>
-            <DialogContent sx={{ pt: 2 }}>
-                <Stack spacing={2.5} sx={{ mt: 0.5 }}>
-                    <TextField label="Group Name" value={name} onChange={(e) => setName(e.target.value)} fullWidth required />
-                    <TextField label="Description (optional)" value={description} onChange={(e) => setDescription(e.target.value)} fullWidth multiline rows={2} />
-                </Stack>
-            </DialogContent>
-            <DialogActions sx={{ p: 2 }}>
-                <Button onClick={onClose}>Cancel</Button>
-                <Button variant="contained" disabled={!name || mutation.isPending} onClick={() => mutation.mutate()}>Create</Button>
-            </DialogActions>
-        </Dialog>
-    );
-}
-
-function GroupsTab() {
-    const dispatch = useAppDispatch();
-    const qc = useQueryClient();
-    const [search, setSearch] = useState('');
-    const [page, setPage] = useState(1);
-    const [createOpen, setCreateOpen] = useState(false);
-    const [detailGroupId, setDetailGroupId] = useState<string | null>(null);
-
-    const { data, isLoading } = useQuery({
-        queryKey: ['device-groups', page, search],
-        queryFn: () => deviceGroupsApi.list({ page, limit: 12, search: search || undefined }),
-    });
-
-    const deleteMutation = useMutation({
-        mutationFn: (id: string) => deviceGroupsApi.delete(id),
-        onSuccess: () => {
-            qc.invalidateQueries({ queryKey: ['device-groups'] });
-            qc.invalidateQueries({ queryKey: ['device-groups-all'] });
-            qc.invalidateQueries({ queryKey: ['device-group-details-map'] });
-            dispatch(pushToast({ severity: 'success', message: 'Group deleted' }));
-        },
-        onError: () => dispatch(pushToast({ severity: 'error', message: 'Delete failed' })),
-    });
-
-    return (
-        <Box>
-            <Stack direction="row" justifyContent="space-between" alignItems="center" mb={2}>
-                <TextField
-                    placeholder="Search groups..."
-                    value={search}
-                    onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-                    size="small" sx={{ width: 240 }}
-                    InputProps={{ startAdornment: <InputAdornment position="start"><Search sx={{ fontSize: 18, color: 'text.secondary' }} /></InputAdornment> }}
-                />
-                <Button variant="contained" startIcon={<Add />} onClick={() => setCreateOpen(true)}>New Group</Button>
-            </Stack>
-
-            <Grid container spacing={2}>
-                {isLoading
-                    ? Array.from({ length: 4 }).map((_, i) => (
-                        <Grid key={i} size={{ xs: 12, sm: 6, md: 4, lg: 3 }}>
-                            <Skeleton variant="rounded" height={140} />
-                        </Grid>
-                    ))
-                    : (data?.data ?? []).map(g => (
-                        <Grid key={g.id} size={{ xs: 12, sm: 6, md: 4, lg: 3 }}>
-                            <Card
-                                sx={{
-                                    cursor: 'pointer',
-                                    transition: 'transform 0.15s, box-shadow 0.15s',
-                                    '&:hover': { transform: 'translateY(-2px)', boxShadow: 4 },
-                                }}
-                                onClick={() => setDetailGroupId(g.id)}
-                            >
-                                <CardContent>
-                                    <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
-                                        <Box
-                                            sx={{
-                                                width: 44, height: 44, borderRadius: 3,
-                                                background: 'linear-gradient(135deg, #9C27B022, #E91E6322)',
-                                                display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 1.5,
-                                            }}
-                                        >
-                                            <Groups sx={{ color: 'secondary.main', fontSize: 22 }} />
-                                        </Box>
-                                        <Tooltip title="Delete group">
-                                            <IconButton
-                                                size="small"
-                                                color="error"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    if (window.confirm(`Delete group "${g.name}"?`)) deleteMutation.mutate(g.id);
-                                                }}
-                                            >
-                                                <Delete fontSize="small" />
-                                            </IconButton>
-                                        </Tooltip>
-                                    </Stack>
-
-                                    <Typography variant="h6" fontWeight={700} noWrap>{g.name}</Typography>
-                                    {g.description && (
-                                        <Typography variant="caption" color="text.secondary" display="block" noWrap>{g.description}</Typography>
-                                    )}
-                                    <Box mt={1.5}>
-                                        <Chip
-                                            icon={<Tv sx={{ fontSize: 14 }} />}
-                                            label={`${g.deviceCount} device${g.deviceCount !== 1 ? 's' : ''}`}
-                                            size="small"
-                                            color="secondary"
-                                            variant="outlined"
-                                            sx={{ fontWeight: 600 }}
-                                        />
-                                    </Box>
-                                </CardContent>
-                            </Card>
-                        </Grid>
-                    ))}
-            </Grid>
-
-            {!isLoading && !data?.data.length && (
-                <Box textAlign="center" py={8}>
-                    <Groups sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
-                    <Typography variant="h6" gutterBottom>No groups yet</Typography>
-                    <Typography variant="body2" color="text.secondary" mb={2}>
-                        Groups let you target multiple devices in a schedule at once.
-                    </Typography>
-                    <Button variant="contained" startIcon={<Add />} onClick={() => setCreateOpen(true)}>Create First Group</Button>
-                </Box>
-            )}
-
-            {data && data.totalPages > 1 && (
-                <Box mt={2} display="flex" justifyContent="center">
-                    <Pagination count={data.totalPages} page={page} onChange={(_, p) => setPage(p)} color="primary" size="small" />
-                </Box>
-            )}
-
-            <CreateGroupDialog open={createOpen} onClose={() => setCreateOpen(false)} />
-
-            {detailGroupId && (
-                <GroupDetailDialog
-                    groupId={detailGroupId}
-                    open={Boolean(detailGroupId)}
-                    onClose={() => setDetailGroupId(null)}
-                />
-            )}
-        </Box>
     );
 }
 
 // ── Main DevicesPage ─────────────────────────────────────────────────────────
 
 export default function DevicesPage() {
-    const [tab, setTab] = useState(0);
     const [createOpen, setCreateOpen] = useState(false);
 
     return (
         <Box>
             <Stack direction="row" justifyContent="space-between" alignItems="center" mb={3}>
                 <Box>
-                    <Typography variant="h4" fontWeight={700}>Devices</Typography>
+                    <Typography variant="h4" fontWeight={700}>Device Management</Typography>
                     <Typography variant="body2" color="text.secondary">Manage your display network</Typography>
                 </Box>
-                {tab === 0 && (
-                    <Button variant="contained" startIcon={<Add />} onClick={() => setCreateOpen(true)}>
-                        Add Device
-                    </Button>
-                )}
+                <Button variant="contained" startIcon={<Add />} onClick={() => setCreateOpen(true)}>
+                    Add Device
+                </Button>
             </Stack>
 
-            {/* Tabs */}
-            <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
-                <Tabs value={tab} onChange={(_, v) => setTab(v)}>
-                    <Tab label="Devices" icon={<Tv sx={{ fontSize: 18 }} />} iconPosition="start" />
-                    <Tab label="Groups" icon={<Groups sx={{ fontSize: 18 }} />} iconPosition="start" />
-                </Tabs>
-            </Box>
-
-            {tab === 0 && <DevicesTab onAddDevice={() => setCreateOpen(true)} />}
-            {tab === 1 && <GroupsTab />}
+            <DevicesTab onAddDevice={() => setCreateOpen(true)} />
 
             <CreateDeviceDialog open={createOpen} onClose={() => setCreateOpen(false)} />
         </Box>

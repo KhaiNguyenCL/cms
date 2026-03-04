@@ -2,25 +2,17 @@ import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
     Box, Typography, Stack, Grid, Card, CardContent, Button,
-    TextField, Divider, LinearProgress, Chip, Alert, Skeleton,
+    TextField, Divider, Chip, Alert, Skeleton,
     alpha,
 } from '@mui/material';
 import {
     Business, Storage, Save, Person, Tv, Image,
-    VideoFile, CalendarMonth, People, CheckCircle,
+    VideoFile, CalendarMonth, People, CheckCircle, Lock,
 } from '@mui/icons-material';
+
 import { useAppDispatch, useAppSelector } from '@store/hooks';
 import { pushToast } from '@store/slices/uiSlice';
 import { organizationsApi } from '@api/organizations.api';
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function fmtBytes(bytes: number): string {
-    if (bytes === 0) return '0 B';
-    if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(0)} KB`;
-    if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
-    return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
-}
 
 // ── Section wrapper ───────────────────────────────────────────────────────────
 
@@ -112,8 +104,21 @@ export default function SettingsPage() {
     const nameChanged = orgName.trim() !== (org?.name ?? '');
     const nameValid = orgName.trim().length >= 2;
 
-    // Storage: use media size as proxy (device storage unknown until devices report health)
-    const mediaBytes = stats?.totalMediaSizeBytes ?? 0;
+    // Device admin PIN
+    const [newPin, setNewPin] = useState('');
+    const [showPin, setShowPin] = useState(false);
+    const pinValid = /^\d{4,8}$/.test(newPin);
+
+    const pinMutation = useMutation({
+        mutationFn: () => organizationsApi.updateDevicePin(newPin),
+        onSuccess: () => {
+            setNewPin('');
+            dispatch(pushToast({ severity: 'success', message: 'PIN thiết bị đã được cập nhật' }));
+        },
+        onError: (e: any) => {
+            dispatch(pushToast({ severity: 'error', message: e?.response?.data?.message ?? 'Cập nhật PIN thất bại' }));
+        },
+    });
 
     return (
         <Box>
@@ -218,6 +223,51 @@ export default function SettingsPage() {
                             </Stack>
                         </Section>
 
+                        {/* Device Admin PIN */}
+                        {isAdmin && (
+                            <Section
+                                icon={<Lock />}
+                                title="PIN admin thiết bị"
+                                subtitle="PIN để thoát kiosk mode trên TV (4–8 chữ số)"
+                            >
+                                <Stack spacing={2}>
+                                    <Alert severity="info" sx={{ borderRadius: 2 }}>
+                                        PIN được đồng bộ tự động đến tất cả thiết bị trong lần heartbeat tiếp theo.
+                                        Mặc định: <strong>0000</strong>
+                                    </Alert>
+                                    <Stack direction="row" gap={1.5} alignItems="flex-start">
+                                        <TextField
+                                            label="PIN mới"
+                                            value={newPin}
+                                            onChange={e => setNewPin(e.target.value.replace(/\D/g, '').slice(0, 8))}
+                                            type={showPin ? 'text' : 'password'}
+                                            inputProps={{ maxLength: 8, inputMode: 'numeric' }}
+                                            helperText="4–8 chữ số"
+                                            error={newPin.length > 0 && !pinValid}
+                                            sx={{ flex: 1 }}
+                                        />
+                                        <Button
+                                            variant="outlined"
+                                            onClick={() => setShowPin(s => !s)}
+                                            sx={{ mt: 0.5, minWidth: 80 }}
+                                            size="small"
+                                        >
+                                            {showPin ? 'Ẩn' : 'Hiện'}
+                                        </Button>
+                                        <Button
+                                            variant="contained"
+                                            disabled={!pinValid || pinMutation.isPending}
+                                            onClick={() => pinMutation.mutate()}
+                                            sx={{ mt: 0.5 }}
+                                            size="small"
+                                        >
+                                            {pinMutation.isPending ? 'Đang lưu…' : 'Cập nhật PIN'}
+                                        </Button>
+                                    </Stack>
+                                </Stack>
+                            </Section>
+                        )}
+
                     </Stack>
                 </Grid>
 
@@ -263,63 +313,6 @@ export default function SettingsPage() {
                                         label="Schedules"
                                         value={stats?.totalSchedules ?? 0}
                                     />
-                                </Stack>
-                            )}
-                        </Section>
-
-                        {/* Storage bar */}
-                        <Section
-                            icon={<Storage />}
-                            title="Dung lượng media"
-                            subtitle="Tổng dung lượng file đã upload"
-                        >
-                            {loadingStats ? (
-                                <Skeleton height={60} variant="rounded" />
-                            ) : (
-                                <Stack spacing={1.5}>
-                                    <Stack direction="row" justifyContent="space-between">
-                                        <Typography variant="body2" color="text.secondary">
-                                            Đã dùng
-                                        </Typography>
-                                        <Typography variant="body2" fontWeight={700}>
-                                            {fmtBytes(mediaBytes)}
-                                        </Typography>
-                                    </Stack>
-
-                                    {/* Visual bar — hiển thị proportional nếu biết quota */}
-                                    <Box>
-                                        <LinearProgress
-                                            variant="determinate"
-                                            value={Math.min((mediaBytes / (10 * 1024 ** 3)) * 100, 100)}
-                                            sx={{
-                                                height: 10, borderRadius: 5,
-                                                bgcolor: 'action.selected',
-                                                '& .MuiLinearProgress-bar': {
-                                                    borderRadius: 5,
-                                                    background: 'linear-gradient(90deg, #6C63FF, #FF6584)',
-                                                },
-                                            }}
-                                        />
-                                        <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
-                                            Ước tính trên tổng 10 GB quota
-                                        </Typography>
-                                    </Box>
-
-                                    {/* Breakdown by count */}
-                                    <Stack direction="row" gap={1.5} pt={0.5}>
-                                        <Chip
-                                            size="small"
-                                            icon={<Image sx={{ fontSize: 12 }} />}
-                                            label={`${stats?.totalMedia ?? 0} files`}
-                                            sx={{ bgcolor: alpha('#4CAF82', 0.15), color: '#4CAF82', fontWeight: 600, fontSize: '0.65rem' }}
-                                        />
-                                        <Chip
-                                            size="small"
-                                            icon={<Storage sx={{ fontSize: 12 }} />}
-                                            label={fmtBytes(mediaBytes)}
-                                            sx={{ bgcolor: alpha('#6C63FF', 0.15), color: '#6C63FF', fontWeight: 600, fontSize: '0.65rem' }}
-                                        />
-                                    </Stack>
                                 </Stack>
                             )}
                         </Section>

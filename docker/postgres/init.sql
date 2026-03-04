@@ -20,13 +20,21 @@ CREATE TYPE "ScheduleTarget" AS ENUM ('ALL', 'DEVICE', 'GROUP');
 -- ─── Organizations ────────────────────────────────────────────────────────────
 
 CREATE TABLE "organizations" (
-    "id"        TEXT        NOT NULL DEFAULT gen_random_uuid()::text,
-    "name"      TEXT        NOT NULL,
-    "slug"      TEXT        NOT NULL,
-    "settings"  JSONB,
-    "isActive"  BOOLEAN     NOT NULL DEFAULT true,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "id"                TEXT        NOT NULL DEFAULT gen_random_uuid()::text,
+    "name"              TEXT        NOT NULL,
+    "slug"              TEXT        NOT NULL,
+    "settings"          JSONB,
+    "isActive"          BOOLEAN     NOT NULL DEFAULT true,
+    "maxDevices"        INTEGER     NOT NULL DEFAULT 10,
+    "maxUsers"          INTEGER     NOT NULL DEFAULT 5,
+    "storageQuotaBytes" BIGINT      NOT NULL DEFAULT 10737418240,
+    "pointsTotal"       INTEGER     NOT NULL DEFAULT 30,
+    "pointsUsed"        INTEGER     NOT NULL DEFAULT 0,
+    "licenseStatus"     TEXT        NOT NULL DEFAULT 'TRIAL',
+    "suspendedAt"       TIMESTAMPTZ,
+    "deviceAdminPin"    TEXT        NOT NULL DEFAULT '0000',
+    "createdAt"         TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt"         TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "organizations_pkey" PRIMARY KEY ("id")
 );
 CREATE UNIQUE INDEX "organizations_slug_key" ON "organizations"("slug");
@@ -61,7 +69,9 @@ CREATE TABLE "devices" (
     "osVersion"      TEXT,
     "appVersion"     TEXT,
     "status"         "DeviceStatus" NOT NULL DEFAULT 'OFFLINE',
+    "isLicensed"     BOOLEAN        NOT NULL DEFAULT true,
     "lastSeen"       TIMESTAMP(3),
+    "lastOfflineAt"  TIMESTAMPTZ,
     "settings"       JSONB,
     "createdAt"      TIMESTAMP(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt"      TIMESTAMP(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -183,18 +193,36 @@ CREATE INDEX "playback_logs_mediaId_playedAt_idx"  ON "playback_logs"("mediaId",
 CREATE INDEX "playback_logs_playedAt_idx"           ON "playback_logs"("playedAt"  DESC);
 
 CREATE TABLE "device_health" (
-    "id"           TEXT             NOT NULL DEFAULT gen_random_uuid()::text,
-    "deviceId"     TEXT             NOT NULL,
-    "cpuUsage"     DOUBLE PRECISION,
-    "memoryUsage"  DOUBLE PRECISION,
-    "storageTotal" BIGINT,
-    "storageUsed"  BIGINT,
-    "networkType"  TEXT,
-    "isOnline"     BOOLEAN          NOT NULL DEFAULT true,
-    "reportedAt"   TIMESTAMP(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "id"               TEXT             NOT NULL DEFAULT gen_random_uuid()::text,
+    "deviceId"         TEXT             NOT NULL,
+    "cpuUsage"         DOUBLE PRECISION,
+    "memoryUsage"      DOUBLE PRECISION,
+    "storageTotal"     BIGINT,
+    "storageUsed"      BIGINT,
+    "networkType"      TEXT,
+    "isOnline"         BOOLEAN          NOT NULL DEFAULT true,
+    "ipAddress"        TEXT,
+    "macAddress"       TEXT,
+    "heapMemory"       BIGINT,
+    "networkConnected" BOOLEAN,
+    "reportedAt"       TIMESTAMP(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "device_health_pkey" PRIMARY KEY ("id")
 );
 CREATE INDEX "device_health_deviceId_reportedAt_idx" ON "device_health"("deviceId", "reportedAt" DESC);
+
+-- ─── Device Comments ──────────────────────────────────────────────────────────
+
+CREATE TABLE "device_comments" (
+    "id"             TEXT        NOT NULL DEFAULT gen_random_uuid()::text,
+    "deviceId"       TEXT        NOT NULL,
+    "organizationId" TEXT        NOT NULL,
+    "userId"         TEXT,
+    "userName"       TEXT,
+    "comment"        TEXT        NOT NULL,
+    "createdAt"      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT "device_comments_pkey" PRIMARY KEY ("id")
+);
+CREATE INDEX "dc_deviceId_createdAt_idx" ON "device_comments"("deviceId", "createdAt" DESC);
 
 -- ─── Foreign Keys ─────────────────────────────────────────────────────────────
 
@@ -249,3 +277,54 @@ ALTER TABLE "playback_logs"
 ALTER TABLE "device_health"
     ADD CONSTRAINT "device_health_deviceId_fkey"
     FOREIGN KEY ("deviceId") REFERENCES "devices"("id") ON DELETE CASCADE;
+
+ALTER TABLE "device_comments"
+    ADD CONSTRAINT "device_comments_deviceId_fkey"
+    FOREIGN KEY ("deviceId") REFERENCES "devices"("id") ON DELETE CASCADE;
+
+-- ─── License Transactions ──────────────────────────────────────────────────────
+
+CREATE TABLE "license_transactions" (
+    "id"             TEXT         NOT NULL DEFAULT gen_random_uuid()::text,
+    "organizationId" TEXT         NOT NULL,
+    "type"           TEXT         NOT NULL,
+    "points"         INTEGER      NOT NULL,
+    "deviceCount"    INTEGER,
+    "description"    TEXT,
+    "createdById"    TEXT,
+    "createdAt"      TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    CONSTRAINT "license_transactions_pkey" PRIMARY KEY ("id")
+);
+CREATE INDEX "license_transactions_orgId_createdAt_idx"
+    ON "license_transactions"("organizationId", "createdAt" DESC);
+
+ALTER TABLE "license_transactions"
+    ADD CONSTRAINT "license_transactions_organizationId_fkey"
+    FOREIGN KEY ("organizationId") REFERENCES "organizations"("id") ON DELETE CASCADE;
+
+-- ─── Performance Indexes (Production) ──────────────────────────────────────────
+-- These cover the hottest query paths: device heartbeat lookup, schedule
+-- evaluation per device, and playlist item ordering during sync.
+
+-- Device lookup by org (heartbeat, device list)
+CREATE INDEX IF NOT EXISTS "idx_devices_orgId_status"
+    ON "devices"("organizationId", "status");
+
+-- Schedule lookup by org + active flag (sync query)
+CREATE INDEX IF NOT EXISTS "idx_schedules_orgId_active"
+    ON "schedules"("organizationId", "isActive");
+
+-- Playlist items ordering (sync returns items sorted by position)
+CREATE INDEX IF NOT EXISTS "idx_playlist_items_playlistId_pos"
+    ON "playlist_items"("playlistId", "position");
+
+-- Media lookup by org + status (media list + upload quota check)
+CREATE INDEX IF NOT EXISTS "idx_media_orgId_status"
+    ON "media"("organizationId", "status");
+
+-- Playback logs by device + time (analytics queries)
+CREATE INDEX IF NOT EXISTS "idx_playback_logs_deviceId_playedAt"
+    ON "playback_logs"("deviceId", "playedAt" DESC);
+
+-- Run on existing DB (idempotent):
+-- ALTER TABLE organizations ADD COLUMN IF NOT EXISTS "deviceAdminPin" TEXT NOT NULL DEFAULT '0000';

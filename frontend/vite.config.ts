@@ -20,6 +20,14 @@ export default defineConfig({
     },
   },
 
+  // ── Build target: ES2019 for Android TV WebView compatibility ─────────────
+  // Android TV WebViews are often outdated and don't support ES2021 syntax
+  // (logical assignment ??=, ||=, &&=) which causes "Unexpected token '='" errors.
+  // ES2019 is supported by Chrome 73+ / Android 9+ WebView.
+  build: {
+    target: ['es2019', 'chrome73'],
+  },
+
   // ── Dev server: proxy API & WebSocket to backend ────────────────────────────
   server: {
     port: 5173,
@@ -32,6 +40,9 @@ export default defineConfig({
         target: 'http://localhost:3000',
         ws: true,
         changeOrigin: true,
+        configure: (proxy) => {
+          proxy.on('error', () => { /* suppress ECONNABORTED noise */ });
+        },
       },
     },
   },

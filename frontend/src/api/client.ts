@@ -31,11 +31,20 @@ export function getAccessToken(): string | null {
     return _accessToken;
 }
 
+let _managingOrgId: string | null = null;
+
+export function setManagingOrgId(orgId: string | null): void {
+    _managingOrgId = orgId;
+}
+
 // ─── Request interceptor — inject Authorization header ───────────────────────
 
 apiClient.interceptors.request.use((config: InternalAxiosRequestConfig) => {
     if (_accessToken) {
         config.headers.Authorization = `Bearer ${_accessToken}`;
+    }
+    if (_managingOrgId) {
+        config.headers['X-Organization-Id'] = _managingOrgId;
     }
     return config;
 });

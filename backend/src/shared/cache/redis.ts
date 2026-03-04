@@ -5,6 +5,7 @@ import logger from '../utils/logger';
 const redis = new Redis({
     host: config.redis.host,
     port: config.redis.port,
+    password: config.redis.password,
     retryStrategy(times) {
         const delay = Math.min(times * 100, 3000);
         return delay;
@@ -28,4 +29,5 @@ export const RedisKeys = {
     loginAttempts: (email: string) => `login_attempts:${email}`,
     orgSettings: (orgId: string) => `org:${orgId}:settings`,
     deviceContentHash: (deviceId: string) => `device:${deviceId}:content_hash`,
+    deviceBlacklist: (deviceId: string) => `device:${deviceId}:blacklisted`,
 };

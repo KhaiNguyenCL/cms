@@ -71,16 +71,20 @@ export async function pairDevice(
     data: DevicePairBody,
     ip: string
 ): Promise<{ token: string; deviceId: string; organizationId: string; name: string }> {
-    // Kiểm tra TTL trong Redis
+    // Tìm device theo pairingCode:
+    // - New flow: code lưu trong Redis (có TTL 5 phút) → dùng Redis ID để query DB
+    // - Legacy flow: code chỉ có trong DB (tạo từ POST /api/devices) → query DB trực tiếp
     const storedDeviceId = await redis.get(RedisKeys.pairingCode(data.pairingCode));
-    if (!storedDeviceId) throw new AppError(400, 'Mã ghép cặp không hợp lệ hoặc đã hết hạn');
 
-    // Kiểm tra khớp trong DB
     const device = await queryOne<{ id: string; organizationId: string; name: string }>(
-        `SELECT id, "organizationId", name FROM devices WHERE id = $1 AND "pairingCode" = $2`,
-        [storedDeviceId, data.pairingCode]
+        storedDeviceId
+            ? `SELECT id, "organizationId", name FROM devices WHERE id = $1 AND "pairingCode" = $2`
+            : `SELECT id, "organizationId", name FROM devices WHERE "pairingCode" = $1`,
+        storedDeviceId
+            ? [storedDeviceId, data.pairingCode]
+            : [data.pairingCode]
     );
-    if (!device) throw new AppError(400, 'Mã ghép cặp không hợp lệ');
+    if (!device) throw new AppError(400, 'Mã ghép cặp không hợp lệ hoặc đã hết hạn');
 
     // Xác thực chữ ký Android app
     const expectedSig = crypto
@@ -91,6 +95,15 @@ export async function pairDevice(
         logger.warn('Device signature mismatch', { deviceId: device.id, ip });
         throw new AppError(401, 'Xác thực thiết bị thất bại');
     }
+
+    // If this TV was previously paired with a different device profile,
+    // release it from that old profile before claiming it here.
+    // This avoids the unique constraint violation on androidId.
+    await query(
+        `UPDATE devices SET "androidId" = NULL, status = 'OFFLINE', "updatedAt" = NOW()
+         WHERE "androidId" = $1 AND id != $2`,
+        [data.deviceInfo.hwId, device.id]
+    );
 
     // Cập nhật thông tin device, xóa pairingCode
     await query(
@@ -103,6 +116,10 @@ export async function pairDevice(
 
     // Xóa code khỏi Redis
     await redis.del(RedisKeys.pairingCode(data.pairingCode));
+
+    // Clear any blacklist entry — device may have been reset before re-pairing.
+    // Without this, the new token would still return 401 since the device ID is the same.
+    await redis.del(RedisKeys.deviceBlacklist(device.id));
 
     // Cấp device JWT
     const token = jwt.sign(

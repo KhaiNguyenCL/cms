@@ -7,7 +7,7 @@
  *  - generate-reports:   daily at 04:00 (yesterday's daily report for all orgs)
  */
 import { QueueEvents } from 'bullmq';
-import { cleanupLogsQueue, generateReportsQueue } from './queues';
+import { cleanupLogsQueue, generateReportsQueue, licenseDeductionQueue } from './queues';
 import { query } from '../database/db';
 import bullmqConnection from './bullmq.connection';
 import logger from '../utils/logger';
@@ -59,6 +59,17 @@ export async function setupScheduledJobs(): Promise<void> {
         }
     );
     logger.info('Scheduled: generate-reports monthly on 1st at 06:00');
+
+    // ── 5. License deduction — daily at 00:01 UTC ─────────────────────────────
+    await licenseDeductionQueue.add(
+        'daily-deduction',
+        { triggeredBy: 'scheduler' },
+        {
+            repeat: { pattern: '1 0 * * *' },   // 00:01 UTC daily
+            jobId: 'license-deduction-daily',
+        }
+    );
+    logger.info('Scheduled: license-deduction daily at 00:01 UTC');
 
     logger.info('All scheduled jobs registered');
 }

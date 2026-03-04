@@ -13,6 +13,7 @@ export const QUEUE_NAMES = {
     DEVICE_NOTIFICATION: 'device-notification',
     CLEANUP_LOGS: 'cleanup-logs',
     GENERATE_REPORTS: 'generate-reports',
+    LICENSE_DEDUCTION: 'license-deduction',
 } as const;
 
 // ─── Queue instances ──────────────────────────────────────────────────────────
@@ -58,6 +59,17 @@ export const cleanupLogsQueue = new Queue(QUEUE_NAMES.CLEANUP_LOGS, {
         backoff: { type: 'fixed', delay: 60_000 },
         removeOnComplete: { count: 10 },
         removeOnFail: { count: 20 },
+    },
+});
+
+/** Queue: daily license point deduction per org */
+export const licenseDeductionQueue = new Queue(QUEUE_NAMES.LICENSE_DEDUCTION, {
+    connection: bullmqConnection,
+    defaultJobOptions: {
+        attempts: 2,
+        backoff: { type: 'fixed', delay: 60_000 },
+        removeOnComplete: { count: 30 },
+        removeOnFail: { count: 30 },
     },
 });
 
@@ -110,6 +122,10 @@ export interface GenerateReportsJobData {
     date: string;   // YYYY-MM-DD (the period to report on)
 }
 
+export interface LicenseDeductionJobData {
+    triggeredBy?: string;
+}
+
 // ─── Helper: add jobs from anywhere ──────────────────────────────────────────
 
 export async function enqueueVideoTranscoding(data: VideoTranscodingJobData): Promise<string> {
@@ -134,5 +150,10 @@ export async function enqueueCleanupLogs(data: CleanupLogsJobData): Promise<stri
 
 export async function enqueueGenerateReport(data: GenerateReportsJobData): Promise<string> {
     const job = await generateReportsQueue.add('report', data);
+    return job.id!;
+}
+
+export async function enqueueLicenseDeduction(data: LicenseDeductionJobData = {}): Promise<string> {
+    const job = await licenseDeductionQueue.add('daily-deduction', data);
     return job.id!;
 }

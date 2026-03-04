@@ -37,20 +37,30 @@ datasource db {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model Organization {
-  id        String   @id @default(uuid())
-  name      String
-  slug      String   @unique
-  settings  Json?
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                String    @id @default(uuid())
+  name              String
+  slug              String    @unique
+  settings          Json?
+  isActive          Boolean   @default(true)
+  maxDevices        Int       @default(10)
+  maxUsers          Int       @default(5)
+  storageQuotaBytes BigInt    @default(10737418240)
+  pointsTotal       Int       @default(30)
+  pointsUsed        Int       @default(0)
+  licenseStatus     String    @default("TRIAL")
+  suspendedAt       DateTime?
+  deviceAdminPin    String    @default("0000")
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
-  users        User[]
-  devices      Device[]
-  deviceGroups DeviceGroup[]
-  media        Media[]
-  playlists    Playlist[]
-  schedules    Schedule[]
+  users               User[]
+  devices             Device[]
+  deviceGroups        DeviceGroup[]
+  media               Media[]
+  playlists           Playlist[]
+  schedules           Schedule[]
+  licenseTransactions LicenseTransaction[]
+  stores              Store[]
 
   @@map("organizations")
 }
@@ -105,8 +115,11 @@ model Device {
   osVersion      String?
   appVersion     String?
   status         DeviceStatus @default(OFFLINE)
+  isLicensed     Boolean      @default(true)
   lastSeen       DateTime?
+  lastOfflineAt  DateTime?
   settings       Json?
+  storeId        String?
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
@@ -114,9 +127,12 @@ model Device {
   groupMembers DeviceGroupMember[]
   playbackLogs PlaybackLog[]
   healthReports DeviceHealth[]
+  comments     DeviceComment[]
+  store        Store?              @relation(fields: [storeId], references: [id], onDelete: SetNull)
 
   @@index([organizationId, status])
   @@index([lastSeen])
+  @@index([storeId])
   @@map("devices")
 }
 
@@ -218,6 +234,7 @@ model Playlist {
   organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   items        PlaylistItem[]
   schedules    Schedule[]
+  stores       Store[]
 
   @@index([organizationId])
   @@map("playlists")
@@ -297,18 +314,84 @@ model PlaybackLog {
 }
 
 model DeviceHealth {
-  id           String   @id @default(uuid())
-  deviceId     String
-  cpuUsage     Float?
-  memoryUsage  Float?
-  storageTotal BigInt?
-  storageUsed  BigInt?
-  networkType  String?
-  isOnline     Boolean  @default(true)
-  reportedAt   DateTime @default(now())
+  id               String   @id @default(uuid())
+  deviceId         String
+  cpuUsage         Float?
+  memoryUsage      Float?
+  storageTotal     BigInt?
+  storageUsed      BigInt?
+  networkType      String?
+  isOnline         Boolean  @default(true)
+  ipAddress        String?
+  macAddress       String?
+  heapMemory       BigInt?
+  networkConnected Boolean?
+  reportedAt       DateTime @default(now())
 
   device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
 
   @@index([deviceId, reportedAt(sort: Desc)])
   @@map("device_health")
+}
+
+model DeviceComment {
+  id             String   @id @default(uuid())
+  deviceId       String
+  organizationId String
+  userId         String?
+  userName       String?
+  comment        String
+  createdAt      DateTime @default(now())
+
+  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId, createdAt(sort: Desc)])
+  @@map("device_comments")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  SYNC GROUPS
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Store {
+  id              String    @id @default(uuid())
+  organizationId  String
+  name            String
+  description     String?
+  address         String?
+  contact         String?
+  openDate        DateTime?
+  closeDate       DateTime?
+  playlistId      String?
+  startEpoch      BigInt?   // Unix ms khi bắt đầu phát, null = dừng
+  totalDurationMs Int?      // tổng duration playlist (ms), cached lúc Start
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  playlist     Playlist?    @relation(fields: [playlistId], references: [id], onDelete: SetNull)
+  devices      Device[]
+
+  @@index([organizationId])
+  @@map("stores")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  LICENSE
+// ─────────────────────────────────────────────────────────────────────────────
+
+model LicenseTransaction {
+  id             String   @id @default(uuid())
+  organizationId String
+  type           String   // PURCHASE | DAILY_DEDUCTION | ADJUSTMENT
+  points         Int      // positive = add, negative = deduct
+  deviceCount    Int?     // DAILY_DEDUCTION only: number of devices charged
+  description    String?
+  createdById    String?  // userId if done by a user, null if system job
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt(sort: Desc)])
+  @@map("license_transactions")
 }

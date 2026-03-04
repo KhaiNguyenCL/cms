@@ -21,3 +21,22 @@ export const updateOrganizationSchema = z.object({
 });
 
 export type UpdateOrganizationBody = z.infer<typeof updateOrganizationSchema>['body'];
+
+
+export const updateDevicePinSchema = z.object({
+    body: z.object({
+        pin: z.string()
+            .regex(/^\d{4,8}$/, 'PIN phải là 4–8 chữ số'),
+    }),
+});
+export type UpdateDevicePinBody = z.infer<typeof updateDevicePinSchema>['body'];
+
+export const addPointsSchema = z.object({
+    body: z.object({
+        points: z.number().int().min(1).max(100000),
+        type: z.enum(['PURCHASE', 'ADJUSTMENT']).default('PURCHASE'),
+        description: z.string().min(1),
+    }),
+});
+
+export type AddPointsBody = z.infer<typeof addPointsSchema>['body'];

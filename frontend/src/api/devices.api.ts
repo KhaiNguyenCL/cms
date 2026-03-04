@@ -1,5 +1,5 @@
 import apiClient from './client';
-import type { ApiResponse, PaginatedResponse, Device, DeviceGroup } from '@/types';
+import type { ApiResponse, PaginatedResponse, Device, DeviceGroup, DeviceHealth, NowPlaying, DeviceComment } from '@/types';
 
 export interface ListDevicesQuery {
     page?: number;
@@ -34,6 +34,11 @@ export const devicesApi = {
         await apiClient.delete(`/devices/${id}`);
     },
 
+    reset: async (id: string) => {
+        const { data } = await apiClient.post<{ success: boolean; data: { pairingCode: string } }>(`/devices/${id}/reset`);
+        return data.data;
+    },
+
     sendCommand: async (id: string, command: string, params?: Record<string, unknown>) => {
         const { data } = await apiClient.post<ApiResponse<null>>(`/devices/${id}/command`, { command, params });
         return data;
@@ -53,5 +58,30 @@ export const devicesApi = {
     addToGroup: async (groupId: string, deviceIds: string[]) => {
         const { data } = await apiClient.post<ApiResponse<null>>(`/device-groups/${groupId}/members`, { deviceIds });
         return data;
+    },
+
+    setLicense: async (id: string, isLicensed: boolean) => {
+        const { data } = await apiClient.patch<ApiResponse<null>>(`/devices/${id}/license`, { isLicensed });
+        return data;
+    },
+
+    getHealth: async (id: string) => {
+        const { data } = await apiClient.get<ApiResponse<DeviceHealth | null>>(`/devices/${id}/health`);
+        return data.data;
+    },
+
+    getNowPlaying: async (id: string) => {
+        const { data } = await apiClient.get<ApiResponse<NowPlaying | null>>(`/devices/${id}/now-playing`);
+        return data.data;
+    },
+
+    getComments: async (id: string) => {
+        const { data } = await apiClient.get<ApiResponse<DeviceComment[]>>(`/devices/${id}/comments`);
+        return data.data;
+    },
+
+    addComment: async (id: string, comment: string, userName?: string) => {
+        const { data } = await apiClient.post<ApiResponse<DeviceComment>>(`/devices/${id}/comments`, { comment, userName });
+        return data.data;
     },
 };

@@ -4,16 +4,17 @@ import {
     Box, Typography, Stack, Card, CardContent, Button, Chip, Alert,
     Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
     Paper, IconButton, Tooltip, Collapse, Skeleton, alpha, Divider,
-    Dialog, DialogTitle, DialogContent, DialogActions,
+    Dialog, DialogTitle, DialogContent, DialogActions, TextField,
 } from '@mui/material';
 import {
     Business, Tv, People, PermMedia, QueueMusic, CalendarMonth,
     KeyboardArrowDown, KeyboardArrowUp, CheckCircle, Cancel,
-    Storage, PowerSettingsNew,
+    Storage, PowerSettingsNew, ManageAccounts, AddCircle, WorkspacePremium,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from '@store/hooks';
 import { pushToast } from '@store/slices/uiSlice';
+import { setManagingOrg } from '@store/slices/authSlice';
 import { organizationsApi, type OrgWithStats } from '@api/organizations.api';
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -45,7 +46,24 @@ function StatChip({ icon, value, color }: { icon: React.ReactNode; value: string
 
 // ── Expanded detail row ───────────────────────────────────────────────────────
 
+const LICENSE_STATUS_COLOR: Record<string, 'primary' | 'success' | 'warning' | 'error'> = {
+    TRIAL: 'primary',
+    ACTIVE: 'success',
+    WARNING: 'warning',
+    SUSPENDED: 'error',
+    EXPIRED: 'error',
+};
+const LICENSE_STATUS_LABEL: Record<string, string> = {
+    TRIAL: 'Dùng thử',
+    ACTIVE: 'Hoạt động',
+    WARNING: 'Sắp hết',
+    SUSPENDED: 'Tạm ngừng',
+    EXPIRED: 'Hết hạn',
+};
+
 function DetailRow({ org }: { org: OrgWithStats }) {
+    const licenseColor = LICENSE_STATUS_COLOR[org.licenseStatus ?? 'TRIAL'] ?? 'default';
+    const licenseLabel = LICENSE_STATUS_LABEL[org.licenseStatus ?? 'TRIAL'] ?? org.licenseStatus;
     return (
         <Box sx={{ px: 3, py: 2, bgcolor: 'action.hover' }}>
             <Stack direction="row" gap={3} flexWrap="wrap">
@@ -60,23 +78,114 @@ function DetailRow({ org }: { org: OrgWithStats }) {
                     <Typography variant="body2" fontWeight={600}>{org.slug}</Typography>
                 </Box>
                 <Box>
-                    <Typography variant="caption" color="text.secondary" display="block" mb={0.5}>Media size</Typography>
-                    <Typography variant="body2" fontWeight={600}>{fmtBytes(org.totalMediaSizeBytes)}</Typography>
-                </Box>
-                <Box>
-                    <Typography variant="caption" color="text.secondary" display="block" mb={0.5}>Users (active/total)</Typography>
-                    <Typography variant="body2" fontWeight={600}>{org.activeUsers} / {org.totalUsers}</Typography>
-                </Box>
-                <Box>
-                    <Typography variant="caption" color="text.secondary" display="block" mb={0.5}>Devices (online/total)</Typography>
-                    <Typography variant="body2" fontWeight={600}>{org.onlineDevices} / {org.totalDevices}</Typography>
-                </Box>
-                <Box>
                     <Typography variant="caption" color="text.secondary" display="block" mb={0.5}>Ngày tạo</Typography>
                     <Typography variant="body2" fontWeight={600}>{fmtDate(org.createdAt)}</Typography>
                 </Box>
+                <Box>
+                    <Typography variant="caption" color="text.secondary" display="block" mb={0.5}>License</Typography>
+                    <Stack direction="row" alignItems="center" gap={1}>
+                        <Chip label={licenseLabel} color={licenseColor} size="small" sx={{ fontWeight: 700, fontSize: '0.7rem' }} />
+                        <Typography variant="body2" color="text.secondary">
+                            {org.pointsRemaining ?? 0}/{org.pointsTotal ?? 0} pts
+                            {(org.licensedDevices ?? 0) > 0 && ` (~${org.daysRemaining ?? 0} ngày)`}
+                        </Typography>
+                    </Stack>
+                </Box>
             </Stack>
         </Box>
+    );
+}
+
+// ── Add Points dialog ─────────────────────────────────────────────────────────
+
+function AddPointsDialog({ org, onClose }: { org: OrgWithStats; onClose: () => void }) {
+    const qc = useQueryClient();
+    const dispatch = useAppDispatch();
+    const [points, setPoints] = useState('100');
+    const [type, setType] = useState<'PURCHASE' | 'ADJUSTMENT'>('PURCHASE');
+    const [description, setDescription] = useState('');
+
+    const mutation = useMutation({
+        mutationFn: () => organizationsApi.addPoints(org.id, {
+            points: parseInt(points),
+            type,
+            description,
+        }),
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ['super-admin-orgs'] });
+            dispatch(pushToast({ severity: 'success', message: `Đã thêm ${points} points cho "${org.name}"` }));
+            onClose();
+        },
+        onError: (e: any) => {
+            dispatch(pushToast({ severity: 'error', message: e?.response?.data?.message ?? 'Thêm points thất bại' }));
+        },
+    });
+
+    const remaining = (org.pointsTotal ?? 0) - (org.pointsUsed ?? 0);
+    const valid = parseInt(points) > 0 && description.trim().length > 0;
+
+    return (
+        <Dialog open onClose={onClose} maxWidth="xs" fullWidth>
+            <DialogTitle fontWeight={700}>
+                <Stack direction="row" alignItems="center" gap={1}>
+                    <WorkspacePremium color="primary" />
+                    Thêm points — {org.name}
+                </Stack>
+            </DialogTitle>
+            <DialogContent>
+                <Typography variant="body2" color="text.secondary" mb={2}>
+                    Hiện tại: <strong>{remaining}</strong>/{org.pointsTotal ?? 0} points còn lại
+                    {' '}
+                    <Chip label={LICENSE_STATUS_LABEL[org.licenseStatus ?? 'TRIAL'] ?? org.licenseStatus}
+                        color={LICENSE_STATUS_COLOR[org.licenseStatus ?? 'TRIAL'] ?? 'default'}
+                        size="small" sx={{ fontWeight: 700, fontSize: '0.7rem', ml: 0.5 }} />
+                </Typography>
+                <Stack spacing={2.5}>
+                    <TextField
+                        label="Số points"
+                        type="number"
+                        value={points}
+                        onChange={e => setPoints(e.target.value)}
+                        inputProps={{ min: 1, max: 100000 }}
+                        size="small"
+                        fullWidth
+                    />
+                    <TextField
+                        label="Loại giao dịch"
+                        select
+                        value={type}
+                        onChange={e => setType(e.target.value as 'PURCHASE' | 'ADJUSTMENT')}
+                        size="small"
+                        fullWidth
+                        SelectProps={{ native: true }}
+                    >
+                        <option value="PURCHASE">PURCHASE (Nạp tiền)</option>
+                        <option value="ADJUSTMENT">ADJUSTMENT (Điều chỉnh)</option>
+                    </TextField>
+                    <TextField
+                        label="Ghi chú"
+                        value={description}
+                        onChange={e => setDescription(e.target.value)}
+                        size="small"
+                        fullWidth
+                        required
+                        placeholder="VD: Nạp gói 1 năm 365 thiết bị"
+                    />
+                </Stack>
+            </DialogContent>
+            <DialogActions sx={{ px: 3, pb: 2 }}>
+                <Button onClick={onClose} size="small">Hủy</Button>
+                <Button
+                    variant="contained"
+                    size="small"
+                    disabled={!valid || mutation.isPending}
+                    onClick={() => mutation.mutate()}
+                    startIcon={<AddCircle />}
+                >
+                    {mutation.isPending ? 'Đang thêm…' : 'Thêm Points'}
+                </Button>
+            </DialogActions>
+        </Dialog>
     );
 }
 
@@ -120,8 +229,15 @@ function ConfirmDialog({ org, onConfirm, onClose }: {
 
 // ── Row ───────────────────────────────────────────────────────────────────────
 
-function OrgRow({ org, onToggle, currentOrgId }: { org: OrgWithStats; onToggle: (org: OrgWithStats) => void; currentOrgId?: string }) {
+function OrgRow({ org, onToggle, onManage, onAddPoints, currentOrgId }: {
+    org: OrgWithStats;
+    onToggle: (org: OrgWithStats) => void;
+    onManage: (org: OrgWithStats) => void;
+    onAddPoints: (org: OrgWithStats) => void;
+    currentOrgId?: string;
+}) {
     const [open, setOpen] = useState(false);
+    const managingOrgId = useAppSelector(s => s.auth.managingOrgId);
 
     return (
         <>
@@ -187,18 +303,36 @@ function OrgRow({ org, onToggle, currentOrgId }: { org: OrgWithStats; onToggle: 
                 </TableCell>
 
                 <TableCell align="right">
-                    <Tooltip title={org.id === currentOrgId ? 'Không thể tắt tổ chức của chính mình' : org.isActive ? 'Tắt tổ chức' : 'Bật tổ chức'}>
-                        <span>
-                            <IconButton
-                                size="small"
-                                color={org.isActive ? 'error' : 'success'}
-                                onClick={() => onToggle(org)}
-                                disabled={org.id === currentOrgId}
-                            >
-                                <PowerSettingsNew fontSize="small" />
+                    <Stack direction="row" alignItems="center" gap={0.5} justifyContent="flex-end">
+                        <Button
+                            size="small"
+                            variant={managingOrgId === org.id ? 'contained' : 'outlined'}
+                            color="primary"
+                            startIcon={<ManageAccounts fontSize="small" />}
+                            onClick={() => onManage(org)}
+                            disabled={!org.isActive && org.id !== currentOrgId}
+                            sx={{ fontSize: '0.72rem' }}
+                        >
+                            {managingOrgId === org.id ? 'Đang quản lý' : 'Quản lý'}
+                        </Button>
+                        <Tooltip title="Thêm points">
+                            <IconButton size="small" color="primary" onClick={() => onAddPoints(org)}>
+                                <AddCircle fontSize="small" />
                             </IconButton>
-                        </span>
-                    </Tooltip>
+                        </Tooltip>
+                        <Tooltip title={org.id === currentOrgId ? 'Không thể tắt tổ chức của chính mình' : org.isActive ? 'Tắt tổ chức' : 'Bật tổ chức'}>
+                            <span>
+                                <IconButton
+                                    size="small"
+                                    color={org.isActive ? 'error' : 'success'}
+                                    onClick={() => onToggle(org)}
+                                    disabled={org.id === currentOrgId}
+                                >
+                                    <PowerSettingsNew fontSize="small" />
+                                </IconButton>
+                            </span>
+                        </Tooltip>
+                    </Stack>
                 </TableCell>
             </TableRow>
 
@@ -267,6 +401,13 @@ export default function SuperAdminPage() {
     const qc = useQueryClient();
     const currentUser = useAppSelector(s => s.auth.user);
     const [confirmOrg, setConfirmOrg] = useState<OrgWithStats | null>(null);
+    const [addPointsOrg, setAddPointsOrg] = useState<OrgWithStats | null>(null);
+
+    const handleManage = (org: OrgWithStats) => {
+        dispatch(setManagingOrg({ orgId: org.id, orgName: org.name }));
+        qc.clear();
+        navigate('/dashboard');
+    };
 
     if (currentUser?.role !== 'SUPER_ADMIN') {
         navigate('/dashboard', { replace: true });
@@ -353,7 +494,7 @@ export default function SuperAdminPage() {
                                         </TableRow>
                                     )
                                     : orgs.map(org => (
-                                        <OrgRow key={org.id} org={org} onToggle={setConfirmOrg} currentOrgId={currentUser?.organizationId} />
+                                        <OrgRow key={org.id} org={org} onToggle={setConfirmOrg} onManage={handleManage} onAddPoints={setAddPointsOrg} currentOrgId={currentUser?.organizationId} />
                                     ))
                             }
                         </TableBody>
@@ -367,6 +508,14 @@ export default function SuperAdminPage() {
                     org={confirmOrg}
                     onConfirm={() => toggleMutation.mutate(confirmOrg)}
                     onClose={() => setConfirmOrg(null)}
+                />
+            )}
+
+            {/* Add points dialog */}
+            {addPointsOrg && (
+                <AddPointsDialog
+                    org={addPointsOrg}
+                    onClose={() => setAddPointsOrg(null)}
                 />
             )}
         </Box>

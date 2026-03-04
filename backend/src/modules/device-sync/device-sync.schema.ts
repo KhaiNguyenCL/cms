@@ -12,7 +12,12 @@ export const heartbeatSchema = z.object({
         networkType: z.string().max(50).optional(),       // 'WIFI' | 'ETHERNET' | 'MOBILE'
         appVersion: z.string().max(50).optional(),
         osVersion: z.string().max(50).optional(),
+        model: z.string().max(150).optional(),    // "Xiaomi Mi Box S" — sent every heartbeat so already-paired devices get updated
         currentContentHash: z.string().length(64).optional(), // SHA-256 hex từ lần sync gần nhất
+        ipAddress: z.string().max(50).optional(),
+        macAddress: z.string().max(50).optional(),
+        heapMemory: z.number().int().min(0).optional(),
+        networkConnected: z.boolean().optional(),
     }),
 });
 

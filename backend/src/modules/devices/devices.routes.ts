@@ -126,6 +126,13 @@ router.put('/:id', authorize('ADMIN', 'MANAGER'), validate(updateDeviceSchema), 
 router.delete('/:id', authorize('ADMIN'), devController.deleteDevice);
 
 /**
+ * @route   POST /api/devices/:id/reset
+ * @desc    Revoke device token + reset to REGISTERED (forces re-pairing)
+ * @access  Private (ADMIN only)
+ */
+router.post('/:id/reset', authorize('ADMIN'), devController.resetDevice);
+
+/**
  * @route   POST /api/devices/:id/command
  * @desc    Gửi lệnh tới device (RESTART, SCREENSHOT, RELOAD_CONTENT, CLEAR_CACHE)
  * @access  Private (ADMIN, MANAGER)
@@ -145,6 +152,41 @@ router.get('/:id/screenshot', authorize('ADMIN', 'MANAGER'), devController.getSc
  * @access  Private (ADMIN, MANAGER)
  */
 router.get('/:id/logs', authorize('ADMIN', 'MANAGER'), devController.getDeviceLogs);
+
+/**
+ * @route   GET /api/devices/:id/health
+ * @desc    Lấy thông tin sức khỏe thiết bị mới nhất (CPU, RAM, Storage, Network)
+ * @access  Private (ADMIN, MANAGER)
+ */
+router.get('/:id/health', authorize('ADMIN', 'MANAGER'), devController.getDeviceHealth);
+
+/**
+ * @route   PATCH /api/devices/:id/license
+ * @desc    Toggle isLicensed cho device (đăng ký/hủy license)
+ * @access  Private (ADMIN only)
+ */
+router.patch('/:id/license', authorize('ADMIN'), devController.setDeviceLicense);
+
+/**
+ * @route   GET /api/devices/:id/now-playing
+ * @desc    Lấy media đang phát gần nhất từ playback_logs
+ * @access  Private (ADMIN, MANAGER)
+ */
+router.get('/:id/now-playing', authorize('ADMIN', 'MANAGER'), devController.getNowPlaying);
+
+/**
+ * @route   GET /api/devices/:id/comments
+ * @desc    Danh sách ghi chú của device
+ * @access  Private (ADMIN, MANAGER)
+ */
+router.get('/:id/comments', authorize('ADMIN', 'MANAGER'), devController.getDeviceComments);
+
+/**
+ * @route   POST /api/devices/:id/comments
+ * @desc    Thêm ghi chú cho device
+ * @access  Private (ADMIN)
+ */
+router.post('/:id/comments', authorize('ADMIN'), devController.addDeviceComment);
 
 // ─── Device group endpoints ────────────────────────────────────────────────────
 

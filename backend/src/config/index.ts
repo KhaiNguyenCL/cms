@@ -28,6 +28,7 @@ const config = {
     redis: {
         host: process.env.REDIS_HOST || 'localhost',
         port: parseInt(process.env.REDIS_PORT || '6379', 10),
+        password: process.env.REDIS_PASSWORD || undefined,
     },
 
     jwt: {
@@ -58,7 +59,7 @@ const config = {
 
     rateLimit: {
         windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000', 10),
-        max: parseInt(process.env.RATE_LIMIT_MAX || '100', 10),
+        max: parseInt(process.env.RATE_LIMIT_MAX || '10000', 10),
     },
 
     devicePairing: {

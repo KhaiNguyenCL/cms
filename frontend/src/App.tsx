@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, Component, type ReactNode } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { ThemeProvider, CssBaseline } from '@mui/material';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -10,6 +10,32 @@ import { useAppSelector } from '@store/hooks';
 import { createAppTheme } from './theme';
 import { AuthGuard } from '@components/guards/AuthGuard';
 import { ToastContainer } from '@components/feedback/ToastContainer';
+
+// ── Error boundary for /player route ──────────────────────────────────────────
+class PlayerErrorBoundary extends Component<
+    { children: ReactNode },
+    { error: Error | null }
+> {
+    state: { error: Error | null } = { error: null };
+    static getDerivedStateFromError(error: Error) { return { error }; }
+    render() {
+        const { error } = this.state;
+        if (!error) return this.props.children;
+        return (
+            <div style={{
+                position: 'fixed', inset: 0, background: '#0D0D0D',
+                color: '#FF6584', fontFamily: 'monospace', padding: 24,
+                overflowY: 'auto', whiteSpace: 'pre-wrap', fontSize: 13,
+            }}>
+                <div style={{ marginBottom: 12, fontSize: 16, color: '#fff' }}>
+                    ⚠ Player crashed — React error
+                </div>
+                <div style={{ color: '#FF6584' }}>{error.message}</div>
+                <div style={{ color: '#888', marginTop: 12 }}>{error.stack}</div>
+            </div>
+        );
+    }
+}
 
 // Emotion cache with prepend:true — ensures MUI @import rules appear before other CSS
 const muiCache = createCache({ key: 'mui', prepend: true });
@@ -30,8 +56,18 @@ const AnalyticsPage = lazy(() => import('@pages/analytics/AnalyticsPage'));
 const UsersPage = lazy(() => import('@pages/users/UsersPage'));
 const SettingsPage = lazy(() => import('@pages/settings/SettingsPage'));
 const SuperAdminPage = lazy(() => import('@pages/superadmin/SuperAdminPage'));
+const LicensePage = lazy(() => import('@pages/license/LicensePage'));
 const NotFoundPage = lazy(() => import('@pages/NotFoundPage'));
 const PlayerPage = lazy(() => import('@pages/player/PlayerPage'));
+const StoreManagementPage = lazy(() => import('@pages/stores/StoreManagementPage'));
+const TemplatePage         = lazy(() => import('@pages/content/TemplatePage'));
+const SlidePage            = lazy(() => import('@pages/content/SlidePage'));
+const DailySchedulePage    = lazy(() => import('@pages/schedules/DailySchedulePage'));
+const StatusAlarmPage      = lazy(() => import('@pages/history/StatusAlarmPage'));
+const ContentHistoryPage   = lazy(() => import('@pages/history/ContentHistoryPage'));
+const SoftwareHistoryPage  = lazy(() => import('@pages/history/SoftwareHistoryPage'));
+const TouchHistoryPage     = lazy(() => import('@pages/history/TouchHistoryPage'));
+const ActionHistoryPage    = lazy(() => import('@pages/history/ActionHistoryPage'));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -65,21 +101,33 @@ function AppRoutes() {
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
             {/* Android TV WebView player — device JWT, no admin auth */}
-            <Route path="/player" element={<PlayerPage />} />
+            <Route path="/player" element={
+                <PlayerErrorBoundary><PlayerPage /></PlayerErrorBoundary>
+            } />
 
             {/* Protected — requires auth */}
             <Route element={<AuthGuard />}>
               <Route element={<DashboardLayout />}>
                 <Route index element={<Navigate to="/dashboard" replace />} />
                 <Route path="/dashboard" element={<DashboardPage />} />
-                <Route path="/devices" element={<DevicesPage />} />
+                <Route path="/device-management" element={<DevicesPage />} />
                 <Route path="/media" element={<MediaPage />} />
                 <Route path="/playlists" element={<PlaylistsPage />} />
                 <Route path="/schedules" element={<SchedulesPage />} />
                 <Route path="/analytics" element={<AnalyticsPage />} />
                 <Route path="/users" element={<UsersPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
+                <Route path="/license" element={<LicensePage />} />
                 <Route path="/super-admin" element={<SuperAdminPage />} />
+                <Route path="/stores"           element={<StoreManagementPage />} />
+                <Route path="/template"         element={<TemplatePage />} />
+                <Route path="/slide"            element={<SlidePage />} />
+                <Route path="/daily-schedule"   element={<DailySchedulePage />} />
+                <Route path="/history/alarm"    element={<StatusAlarmPage />} />
+                <Route path="/history/content"  element={<ContentHistoryPage />} />
+                <Route path="/history/software" element={<SoftwareHistoryPage />} />
+                <Route path="/history/touch"    element={<TouchHistoryPage />} />
+                <Route path="/history/action"   element={<ActionHistoryPage />} />
               </Route>
             </Route>
 

@@ -11,8 +11,10 @@ const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: false,
     max: 20,
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 5000,
+    idleTimeoutMillis: 30_000,
+    connectionTimeoutMillis: 5_000,
+    statement_timeout: 30_000,    // kill queries stuck > 30s
+    query_timeout: 30_000,
 });
 
 pool.on('error', (err: Error) => {

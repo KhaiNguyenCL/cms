@@ -14,6 +14,37 @@
 </head>
 
 <body>
+  <!-- Loading indicator: visible until React mounts.
+       If React crashes or JS fails, this stays visible instead of white screen. -->
+  <div id="app-loader" style="
+    position:fixed;inset:0;background:#111;display:flex;
+    align-items:center;justify-content:center;flex-direction:column;
+    font-family:monospace;color:#666;font-size:13px;z-index:99999;
+  ">
+    <div style="color:#6C63FF;font-size:18px;margin-bottom:8px">SignageCMS</div>
+    <div id="app-loader-msg">Loading…</div>
+  </div>
+
+  <script>
+    // Catch any JS error before React mounts — show it instead of white screen
+    window.onerror = function(msg, src, line, col, err) {
+      var el = document.getElementById('app-loader');
+      var msgEl = document.getElementById('app-loader-msg');
+      if (el) el.style.background = '#1a0000';
+      if (msgEl) msgEl.innerHTML =
+        '<span style="color:#f66">JS Error:</span><br>' + msg +
+        '<br><span style="color:#888">' + (src||'') + ':' + (line||'') + '</span>' +
+        (err && err.stack ? '<br><pre style="color:#aaa;font-size:11px;margin-top:8px">' + err.stack + '</pre>' : '');
+      return false;
+    };
+    window.onunhandledrejection = function(e) {
+      var msgEl = document.getElementById('app-loader-msg');
+      if (msgEl) msgEl.innerHTML =
+        '<span style="color:#f66">Unhandled Promise:</span><br>' +
+        (e.reason && e.reason.message ? e.reason.message : String(e.reason));
+    };
+  </script>
+
   <div id="root"></div>
   <script type="module" src="/src/main.tsx"></script>
 </body>

@@ -26,8 +26,9 @@ const ROLE_CFG = {
 } as const;
 
 const STATUS_CFG = {
-    ACTIVE:   { label: 'Active',   color: 'success' as const, icon: <CheckCircle sx={{ fontSize: 12 }} /> },
-    INACTIVE: { label: 'Inactive', color: 'default' as const, icon: <Cancel sx={{ fontSize: 12 }} /> },
+    ACTIVE:    { label: 'Active',    color: 'success' as const, icon: <CheckCircle sx={{ fontSize: 12 }} /> },
+    INACTIVE:  { label: 'Inactive',  color: 'default' as const, icon: <Cancel sx={{ fontSize: 12 }} /> },
+    SUSPENDED: { label: 'Suspended', color: 'error'   as const, icon: <Block sx={{ fontSize: 12 }} /> },
 } as const;
 
 function RoleChip({ role }: { role: User['role'] }) {
@@ -182,8 +183,8 @@ function EditUserDialog({
     if (!user) return null;
 
     const payload: UpdateUserPayload = {};
-    if (role !== user.role) payload.role = role;
-    if (status !== user.status) payload.status = status;
+    if (role !== user.role && (role === 'ADMIN' || role === 'MANAGER' || role === 'VIEWER')) payload.role = role;
+    if (status !== user.status && (status === 'ACTIVE' || status === 'INACTIVE')) payload.status = status;
     const hasChange = Object.keys(payload).length > 0;
 
     return (

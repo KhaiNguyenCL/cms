@@ -40,10 +40,11 @@ const heartbeatLimiter = rateLimit({
     message: { success: false, message: 'Heartbeat quá nhanh. Chờ trước khi gửi tiếp.' },
 });
 
-// /sync — gọi khi boot + khi syncRequired=true; 12 req/giờ đủ dư
+// /sync — gọi khi boot + khi syncRequired=true
+// 60/phút: cho phép burst khi test (switch schedule liên tục), vẫn chặn abuse
 const syncLimiter = rateLimit({
-    windowMs: 60 * 60 * 1000,  // 1 giờ
-    max: 12,
+    windowMs: 60 * 1000,       // 1 phút
+    max: 60,
     keyGenerator: deviceKey,
     standardHeaders: true,
     legacyHeaders: false,

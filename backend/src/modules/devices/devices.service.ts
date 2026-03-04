@@ -19,7 +19,9 @@ export interface DeviceRow {
     osVersion: string | null;
     appVersion: string | null;
     status: string;
+    isLicensed: boolean;
     lastSeen: string | null;
+    lastOfflineAt: string | null;
     location: string | null;
     timezone: string;
     settings: Record<string, unknown> | null;
@@ -69,7 +71,7 @@ export async function listDevices(
         ),
         query<DeviceRow>(
             `SELECT d.id, d."organizationId", d.name, d."pairingCode", d."androidId", d.model,
-                    d."osVersion", d."appVersion", d.status, d."lastSeen",
+                    d."osVersion", d."appVersion", d.status, d."isLicensed", d."lastSeen", d."lastOfflineAt",
                     d.location, d.timezone, d.settings, d."createdAt", d."updatedAt"
              FROM devices d
              WHERE ${where}
@@ -88,7 +90,7 @@ export async function listDevices(
 export async function getDeviceById(deviceId: string, organizationId: string): Promise<DeviceRow> {
     const device = await queryOne<DeviceRow>(
         `SELECT id, "organizationId", name, "pairingCode", "androidId", model, "osVersion", "appVersion",
-                status, "lastSeen", location, timezone, settings, "createdAt", "updatedAt"
+                status, "isLicensed", "lastSeen", "lastOfflineAt", location, timezone, settings, "createdAt", "updatedAt"
          FROM devices
          WHERE id = $1 AND "organizationId" = $2`,
         [deviceId, organizationId]
@@ -103,10 +105,10 @@ export async function createDevice(
     organizationId: string,
     data: CreateDeviceBody
 ): Promise<DeviceRow> {
-    // Generate a unique 6-char uppercase alphanumeric pairing code
+    // Generate a unique 6-digit numeric pairing code (easier to type on TV remote)
     let pairingCode: string;
     for (let attempts = 0; attempts < 10; attempts++) {
-        pairingCode = randomBytes(3).toString('hex').toUpperCase();
+        pairingCode = String(Math.floor(100000 + Math.random() * 900000));
         const existing = await queryOne<{ id: string }>(
             `SELECT id FROM devices WHERE "pairingCode" = $1`,
             [pairingCode]
@@ -118,7 +120,7 @@ export async function createDevice(
         `INSERT INTO devices (id, "organizationId", name, "pairingCode", status, location, timezone, settings, "createdAt", "updatedAt")
          VALUES (gen_random_uuid()::text, $1, $2, $3, 'OFFLINE', $4, $5, $6, NOW(), NOW())
          RETURNING id, "organizationId", name, "pairingCode", "androidId", model, "osVersion", "appVersion",
-                   status, "lastSeen", location, timezone, settings, "createdAt", "updatedAt"`,
+                   status, "isLicensed", "lastSeen", "lastOfflineAt", location, timezone, settings, "createdAt", "updatedAt"`,
         [
             organizationId,
             data.name,
@@ -160,7 +162,7 @@ export async function updateDevice(
          SET ${fields.join(', ')}
          WHERE id = $${idx++} AND "organizationId" = $${idx++}
          RETURNING id, "organizationId", name, "pairingCode", "androidId", model, "osVersion", "appVersion",
-                   status, "lastSeen", location, timezone, settings, "createdAt", "updatedAt"`,
+                   status, "isLicensed", "lastSeen", "lastOfflineAt", location, timezone, settings, "createdAt", "updatedAt"`,
         values
     );
     if (!rows[0]) throw new AppError(404, 'Device không tồn tại');
@@ -177,7 +179,64 @@ export async function deleteDevice(deviceId: string, organizationId: string): Pr
         [deviceId, organizationId]
     );
     if (!result[0]) throw new AppError(404, 'Device không tồn tại');
+
+    // Blacklist token + push reset command so the TV returns to pairing screen
+    const redis = (await import('../../shared/cache/redis')).default;
+    const { RedisKeys } = await import('../../shared/cache/redis');
+    await redis.setex(RedisKeys.deviceBlacklist(deviceId), 60 * 60 * 24 * 7, '1');
+
+    try {
+        const { pushCommandToDevice } = await import('../../shared/socket/socket.server');
+        pushCommandToDevice(deviceId, 'command.reset_pairing' as any);
+    } catch { /* device may be offline */ }
+
     logger.info('Device deleted', { deviceId });
+}
+
+// ─── Reset device (revoke token, clear pairing, back to OFFLINE) ──────────────
+
+export async function resetDevice(deviceId: string, organizationId: string): Promise<{ pairingCode: string }> {
+    const device = await queryOne<{ id: string }>(
+        `SELECT id FROM devices WHERE id = $1 AND "organizationId" = $2`,
+        [deviceId, organizationId]
+    );
+    if (!device) throw new AppError(404, 'Device không tồn tại');
+
+    // Blacklist the device token in Redis so next API call returns 401
+    const redis = (await import('../../shared/cache/redis')).default;
+    const { RedisKeys } = await import('../../shared/cache/redis');
+    await redis.setex(RedisKeys.deviceBlacklist(deviceId), 60 * 60 * 24 * 7, '1');
+
+    // Generate a fresh unique 6-digit pairing code
+    let pairingCode = '';
+    for (let attempt = 0; attempt < 10; attempt++) {
+        pairingCode = String(Math.floor(100000 + Math.random() * 900000));
+        const taken = await queryOne<{ id: string }>(
+            `SELECT id FROM devices WHERE "pairingCode" = $1`, [pairingCode]
+        );
+        if (!taken) break;
+    }
+
+    // Reset device state + store new pairing code immediately
+    await query(
+        `UPDATE devices SET
+            "androidId" = NULL, "appVersion" = NULL, "osVersion" = NULL,
+            "pairingCode" = $1, status = 'OFFLINE', "lastSeen" = NULL, "updatedAt" = NOW()
+         WHERE id = $2`,
+        [pairingCode, deviceId]
+    );
+
+    // Cache new code in Redis with TTL
+    await redis.setex(RedisKeys.pairingCode(pairingCode), 300, deviceId);
+
+    // Push reset command to device (if online) — triggers immediate re-pair screen
+    try {
+        const { pushCommandToDevice } = await import('../../shared/socket/socket.server');
+        pushCommandToDevice(deviceId, 'command.reset_pairing' as any);
+    } catch { /* socket not initialized */ }
+
+    logger.info('Device reset — re-pairing required', { deviceId, pairingCode });
+    return { pairingCode };
 }
 
 // ─── Send command ──────────────────────────────────────────────────────────────
@@ -208,6 +267,12 @@ export async function sendDeviceCommand(
         SCREENSHOT: 'command.screenshot',
         RELOAD_CONTENT: 'command.reload_content',
         CLEAR_CACHE: 'command.clear_cache',
+        SLEEP: 'command.sleep',
+        WAKE_UP: 'command.wake_up',
+        VIEWER_RESTART: 'command.viewer_restart',
+        DOWNLOAD_CONTENT: 'command.download_content',
+        SET_VOLUME: 'command.set_volume',
+        EXIT_APP: 'command.exit_app',
     };
     const wsEvent = commandEventMap[data.command] ?? data.command.toLowerCase();
 
@@ -236,6 +301,133 @@ export async function sendDeviceCommand(
             : `Lệnh ${data.command} đã lưu vào hàng đợi (device chưa kết nối)`,
         queuedAt: new Date().toISOString(),
     };
+}
+
+// ─── Set device license ────────────────────────────────────────────────────────
+
+export async function setDeviceLicense(
+    deviceId: string,
+    organizationId: string,
+    isLicensed: boolean
+): Promise<DeviceRow> {
+    const rows = await query<DeviceRow>(
+        `UPDATE devices
+         SET "isLicensed" = $1, "updatedAt" = NOW()
+         WHERE id = $2 AND "organizationId" = $3
+         RETURNING id, "organizationId", name, "pairingCode", "androidId", model, "osVersion", "appVersion",
+                   status, "isLicensed", "lastSeen", "lastOfflineAt", location, timezone, settings, "createdAt", "updatedAt"`,
+        [isLicensed, deviceId, organizationId]
+    );
+    if (!rows[0]) throw new AppError(404, 'Device không tồn tại');
+    logger.info('Device license updated', { deviceId, isLicensed });
+    return rows[0];
+}
+
+// ─── Get device health (latest record) ────────────────────────────────────────
+
+export interface DeviceHealthRow {
+    cpuUsage: number | null;
+    memoryUsage: number | null;
+    storageTotal: number | null;
+    storageUsed: number | null;
+    networkType: string | null;
+    ipAddress: string | null;
+    macAddress: string | null;
+    heapMemory: number | null;
+    networkConnected: boolean | null;
+    reportedAt: string | null;
+}
+
+export async function getDeviceHealth(deviceId: string, organizationId: string): Promise<DeviceHealthRow | null> {
+    const device = await queryOne<{ id: string }>(
+        `SELECT id FROM devices WHERE id = $1 AND "organizationId" = $2`,
+        [deviceId, organizationId]
+    );
+    if (!device) throw new AppError(404, 'Device không tồn tại');
+
+    return queryOne<DeviceHealthRow>(
+        `SELECT "cpuUsage", "memoryUsage", "storageTotal", "storageUsed", "networkType",
+                "ipAddress", "macAddress", "heapMemory", "networkConnected", "reportedAt"
+         FROM device_health
+         WHERE "deviceId" = $1 AND "isOnline" = true
+         ORDER BY "reportedAt" DESC
+         LIMIT 1`,
+        [deviceId]
+    );
+}
+
+// ─── Now Playing (latest playback log) ────────────────────────────────────────
+
+export interface NowPlayingRow {
+    mediaId: string;
+    mediaTitle: string;
+    mediaType: string;
+    playedAt: string;
+    durationPlayed: number;
+    completed: boolean;
+}
+
+export async function getNowPlaying(deviceId: string, organizationId: string): Promise<NowPlayingRow | null> {
+    const device = await queryOne<{ id: string }>(
+        `SELECT id FROM devices WHERE id = $1 AND "organizationId" = $2`,
+        [deviceId, organizationId]
+    );
+    if (!device) throw new AppError(404, 'Device không tồn tại');
+
+    return queryOne<NowPlayingRow>(
+        `SELECT pl.id AS "mediaId", m.title AS "mediaTitle", m.type AS "mediaType",
+                pl."playedAt", pl."durationPlayed", pl.completed
+         FROM playback_logs pl
+         JOIN media m ON m.id = pl."mediaId"
+         WHERE pl."deviceId" = $1
+         ORDER BY pl."playedAt" DESC
+         LIMIT 1`,
+        [deviceId]
+    );
+}
+
+// ─── Device Comments ───────────────────────────────────────────────────────────
+
+export interface DeviceCommentRow {
+    id: string;
+    deviceId: string;
+    userId: string | null;
+    userName: string | null;
+    comment: string;
+    createdAt: string;
+}
+
+export async function getDeviceComments(deviceId: string, organizationId: string): Promise<DeviceCommentRow[]> {
+    const device = await queryOne<{ id: string }>(
+        `SELECT id FROM devices WHERE id = $1 AND "organizationId" = $2`,
+        [deviceId, organizationId]
+    );
+    if (!device) throw new AppError(404, 'Device không tồn tại');
+
+    return query<DeviceCommentRow>(
+        `SELECT id, "deviceId", "userId", "userName", comment, "createdAt"
+         FROM device_comments
+         WHERE "deviceId" = $1 AND "organizationId" = $2
+         ORDER BY "createdAt" DESC
+         LIMIT 20`,
+        [deviceId, organizationId]
+    );
+}
+
+export async function addDeviceComment(
+    deviceId: string,
+    organizationId: string,
+    userId: string,
+    userName: string,
+    comment: string
+): Promise<DeviceCommentRow> {
+    const rows = await query<DeviceCommentRow>(
+        `INSERT INTO device_comments (id, "deviceId", "organizationId", "userId", "userName", comment, "createdAt")
+         VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, NOW())
+         RETURNING id, "deviceId", "userId", "userName", comment, "createdAt"`,
+        [deviceId, organizationId, userId, userName, comment]
+    );
+    return rows[0];
 }
 
 // ─── Device logs (mock) ────────────────────────────────────────────────────────

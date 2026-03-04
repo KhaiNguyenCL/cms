@@ -154,6 +154,14 @@ export async function deleteDevice(req: Request, res: Response, next: NextFuncti
     } catch (err) { next(err); }
 }
 
+// POST /api/devices/:id/reset
+export async function resetDevice(req: Request, res: Response, next: NextFunction) {
+    try {
+        const result = await devService.resetDevice(req.params.id as string, req.user!.organizationId);
+        res.json({ success: true, message: 'Device đã được reset — cần ghép cặp lại', data: result });
+    } catch (err) { next(err); }
+}
+
 // POST /api/devices/:id/command
 export async function sendCommand(req: Request, res: Response, next: NextFunction) {
     try {
@@ -177,6 +185,58 @@ export async function getDeviceLogs(req: Request, res: Response, next: NextFunct
     try {
         const result = await devService.getDeviceLogs(req.params.id as string, req.user!.organizationId);
         res.json({ success: true, data: result });
+    } catch (err) { next(err); }
+}
+
+// GET /api/devices/:id/health
+export async function getDeviceHealth(req: Request, res: Response, next: NextFunction) {
+    try {
+        const health = await devService.getDeviceHealth(req.params.id as string, req.user!.organizationId);
+        res.json({ success: true, data: health });
+    } catch (err) { next(err); }
+}
+
+// PATCH /api/devices/:id/license
+export async function setDeviceLicense(req: Request, res: Response, next: NextFunction) {
+    try {
+        const { isLicensed } = req.body as { isLicensed: boolean };
+        const device = await devService.setDeviceLicense(req.params.id as string, req.user!.organizationId, isLicensed);
+        res.json({ success: true, message: `Device license ${isLicensed ? 'enabled' : 'disabled'}`, data: device });
+    } catch (err) { next(err); }
+}
+
+// GET /api/devices/:id/now-playing
+export async function getNowPlaying(req: Request, res: Response, next: NextFunction) {
+    try {
+        const result = await devService.getNowPlaying(req.params.id as string, req.user!.organizationId);
+        res.json({ success: true, data: result });
+    } catch (err) { next(err); }
+}
+
+// GET /api/devices/:id/comments
+export async function getDeviceComments(req: Request, res: Response, next: NextFunction) {
+    try {
+        const result = await devService.getDeviceComments(req.params.id as string, req.user!.organizationId);
+        res.json({ success: true, data: result });
+    } catch (err) { next(err); }
+}
+
+// POST /api/devices/:id/comments
+export async function addDeviceComment(req: Request, res: Response, next: NextFunction) {
+    try {
+        const { comment, userName } = req.body as { comment: string; userName?: string };
+        if (!comment || !comment.trim()) {
+            res.status(400).json({ success: false, message: 'Ghi chú không được để trống' });
+            return;
+        }
+        const result = await devService.addDeviceComment(
+            req.params.id as string,
+            req.user!.organizationId,
+            req.user!.userId,
+            userName ?? req.user!.userId,
+            comment.trim()
+        );
+        res.status(201).json({ success: true, data: result });
     } catch (err) { next(err); }
 }
 
@@ -205,3 +265,4 @@ export async function updateGroup(req: Request, res: Response, next: NextFunctio
         res.json({ success: true, message: 'Cập nhật group thành công', data: group });
     } catch (err) { next(err); }
 }
+

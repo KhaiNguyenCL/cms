@@ -52,6 +52,7 @@ export const updateScheduleSchema = z.object({
     body: z.object({
         name: z.string().min(1).max(200).optional(),
         playlistId: z.string().optional(),
+        mediaId: z.string().min(1).optional(),   // direct-media mode: resolve/create auto-playlist
         targetType: z.enum(SCHEDULE_TARGETS).optional(),
         targetDeviceId: z.string().optional().nullable(),
         targetGroupId: z.string().optional().nullable(),

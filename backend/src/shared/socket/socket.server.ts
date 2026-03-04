@@ -1,6 +1,8 @@
 import { Server as SocketIOServer, Socket } from 'socket.io';
+import { createAdapter } from '@socket.io/redis-adapter';
 import http from 'http';
 import jwt from 'jsonwebtoken';
+import Redis from 'ioredis';
 import config from '../../config';
 import logger from '../utils/logger';
 import type { JwtPayload } from '../middleware/auth.middleware';
@@ -26,13 +28,26 @@ export const orgRoom = (orgId: string) => `org:${orgId}`;
 export function initSocketIO(server: http.Server): SocketIOServer {
     io = new SocketIOServer(server, {
         cors: {
-            origin: '*',   // tighten in production
+            origin: config.cors.origins,
             methods: ['GET', 'POST'],
         },
-        // Separate namespaces for devices vs admin dashboard
-        // Default namespace '/' is used by admin dashboard
-        // Namespace '/device' is used by Android TV
+        // Screenshot base64 data URLs can be 300–600 KB; set 5 MB to be safe.
+        maxHttpBufferSize: 5 * 1024 * 1024,
     });
+
+    // Redis adapter — required for PM2 cluster mode so events are
+    // forwarded across all worker processes via pub/sub.
+    const redisOpts = {
+        host: config.redis.host,
+        port: config.redis.port,
+        password: config.redis.password,
+    };
+    const pubClient = new Redis(redisOpts);
+    const subClient = new Redis(redisOpts);
+    pubClient.on('error', (err) => logger.error('Socket.IO pub Redis error', { err: err.message }));
+    subClient.on('error', (err) => logger.error('Socket.IO sub Redis error', { err: err.message }));
+    io.adapter(createAdapter(pubClient, subClient));
+    logger.info('Socket.IO Redis adapter attached');
 
     // ── Namespace: /device (Android TV) ──────────────────────────────────────
     const deviceNS = io.of('/device');
@@ -92,6 +107,7 @@ export function initSocketIO(server: http.Server): SocketIOServer {
 
         // device.screenshot: device uploads screenshot result URL
         socket.on('device.screenshot', (data: { url: string }) => {
+            logger.info('Device screenshot received', { deviceId, urlLength: data?.url?.length ?? 0 });
             io!.of('/admin').to(orgRoom(orgId)).emit('device.screenshot', {
                 deviceId,
                 url: data.url,
@@ -111,9 +127,24 @@ export function initSocketIO(server: http.Server): SocketIOServer {
         // ── Disconnect ────────────────────────────────────────────────────────
 
         socket.on('disconnect', (reason) => {
-            logger.info('Device disconnected', { deviceId, reason });
+            // A device has TWO concurrent socket connections to /device:
+            //   1. CommandService (native Android) — always running
+            //   2. usePlayerSocket (WebView JS)    — disconnects on every page reload
+            //
+            // After disconnect the socket has already left its rooms, so
+            // adapter.rooms.get(deviceRoom) returns only the REMAINING connections.
+            // Only mark OFFLINE when the last connection drops (i.e. the device
+            // is truly unreachable), not on every WebView reload.
+            const remaining = io!.of('/device').adapter.rooms.get(deviceRoom(deviceId));
+            if (remaining && remaining.size > 0) {
+                logger.debug('Device socket disconnected but other connections remain — keeping ONLINE', {
+                    deviceId, remaining: remaining.size, reason,
+                });
+                return;
+            }
 
-            // Update device status to OFFLINE in DB
+            logger.info('Device fully disconnected', { deviceId, reason });
+
             import('../../modules/device-sync/device-sync.service')
                 .then(({ markDeviceOffline }) => markDeviceOffline(deviceId, orgId))
                 .catch((err) => logger.error('Failed to mark device offline', { deviceId, err }));
@@ -147,10 +178,19 @@ export function initSocketIO(server: http.Server): SocketIOServer {
         const socket = rawSocket as unknown as SocketWithUser;
         const orgId = socket.user.organizationId;
         const role = socket.user.role;
+        const managingOrgId = (socket.handshake.auth as Record<string, unknown>)?.managingOrgId as string | undefined;
 
-        // Admin/manager joins org-wide room to receive device updates
+        // Admin/manager joins own org room to receive device updates
         socket.join(orgRoom(orgId));
-        logger.info('Admin connected via WebSocket', { userId: socket.user.userId, role });
+
+        // SUPER_ADMIN managing another org — also join that org's room so
+        // device events (screenshot, status) from the managed org are received.
+        if (managingOrgId && managingOrgId !== orgId) {
+            socket.join(orgRoom(managingOrgId));
+            logger.info('Admin joined managed org room', { userId: socket.user.userId, managingOrgId });
+        }
+
+        logger.info('Admin connected via WebSocket', { userId: socket.user.userId, role, managingOrgId: managingOrgId ?? null });
 
         socket.on('disconnect', () => {
             logger.debug('Admin disconnected', { userId: socket.user.userId });
@@ -194,6 +234,28 @@ export function broadcastContentUpdate(orgId: string, eventType: 'content.update
     // We can't directly target by org easily without tracking, so we broadcast to all device rooms
     // Alternative: devices subscribe to an org room too
     io.of('/device').to(orgRoom(orgId)).emit(eventType, { ...data, timestamp: new Date().toISOString() });
+}
+
+/**
+ * Broadcast sync group state change to all devices + admin clients in an org.
+ * Called when admin starts / restarts / stops a sync group.
+ * Devices in the group will immediately recalculate their playback position.
+ */
+export function broadcastSyncState(
+    orgId: string,
+    payload: {
+        storeId: string;
+        startEpoch: number | null;
+        totalDurationMs: number | null;
+        playlistId: string | null;
+    },
+): void {
+    if (!io) return;
+    const event = 'sync.state';
+    const data = { ...payload, timestamp: new Date().toISOString() };
+    io.of('/device').to(orgRoom(orgId)).emit(event, data);
+    io.of('/admin').to(orgRoom(orgId)).emit(event, data);
+    logger.info('Sync state broadcast', { orgId, storeId: payload.storeId, startEpoch: payload.startEpoch });
 }
 
 /**

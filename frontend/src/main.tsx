@@ -7,3 +7,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <App />
   </React.StrictMode>
 );
+
+// Hide the loader once React has mounted
+const loader = document.getElementById('app-loader');
+if (loader) loader.style.display = 'none';

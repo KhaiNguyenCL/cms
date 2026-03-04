@@ -8,7 +8,7 @@ import {
     CircularProgress, Alert,
 } from '@mui/material';
 import {
-    Add, QueueMusic, MoreVert, Delete, VideoFile, Image, Language, PlayArrow,
+    Add, QueueMusic, MoreVert, Delete, VideoFile, Image, PlayArrow,
     Search, CheckCircle, AddCircle, DragIndicator, AllInclusive,
 } from '@mui/icons-material';
 import { playlistsApi } from '@api/playlists.api';
@@ -21,7 +21,6 @@ import type { Playlist, PlaylistItem, Media } from '@/types';
 
 function typeIcon(type?: string) {
     if (type === 'VIDEO') return <VideoFile sx={{ fontSize: 20 }} />;
-    if (type === 'WEBPAGE') return <Language sx={{ fontSize: 20 }} />;
     return <Image sx={{ fontSize: 20 }} />;
 }
 

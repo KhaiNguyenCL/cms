@@ -8,7 +8,7 @@ import {
     InputLabel, Fade, Backdrop,
 } from '@mui/material';
 import {
-    Search, VideoFile, Image, Language,
+    Search, VideoFile, Image,
     CloudUpload, Delete, CheckCircle, HourglassEmpty, Error as ErrorIcon,
     Close, Download, ZoomIn,
 } from '@mui/icons-material';
@@ -20,8 +20,8 @@ import type { Media, MediaType } from '@/types';
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function MediaTypeIcon({ type }: { type: MediaType }) {
-    const icons = { VIDEO: <VideoFile />, IMAGE: <Image />, WEBPAGE: <Language /> };
-    const colors = { VIDEO: '#FF6584', IMAGE: '#4CAF82', WEBPAGE: '#29B6F6' };
+    const icons = { VIDEO: <VideoFile />, IMAGE: <Image /> };
+    const colors = { VIDEO: '#FF6584', IMAGE: '#4CAF82' };
     return (
         <Box sx={{ color: colors[type] ?? 'text.secondary', display: 'flex' }}>
             {icons[type] ?? <Image />}
@@ -370,8 +370,8 @@ export default function MediaPage() {
         queryFn: () => mediaApi.list({ page, limit: LIMIT, search: search || undefined, type: typeFilter || undefined }),
         // Poll every 3s while any item is still transcoding, stop once all are READY/ERROR
         refetchInterval: (query) => {
-            const items = (query.state.data as typeof data)?.data;
-            return Array.isArray(items) && items.some(m => m.status === 'PROCESSING') ? 3_000 : false;
+            const items = (query.state.data as { data: Media[] } | undefined)?.data;
+            return Array.isArray(items) && items.some((m: Media) => m.status === 'PROCESSING') ? 3_000 : false;
         },
     });
 
@@ -422,7 +422,6 @@ export default function MediaPage() {
                         <MuiMenuItem value="">All</MuiMenuItem>
                         <MuiMenuItem value="VIDEO">Video</MuiMenuItem>
                         <MuiMenuItem value="IMAGE">Image</MuiMenuItem>
-                        <MuiMenuItem value="WEBPAGE">Webpage</MuiMenuItem>
                     </Select>
                 </FormControl>
             </Stack>
