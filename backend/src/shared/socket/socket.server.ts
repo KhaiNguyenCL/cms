@@ -11,6 +11,10 @@ import type { JwtPayload } from '../middleware/auth.middleware';
 
 let io: SocketIOServer | null = null;
 
+// Track devices that sent graceful offline signal before disconnecting.
+// Key: deviceId, Value: reason string. Cleared on disconnect.
+const gracefulOfflineMap = new Map<string, string>();
+
 export function getIO(): SocketIOServer {
     if (!io) throw new Error('Socket.IO not initialized. Call initSocketIO(server) first.');
     return io;
@@ -33,6 +37,10 @@ export function initSocketIO(server: http.Server): SocketIOServer {
         },
         // Screenshot base64 data URLs can be 300–600 KB; set 5 MB to be safe.
         maxHttpBufferSize: 5 * 1024 * 1024,
+        // Faster dead-connection detection (default: 25s interval + 20s timeout = 45s)
+        // Reduced to 15s + 10s = ~25s to detect power loss / network drop
+        pingInterval: 15_000,
+        pingTimeout:  10_000,
     });
 
     // Redis adapter — required for PM2 cluster mode so events are
@@ -124,6 +132,13 @@ export function initSocketIO(server: http.Server): SocketIOServer {
             });
         });
 
+        // device.going_offline: graceful shutdown signal (app closed / restart)
+        // Emitted by CommandService.onDestroy() ~200ms before socket disconnects.
+        socket.on('device.going_offline', (data: { reason?: string }) => {
+            gracefulOfflineMap.set(deviceId, data?.reason ?? 'APP_CLOSED');
+            logger.info('Device signaled graceful offline', { deviceId, reason: data?.reason });
+        });
+
         // ── Disconnect ────────────────────────────────────────────────────────
 
         socket.on('disconnect', (reason) => {
@@ -143,15 +158,29 @@ export function initSocketIO(server: http.Server): SocketIOServer {
                 return;
             }
 
-            logger.info('Device fully disconnected', { deviceId, reason });
+            const gracefulReason = gracefulOfflineMap.get(deviceId);
+            gracefulOfflineMap.delete(deviceId);
+            const offlineType = gracefulReason ? 'GRACEFUL' : 'UNEXPECTED';
+            logger.info('Device fully disconnected', { deviceId, reason, offlineType });
 
             import('../../modules/device-sync/device-sync.service')
                 .then(({ markDeviceOffline }) => markDeviceOffline(deviceId, orgId))
                 .catch((err) => logger.error('Failed to mark device offline', { deviceId, err }));
 
+            // Auto-log offline event as device comment for audit/test tracking
+            import('../../modules/devices/devices.service')
+                .then(({ autoLogDeviceEvent }) => {
+                    const msg = offlineType === 'GRACEFUL'
+                        ? `📴 Offline (chủ động): ${gracefulReason}`
+                        : `⚡ Offline (bất ngờ): mất điện hoặc crash`;
+                    return autoLogDeviceEvent(deviceId, orgId, msg);
+                })
+                .catch(() => {});
+
             io!.of('/admin').to(orgRoom(orgId)).emit('device.status', {
                 deviceId,
                 status: 'OFFLINE',
+                offlineType,
                 reason,
                 timestamp: new Date().toISOString(),
             });
@@ -196,6 +225,39 @@ export function initSocketIO(server: http.Server): SocketIOServer {
             logger.debug('Admin disconnected', { userId: socket.user.userId });
         });
     });
+
+    // ── Stale heartbeat checker ───────────────────────────────────────────────
+    // Devices that go to standby (TV sleep) keep socket connected but stop
+    // sending heartbeats. Check every 60s and mark OFFLINE any device whose
+    // lastSeen is older than 90s (= 3 missed heartbeats).
+    setInterval(async () => {
+        try {
+            const { query } = await import('../database/db');
+            const stale = await query<{ id: string; organizationId: string; name: string }>(
+                `SELECT id, "organizationId", name FROM devices
+                 WHERE status = 'ONLINE'
+                   AND "lastSeen" < NOW() - INTERVAL '90 seconds'`,
+                []
+            );
+            for (const device of stale) {
+                logger.info('Stale heartbeat — marking OFFLINE', { deviceId: device.id });
+                await query(
+                    `UPDATE devices SET status = 'OFFLINE', "lastOfflineAt" = NOW(), "updatedAt" = NOW()
+                     WHERE id = $1`,
+                    [device.id]
+                );
+                io!.of('/admin').to(orgRoom(device.organizationId)).emit('device.status', {
+                    deviceId: device.id,
+                    status: 'OFFLINE',
+                    offlineType: 'STALE_HEARTBEAT',
+                    reason: 'No heartbeat for 90s — device may be in standby',
+                    timestamp: new Date().toISOString(),
+                });
+            }
+        } catch (err) {
+            logger.error('Stale heartbeat check failed', { err });
+        }
+    }, 60_000);
 
     logger.info('Socket.IO initialized — namespaces: /device, /admin');
     return io;

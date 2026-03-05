@@ -430,6 +430,15 @@ export async function addDeviceComment(
     return rows[0];
 }
 
+/** Auto-log a system event to device_comments (no user, for audit trail). */
+export async function autoLogDeviceEvent(deviceId: string, organizationId: string, message: string): Promise<void> {
+    await query(
+        `INSERT INTO device_comments (id, "deviceId", "organizationId", "userId", "userName", comment, "createdAt")
+         VALUES (gen_random_uuid()::text, $1, $2, NULL, 'System', $3, NOW())`,
+        [deviceId, organizationId, message]
+    );
+}
+
 // ─── Device logs (mock) ────────────────────────────────────────────────────────
 
 export async function getDeviceLogs(deviceId: string, organizationId: string) {

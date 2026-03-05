@@ -210,7 +210,7 @@ export async function heartbeat(deviceId: string, organizationId: string, data: 
     isLicensed: boolean;
     deviceAdminPin: string;
 }> {
-    // Update device lastSeen + status
+    // Update device lastSeen + status, fetch lastOfflineAt for auto-start log
     const updates: string[] = [`status = 'ONLINE'`, `"lastSeen" = NOW()`, `"updatedAt" = NOW()`];
     const values: unknown[] = [];
     let idx = 1;
@@ -219,10 +219,25 @@ export async function heartbeat(deviceId: string, organizationId: string, data: 
     if (data.model)      { updates.push(`model = $${idx++}`);        values.push(data.model); }
     values.push(deviceId, organizationId);
 
+    const prevDevice = await queryOne<{ status: string; lastOfflineAt: string | null }>(
+        `SELECT status, "lastOfflineAt" FROM devices WHERE id = $1 AND "organizationId" = $2`,
+        [deviceId, organizationId]
+    );
+
     await query(
         `UPDATE devices SET ${updates.join(', ')} WHERE id = $${idx++} AND "organizationId" = $${idx++}`,
         values
     );
+
+    // Auto-log when device comes back ONLINE after being OFFLINE (for auto-start tracking)
+    if (prevDevice?.status === 'OFFLINE' && prevDevice.lastOfflineAt) {
+        const offlineDurationMs = Date.now() - new Date(prevDevice.lastOfflineAt).getTime();
+        const mins = Math.round(offlineDurationMs / 60_000);
+        const msg = `✅ Online trở lại sau ${mins} phút offline`;
+        import('../devices/devices.service')
+            .then(({ autoLogDeviceEvent }) => autoLogDeviceEvent(deviceId, organizationId, msg))
+            .catch(() => {});
+    }
 
     // Always insert a device_health record on every heartbeat (isOnline = true).
     // Fields absent from the payload will be NULL — that is expected for devices

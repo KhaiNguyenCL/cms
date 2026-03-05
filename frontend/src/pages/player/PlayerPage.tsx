@@ -21,6 +21,17 @@ import { Lock as LockIcon } from '@mui/icons-material';
 
 const DEBUG = new URLSearchParams(window.location.search).get('debug') === '1';
 const FADE_MS = 500; // crossfade duration (ms)
+const SYNC_CACHE_KEY = 'signagecms_last_sync'; // localStorage key for offline cache
+
+function saveSyncCache(data: SyncResponse) {
+    try { localStorage.setItem(SYNC_CACHE_KEY, JSON.stringify(data)); } catch { /* quota full */ }
+}
+function loadSyncCache(): SyncResponse | null {
+    try {
+        const raw = localStorage.getItem(SYNC_CACHE_KEY);
+        return raw ? (JSON.parse(raw) as SyncResponse) : null;
+    } catch { return null; }
+}
 
 import {
     setDeviceToken,
@@ -310,6 +321,7 @@ export default function PlayerPage() {
             setSyncData(data);           // triggers slot management effect below
             contentHashRef.current = data.contentHash;
             setSyncError(null);
+            saveSyncCache(data);         // lưu cache để dùng khi offline
 
             // Trigger Android to download/cache all media files
             triggerNativeCacheSync(data);
@@ -320,7 +332,15 @@ export default function PlayerPage() {
             socketEmit('device.error', { code: 'SYNC_FAILED', message: msg, httpStatus: status });
             if (status === 401) {
                 window.NativeBridge?.clearCredentialsAndRepair?.();
+                return; // credentials invalid — don't load cache
             }
+            // Nếu chưa có syncData (lần đầu boot mà server down) → load cache
+            setSyncData(prev => {
+                if (prev) return prev; // đang phát rồi, giữ nguyên
+                const cached = loadSyncCache();
+                if (cached) console.log('[Player] server offline — using cached sync data');
+                return cached;
+            });
             setSyncError(msg);
         } finally {
             syncingRef.current = false;
@@ -330,6 +350,15 @@ export default function PlayerPage() {
     useEffect(() => {
         if (deviceInfo) doSync();
     }, [deviceInfo, doSync]);
+
+    // Retry sync mỗi 15s khi server down (syncError != null)
+    // Heartbeat đã retry mỗi 30s nhưng chỉ khi syncData có sẵn.
+    // Khi boot mà server down, cần retry riêng để recover sớm hơn.
+    useEffect(() => {
+        if (!deviceInfo || !syncError) return;
+        const timer = setInterval(() => doSync(), 15_000);
+        return () => clearInterval(timer);
+    }, [deviceInfo, syncError, doSync]);
 
     // ── 3. Socket.IO: re-sync on content/schedule updates ─────────────────────
     // onSyncState: admin started/stopped/restarted a sync group → immediate re-sync

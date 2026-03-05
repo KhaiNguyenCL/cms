@@ -31,6 +31,7 @@ export default defineConfig({
   // ── Dev server: proxy API & WebSocket to backend ────────────────────────────
   server: {
     port: 5173,
+    host: '0.0.0.0',  // listen on all interfaces → LAN accessible
     proxy: {
       '/api': {
         target: 'http://localhost:3000',
