@@ -11,12 +11,12 @@ import {
     Add, PlayArrow, Stop, Replay, Delete, Edit, Tv,
     Circle, SyncAlt,
 } from '@mui/icons-material';
-import { storesApi as syncGroupsApi } from '@api/sync-groups.api';
+import { sitesApi as syncGroupsApi } from '@api/sites.api';
 import { devicesApi } from '@api/devices.api';
 import { apiClient } from '@api/client';
 import { useAppDispatch } from '@store/hooks';
 import { pushToast } from '@store/slices/uiSlice';
-import type { Store as SyncGroup, Device } from '@/types';
+import type { Site as SyncGroup, Device } from '@/types';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -89,7 +89,7 @@ function GroupDialog({ open, editing, onClose }: GroupDialogProps) {
             ? syncGroupsApi.update(editing.id, { name, description: description || null, playlistId })
             : syncGroupsApi.create({ name, description: description || undefined, playlistId: playlistId ?? undefined }),
         onSuccess: () => {
-            qc.invalidateQueries({ queryKey: ['sync-groups'] });
+            qc.invalidateQueries({ queryKey: ['sites'] });
             dispatch(pushToast({ severity: 'success', message: editing ? 'Đã cập nhật' : 'Đã tạo sync group' }));
             onClose();
         },
@@ -143,14 +143,14 @@ function DeviceDialog({ group, onClose }: { group: SyncGroup; onClose: () => voi
         mutationFn: (body: { add?: string[]; remove?: string[] }) =>
             syncGroupsApi.updateDevices(group.id, body),
         onSuccess: () => {
-            qc.invalidateQueries({ queryKey: ['sync-groups'] });
+            qc.invalidateQueries({ queryKey: ['sites'] });
             dispatch(pushToast({ severity: 'success', message: 'Đã cập nhật danh sách thiết bị' }));
         },
         onError: () => dispatch(pushToast({ severity: 'error', message: 'Có lỗi xảy ra' })),
     });
 
     const memberIds = new Set(group.devices?.map(d => d.id) ?? []);
-    const available = (allDevices ?? []).filter((d: Device) => !d.storeId || d.storeId === group.id);
+    const available = (allDevices ?? []).filter((d: Device) => !d.siteId || d.siteId === group.id);
 
     const toggle = (device: Device) => {
         if (memberIds.has(device.id)) {
@@ -210,22 +210,22 @@ function GroupCard({ group, onEdit }: { group: SyncGroup; onEdit: (g: SyncGroup)
 
     const start = useMutation({
         mutationFn: () => syncGroupsApi.start(group.id),
-        onSuccess: () => { qc.invalidateQueries({ queryKey: ['sync-groups'] }); dispatch(pushToast({ severity: 'success', message: 'Đã bắt đầu sync' })); },
+        onSuccess: () => { qc.invalidateQueries({ queryKey: ['sites'] }); dispatch(pushToast({ severity: 'success', message: 'Đã bắt đầu sync' })); },
         onError: (e: any) => dispatch(pushToast({ severity: 'error', message: e?.response?.data?.message ?? 'Lỗi' })),
     });
     const restart = useMutation({
         mutationFn: () => syncGroupsApi.restart(group.id),
-        onSuccess: () => { qc.invalidateQueries({ queryKey: ['sync-groups'] }); dispatch(pushToast({ severity: 'success', message: 'Đã restart sync' })); },
+        onSuccess: () => { qc.invalidateQueries({ queryKey: ['sites'] }); dispatch(pushToast({ severity: 'success', message: 'Đã restart sync' })); },
         onError: () => dispatch(pushToast({ severity: 'error', message: 'Lỗi' })),
     });
     const stop = useMutation({
         mutationFn: () => syncGroupsApi.stop(group.id),
-        onSuccess: () => { qc.invalidateQueries({ queryKey: ['sync-groups'] }); dispatch(pushToast({ severity: 'success', message: 'Đã dừng sync' })); },
+        onSuccess: () => { qc.invalidateQueries({ queryKey: ['sites'] }); dispatch(pushToast({ severity: 'success', message: 'Đã dừng sync' })); },
         onError: () => dispatch(pushToast({ severity: 'error', message: 'Lỗi' })),
     });
     const del = useMutation({
         mutationFn: () => syncGroupsApi.delete(group.id),
-        onSuccess: () => { qc.invalidateQueries({ queryKey: ['sync-groups'] }); dispatch(pushToast({ severity: 'success', message: 'Đã xóa' })); },
+        onSuccess: () => { qc.invalidateQueries({ queryKey: ['sites'] }); dispatch(pushToast({ severity: 'success', message: 'Đã xóa' })); },
         onError: () => dispatch(pushToast({ severity: 'error', message: 'Lỗi' })),
     });
 
@@ -317,7 +317,7 @@ export default function SyncGroupsPage() {
     const [editing, setEditing] = useState<SyncGroup | null>(null);
 
     const { data, isLoading } = useQuery({
-        queryKey: ['sync-groups'],
+        queryKey: ['sites'],
         queryFn: () => syncGroupsApi.list(),
         refetchInterval: 5000,   // poll every 5s to update progress + device counts
     });

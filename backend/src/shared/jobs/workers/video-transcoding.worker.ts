@@ -72,10 +72,12 @@ export const videoTranscodingWorker = new Worker<VideoTranscodingJobData>(
             logger.warn('ffmpeg not installed, skipping video transcoding', { mediaId });
             const meta = await getVideoMetadata(filePath).catch(() => ({ duration: 0, width: 0, height: 0 }));
             await query(
-                `UPDATE media SET status = 'READY', duration = $1, width = $2, height = $3, "updatedAt" = NOW() WHERE id = $4`,
+                `UPDATE media SET status = 'READY',
+                 duration = CASE WHEN $1 > 0 THEN $1 ELSE COALESCE(duration, NULL) END,
+                 width = $2, height = $3, "updatedAt" = NOW() WHERE id = $4`,
                 [meta.duration, meta.width, meta.height, mediaId]
             );
-            invalidateContentHashForOrg(job.data.organizationId).catch(() => {});
+            invalidateContentHashForOrg(job.data.organizationId, 'CONTENT').catch(() => {});
             return { mediaId, status: 'READY', note: 'ffmpeg unavailable, original file kept' };
         }
 
@@ -114,7 +116,7 @@ export const videoTranscodingWorker = new Worker<VideoTranscodingJobData>(
                 "filePath" = $1,
                 "thumbnailPath" = $2,
                 "fileSize" = $3,
-                duration = $4,
+                duration = CASE WHEN $4 > 0 THEN $4 ELSE COALESCE(duration, NULL) END,
                 width = $5,
                 height = $6,
                 "updatedAt" = NOW()

@@ -35,7 +35,17 @@
       "Bash(xargs cat:*)",
       "Bash(jar tf:*)",
       "Bash(python3:*)",
-      "Bash(powershell:*)"
+      "Bash(powershell:*)",
+      "Bash(npm ls:*)",
+      "Bash(grep -rn \"\\\\.max\\(100\\)\" E:/cms/backend/src/modules/*/  --include=\"*.schema.ts\" | grep \"limit\")",
+      "Bash(cd E:/cms/backend && pm2 restart all 2>&1 || echo \"PM2 not running, trying direct restart check\")",
+      "Bash(tasklist 2>/dev/null | grep -i \"node\" | head -10)",
+      "Bash(for f:*)",
+      "Bash(do echo:*)",
+      "Read(//e/cms/frontend/**)",
+      "Bash(node_modules/.bin/tsc --noEmit -p backend/tsconfig.json)",
+      "Bash(node_modules/.bin/tsc --noEmit)",
+      "Bash(backend/node_modules/.bin/tsc --noEmit -p backend/tsconfig.json)"
     ],
     "additionalDirectories": [
       "E:\\player"

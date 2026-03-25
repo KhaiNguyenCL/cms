@@ -1,6 +1,17 @@
 import { Request, Response, NextFunction } from 'express';
 import * as deviceSyncService from './device-sync.service';
 
+// GET /api/device/browser-token?deviceId=xxx
+// Public — for Tizen / browser players that cannot use NativeBridge
+export async function getBrowserToken(req: Request, res: Response, next: NextFunction) {
+    try {
+        const deviceId = String(req.query.deviceId ?? '');
+        if (!deviceId) throw { status: 400, message: 'deviceId required' };
+        const result = await deviceSyncService.getBrowserToken(deviceId);
+        res.json({ success: true, data: result });
+    } catch (err) { next(err); }
+}
+
 // POST /api/device/register
 // Public — no auth needed (uses pairingCode for identity)
 export async function registerDevice(req: Request, res: Response, next: NextFunction) {
@@ -58,11 +69,22 @@ export async function batchLogPlayback(req: Request, res: Response, next: NextFu
     } catch (err) { next(err); }
 }
 
+// GET /api/device/content-manifest
+// Device calls on boot or on content.update to get list of files to download
+export async function getContentManifest(req: Request, res: Response, next: NextFunction) {
+    try {
+        const deviceId = req.user!.userId;
+        const organizationId = req.user!.organizationId;
+        const manifest = await deviceSyncService.getContentManifest(deviceId, organizationId);
+        res.json({ success: true, data: manifest });
+    } catch (err) { next(err); }
+}
+
 // POST /api/device/offline
 // Device calls on clean shutdown to update status
 export async function markOffline(req: Request, res: Response, next: NextFunction) {
     try {
-        await deviceSyncService.markDeviceOffline(req.user!.userId, req.user!.organizationId);
+        await deviceSyncService.markDeviceOffline(req.user!.userId, req.user!.organizationId, 'APP_EXIT');
         res.json({ success: true, message: 'Trạng thái offline đã được cập nhật' });
     } catch (err) { next(err); }
 }

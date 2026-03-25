@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import dayjs from 'dayjs';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
     Box, Typography, Stack, Button, TextField, Grid,
@@ -6,25 +7,133 @@ import {
     Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
     Paper, Tooltip, Switch, FormControlLabel, Select, MenuItem as MuiMenuItem,
     FormControl, InputLabel, InputAdornment, Skeleton, ToggleButton, ToggleButtonGroup,
-    Pagination, Divider, FormHelperText,
+    Pagination, FormHelperText,
 } from '@mui/material';
 import {
     Add, Delete, EventNote, Search, CalendarMonth, AccessTime,
-    Edit, Devices, Groups, Public, Circle, QueueMusic, Image as ImageIcon, VideoFile,
+    Edit, QueueMusic, Image as ImageIcon, AllInclusive, Close,
 } from '@mui/icons-material';
-import { Autocomplete } from '@mui/material';
 import { schedulesApi, type CreateSchedulePayload } from '@api/schedules.api';
 import { playlistsApi } from '@api/playlists.api';
-import { mediaApi } from '@api/media.api';
-import { devicesApi } from '@api/devices.api';
-import { deviceGroupsApi } from '@api/device-groups.api';
+import { getApiError } from '@api/client';
 import { useAppDispatch } from '@store/hooks';
 import { pushToast } from '@store/slices/uiSlice';
-import type { Schedule, Media } from '@/types';
+import type { Schedule } from '@/types';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+// ── TimeSelect: dropdown chọn giờ + phút ────────────────────────────────────
+
+const HOURS   = Array.from({ length: 24 }, (_, i) => i);
+const MINUTES = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
+
+function TimeSelect({ label, value, onChange, helperText, error }: {
+    label: string;
+    value: string | null;
+    onChange: (v: string | null) => void;
+    helperText?: string;
+    error?: boolean;
+}) {
+    const [h, m] = value ? value.split(':').map(Number) : [null, null];
+
+    const setHour = (newH: number) => {
+        onChange(`${String(newH).padStart(2, '0')}:${String(m ?? 0).padStart(2, '0')}`);
+    };
+    const setMinute = (newM: number) => {
+        onChange(`${String(h ?? 0).padStart(2, '0')}:${String(newM).padStart(2, '0')}`);
+    };
+    const clear = () => onChange(null);
+
+    return (
+        <Box sx={{ flex: 1 }}>
+            <Typography variant="caption" color={error ? 'error' : 'text.secondary'} sx={{ mb: 0.5, display: 'block' }}>
+                {label}
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                <FormControl size="small" sx={{ flex: 1 }} error={error}>
+                    <InputLabel>Giờ</InputLabel>
+                    <Select
+                        value={h ?? ''}
+                        label="Giờ"
+                        onChange={(e) => setHour(Number(e.target.value))}
+                        MenuProps={{ PaperProps: { sx: { maxHeight: 220 } } }}
+                    >
+                        {HOURS.map(i => (
+                            <MuiMenuItem key={i} value={i}>{String(i).padStart(2, '0')}</MuiMenuItem>
+                        ))}
+                    </Select>
+                </FormControl>
+                <Typography variant="body1" fontWeight={700}>:</Typography>
+                <FormControl size="small" sx={{ flex: 1 }} error={error}>
+                    <InputLabel>Phút</InputLabel>
+                    <Select
+                        value={m ?? ''}
+                        label="Phút"
+                        onChange={(e) => setMinute(Number(e.target.value))}
+                        MenuProps={{ PaperProps: { sx: { maxHeight: 220 } } }}
+                    >
+                        {MINUTES.map(i => (
+                            <MuiMenuItem key={i} value={i}>{String(i).padStart(2, '0')}</MuiMenuItem>
+                        ))}
+                    </Select>
+                </FormControl>
+                {value && (
+                    <Tooltip title="Xoá">
+                        <IconButton size="small" onClick={clear}><Close fontSize="small" /></IconButton>
+                    </Tooltip>
+                )}
+            </Box>
+            {helperText && (
+                <Typography variant="caption" color={error ? 'error' : 'text.secondary'} sx={{ mt: 0.5, display: 'block' }}>
+                    {helperText}
+                </Typography>
+            )}
+        </Box>
+    );
+}
+
+function TimeRangeField({ startTime, endTime, onChange, error }: {
+    startTime: string | null;
+    endTime: string | null;
+    onChange: (start: string | null, end: string | null) => void;
+    error?: string | null;
+}) {
+    const isAllDay = !startTime && !endTime;
+    return (
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+            <Box sx={{ display: 'flex', gap: 2, width: '100%', alignItems: 'flex-start' }}>
+                <TimeSelect
+                    label="Giờ bắt đầu"
+                    value={startTime}
+                    onChange={(s) => onChange(s, endTime)}
+                    helperText={isAllDay ? '✓ Đang phát cả ngày' : undefined}
+                    error={!!error}
+                />
+                <TimeSelect
+                    label="Giờ kết thúc"
+                    value={endTime}
+                    onChange={(e) => onChange(startTime, e)}
+                    helperText={error ?? undefined}
+                    error={!!error}
+                />
+                <Tooltip title={isAllDay ? 'Đang phát cả ngày' : 'Xoá giờ → phát cả ngày'}>
+                    <Button
+                        size="small"
+                        variant={isAllDay ? 'contained' : 'outlined'}
+                        color={isAllDay ? 'success' : 'inherit'}
+                        onClick={() => onChange(null, null)}
+                        startIcon={<AllInclusive sx={{ fontSize: 15 }} />}
+                        sx={{ mt: 2.5, whiteSpace: 'nowrap', minWidth: 90 }}
+                    >
+                        Cả ngày
+                    </Button>
+                </Tooltip>
+            </Box>
+        </Box>
+    );
+}
 
 // ── Helper display components ─────────────────────────────────────────────────
 
@@ -51,11 +160,6 @@ function DaysChips({ days }: { days: number[] }) {
     );
 }
 
-function TargetChip({ schedule }: { schedule: Schedule }) {
-    if (schedule.targetType === 'ALL') return <Chip icon={<Public sx={{ fontSize: 14 }} />} label="All Devices" size="small" color="info" sx={{ fontWeight: 600, fontSize: '0.65rem' }} />;
-    if (schedule.targetType === 'DEVICE') return <Chip icon={<Devices sx={{ fontSize: 14 }} />} label={schedule.targetDeviceName ?? 'Device'} size="small" color="secondary" sx={{ fontWeight: 600, fontSize: '0.65rem' }} />;
-    return <Chip icon={<Groups sx={{ fontSize: 14 }} />} label={schedule.targetGroupName ?? 'Group'} size="small" color="warning" sx={{ fontWeight: 600, fontSize: '0.65rem' }} />;
-}
 
 function formatDate(d: string | null) {
     if (!d) return '—';
@@ -84,6 +188,7 @@ function makeEmptyForm(): CreateSchedulePayload {
         isActive: true,
     };
 }
+// targetType, targetDeviceId, targetGroupId, priority are managed in Schedule Assignment — kept in payload with defaults
 
 function ScheduleFormDialog({
     open,
@@ -96,11 +201,6 @@ function ScheduleFormDialog({
 }) {
     const dispatch = useAppDispatch();
     const qc = useQueryClient();
-
-    // source: 'playlist' = chọn playlist, 'media' = chọn media trực tiếp
-    const [source, setSource] = useState<'playlist' | 'media'>('playlist');
-    const [selectedMedia, setSelectedMedia] = useState<Media | null>(null);
-    const [mediaSearch, setMediaSearch] = useState('');
 
     const [form, setForm] = useState<CreateSchedulePayload>(
         editing
@@ -121,32 +221,12 @@ function ScheduleFormDialog({
             : makeEmptyForm()
     );
 
-    // Reset form when dialog opens
     const handleOpen = () => {
-        const isAutoPlaylist = editing?.playlistName?.startsWith('[Auto] ');
-        setSource(isAutoPlaylist ? 'media' : 'playlist');
-        setMediaSearch('');
-
-        // Restore the selected media for direct-media schedules using the
-        // directMediaId/Title/Type fields returned by the backend LATERAL join.
-        if (isAutoPlaylist && editing?.directMediaId && editing?.directMediaTitle) {
-            setSelectedMedia({
-                id: editing.directMediaId,
-                title: editing.directMediaTitle,
-                type: (editing.directMediaType ?? 'VIDEO') as any,
-                // Unused fields — only id/title/type are needed by the Autocomplete
-                organizationId: '', status: 'READY', filePath: '', mimeType: '',
-                fileSize: 0, duration: null, width: null, height: null,
-                thumbnailPath: null, tags: [], createdAt: '', updatedAt: '',
-            });
-        } else {
-            setSelectedMedia(null);
-        }
         setForm(
             editing
                 ? {
                     name: editing.name,
-                    playlistId: isAutoPlaylist ? undefined : editing.playlistId,
+                    playlistId: editing.playlistId,
                     targetType: editing.targetType,
                     targetDeviceId: editing.targetDeviceId,
                     targetGroupId: editing.targetGroupId,
@@ -165,46 +245,20 @@ function ScheduleFormDialog({
     const { data: playlistsData } = useQuery({
         queryKey: ['playlists-all'],
         queryFn: () => playlistsApi.list({ limit: 100 }),
-        enabled: open && source === 'playlist',
+        enabled: open,
     });
     const playlists = playlistsData?.data ?? [];
 
-    const { data: mediaData } = useQuery({
-        queryKey: ['media-schedule', mediaSearch],
-        queryFn: () => mediaApi.list({ limit: 30, search: mediaSearch || undefined }),
-        enabled: open && source === 'media',
-    });
-    const mediaList: Media[] = mediaData?.data ?? [];
-
-    const { data: devicesData } = useQuery({
-        queryKey: ['devices-all'],
-        queryFn: () => devicesApi.list({ limit: 100 }),
-        enabled: open,
-    });
-    const devices = devicesData?.data ?? [];
-
-    const { data: allGroups = [] } = useQuery({
-        queryKey: ['device-groups-all'],
-        queryFn: () => deviceGroupsApi.listAll(),
-        enabled: open,
-    });
-
     const mutation = useMutation({
-        mutationFn: () => {
-            const payload: CreateSchedulePayload =
-                source === 'media' && selectedMedia
-                    ? { ...form, playlistId: undefined, mediaId: selectedMedia.id }
-                    : form;
-            return editing
-                ? schedulesApi.update(editing.id, payload)
-                : schedulesApi.create(payload);
-        },
+        mutationFn: () => editing
+            ? schedulesApi.update(editing.id, form)
+            : schedulesApi.create(form),
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: ['schedules'] });
             dispatch(pushToast({ severity: 'success', message: editing ? 'Schedule updated!' : 'Schedule created!' }));
             onClose();
         },
-        onError: () => dispatch(pushToast({ severity: 'error', message: 'Failed to save schedule' })),
+        onError: (err) => dispatch(pushToast({ severity: 'error', message: getApiError(err, 'Failed to save schedule') })),
     });
 
     const toggleDay = (day: number) => {
@@ -219,8 +273,11 @@ function ScheduleFormDialog({
     const field = <K extends keyof CreateSchedulePayload>(key: K) => (value: CreateSchedulePayload[K]) =>
         setForm(prev => ({ ...prev, [key]: value }));
 
-    const isValid = form.name && form.startDate &&
-        (source === 'playlist' ? !!form.playlistId : !!selectedMedia);
+    const timeError = form.startTime && form.endTime && form.startTime >= form.endTime
+        ? 'Giờ kết thúc phải sau giờ bắt đầu'
+        : null;
+
+    const isValid = form.name && form.startDate && !!form.playlistId && !timeError;
 
     return (
         <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth TransitionProps={{ onEnter: handleOpen }}>
@@ -235,134 +292,25 @@ function ScheduleFormDialog({
                         fullWidth required
                     />
 
-                    {/* Source: Playlist or Direct Media */}
-                    <Box>
-                        <Typography variant="caption" color="text.secondary" display="block" mb={1}>
-                            Nội dung phát
-                        </Typography>
-                        <ToggleButtonGroup
-                            value={source}
-                            exclusive
-                            onChange={(_, v) => { if (v) { setSource(v); setSelectedMedia(null); field('playlistId')(undefined as any); } }}
-                            size="small"
-                            sx={{ mb: 1.5 }}
-                        >
-                            <ToggleButton value="playlist" sx={{ px: 2, fontWeight: 600 }}>
-                                <QueueMusic sx={{ fontSize: 16, mr: 0.5 }} /> Playlist
-                            </ToggleButton>
-                            <ToggleButton value="media" sx={{ px: 2, fontWeight: 600 }}>
-                                <ImageIcon sx={{ fontSize: 16, mr: 0.5 }} /> Media trực tiếp
-                            </ToggleButton>
-                        </ToggleButtonGroup>
-
-                        {source === 'playlist' ? (
-                            <FormControl fullWidth required>
-                                <InputLabel>Playlist</InputLabel>
-                                <Select
-                                    value={form.playlistId ?? ''}
-                                    label="Playlist"
-                                    onChange={(e) => field('playlistId')(e.target.value)}
-                                >
-                                    {playlists.map(p => (
-                                        <MuiMenuItem key={p.id} value={p.id}>{p.name}</MuiMenuItem>
-                                    ))}
-                                </Select>
-                                <FormHelperText>Media trong playlist sẽ phát theo thứ tự, lặp lại</FormHelperText>
-                            </FormControl>
-                        ) : (
-                            <Autocomplete
-                                options={mediaList}
-                                value={selectedMedia}
-                                onChange={(_, v) => setSelectedMedia(v)}
-                                onInputChange={(_, v) => setMediaSearch(v)}
-                                getOptionLabel={(o) => o.title}
-                                isOptionEqualToValue={(a, b) => a.id === b.id}
-                                renderOption={({ key, ...props }, option) => (
-                                    <Box key={key} component="li" {...props} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                        {option.type === 'VIDEO'
-                                            ? <VideoFile sx={{ fontSize: 18, color: 'text.secondary' }} />
-                                            : <ImageIcon sx={{ fontSize: 18, color: 'text.secondary' }} />}
-                                        <Box>
-                                            <Typography variant="body2" fontWeight={600}>{option.title}</Typography>
-                                            <Typography variant="caption" color="text.secondary">{option.type}</Typography>
-                                        </Box>
-                                    </Box>
-                                )}
-                                renderInput={(params) => (
-                                    <TextField {...params} label="Tìm media" required
-                                        placeholder="Gõ tên media..."
-                                    />
-                                )}
-                                noOptionsText="Không tìm thấy media"
-                            />
-                        )}
-                    </Box>
-
-                    <Divider><Typography variant="caption" color="text.secondary">Target</Typography></Divider>
-
-                    {/* Target type */}
-                    <FormControl fullWidth>
-                        <InputLabel>Target</InputLabel>
+                    {/* Playlist */}
+                    <FormControl fullWidth required>
+                        <InputLabel>Playlist</InputLabel>
                         <Select
-                            value={form.targetType}
-                            label="Target"
-                            onChange={(e) => field('targetType')(e.target.value as any)}
+                            value={form.playlistId ?? ''}
+                            label="Playlist"
+                            onChange={(e) => field('playlistId')(e.target.value)}
                         >
-                            <MuiMenuItem value="ALL"><Stack direction="row" gap={1} alignItems="center"><Public fontSize="small" /> All Devices</Stack></MuiMenuItem>
-                            <MuiMenuItem value="DEVICE"><Stack direction="row" gap={1} alignItems="center"><Devices fontSize="small" /> Specific Device</Stack></MuiMenuItem>
-                            <MuiMenuItem value="GROUP"><Stack direction="row" gap={1} alignItems="center"><Groups fontSize="small" /> Device Group</Stack></MuiMenuItem>
+                            {playlists.map(p => (
+                                <MuiMenuItem key={p.id} value={p.id}>
+                                    <Stack direction="row" gap={1} alignItems="center">
+                                        <QueueMusic sx={{ fontSize: 16, color: 'text.secondary' }} />
+                                        {p.name}
+                                    </Stack>
+                                </MuiMenuItem>
+                            ))}
                         </Select>
+                        <FormHelperText>Media trong playlist sẽ phát theo thứ tự, lặp lại</FormHelperText>
                     </FormControl>
-
-                    {form.targetType === 'DEVICE' && (
-                        <FormControl fullWidth required>
-                            <InputLabel>Select Device</InputLabel>
-                            <Select
-                                value={form.targetDeviceId ?? ''}
-                                label="Select Device"
-                                onChange={(e) => field('targetDeviceId')(e.target.value || null)}
-                            >
-                                {devices.map(d => (
-                                    <MuiMenuItem key={d.id} value={d.id}>
-                                        <Stack direction="row" justifyContent="space-between" alignItems="center" width="100%">
-                                            <span>{d.name}</span>
-                                            <Chip
-                                                label={d.status}
-                                                size="small"
-                                                color={d.status === 'ONLINE' ? 'success' : 'default'}
-                                                sx={{ ml: 1, fontSize: '0.6rem', fontWeight: 700 }}
-                                            />
-                                        </Stack>
-                                    </MuiMenuItem>
-                                ))}
-                            </Select>
-                        </FormControl>
-                    )}
-                    {form.targetType === 'GROUP' && (
-                        <FormControl fullWidth required>
-                            <InputLabel>Select Group</InputLabel>
-                            <Select
-                                value={form.targetGroupId ?? ''}
-                                label="Select Group"
-                                onChange={(e) => field('targetGroupId')(e.target.value || null)}
-                            >
-                                {allGroups.map(g => (
-                                    <MuiMenuItem key={g.id} value={g.id}>
-                                        <Stack direction="row" justifyContent="space-between" alignItems="center" width="100%">
-                                            <span>{g.name}</span>
-                                            <Chip
-                                                label={`${g.deviceCount} devices`}
-                                                size="small"
-                                                sx={{ ml: 1, fontSize: '0.6rem', fontWeight: 700 }}
-                                            />
-                                        </Stack>
-                                    </MuiMenuItem>
-                                ))}
-                            </Select>
-                        </FormControl>
-                    )}
-
-                    <Divider><Typography variant="caption" color="text.secondary">Schedule</Typography></Divider>
 
                     {/* Date range */}
                     <Grid container spacing={2}>
@@ -388,32 +336,20 @@ function ScheduleFormDialog({
                     </Grid>
 
                     {/* Time window */}
-                    <Grid container spacing={2}>
-                        <Grid size={{ xs: 6 }}>
-                            <TextField
-                                label="Start time (optional)" type="time"
-                                value={form.startTime ?? ''}
-                                onChange={(e) => field('startTime')(e.target.value || null)}
-                                fullWidth
-                                InputLabelProps={{ shrink: true }}
-                                helperText="Empty = all day"
-                            />
-                        </Grid>
-                        <Grid size={{ xs: 6 }}>
-                            <TextField
-                                label="End time (optional)" type="time"
-                                value={form.endTime ?? ''}
-                                onChange={(e) => field('endTime')(e.target.value || null)}
-                                fullWidth
-                                InputLabelProps={{ shrink: true }}
-                            />
-                        </Grid>
-                    </Grid>
+                    <TimeRangeField
+                        startTime={form.startTime ?? null}
+                        endTime={form.endTime ?? null}
+                        onChange={(s, e) => setForm(prev => ({ ...prev, startTime: s, endTime: e }))}
+                        error={timeError}
+                    />
 
                     {/* Days of week */}
                     <Box>
-                        <Typography variant="caption" color="text.secondary" display="block" mb={1}>
-                            Days of week — leave all unselected to run every day
+                        <Typography variant="caption" color="text.secondary" display="block" mb={0.5}>
+                            Ngày trong tuần — không chọn = chạy mỗi ngày trong khoảng ngày
+                        </Typography>
+                        <Typography variant="caption" color="warning.main" display="block" mb={1}>
+                            Chọn cụ thể (VD: T2, T6) → các ngày còn lại trong khoảng ngày sẽ không chạy schedule này
                         </Typography>
                         <ToggleButtonGroup size="small">
                             {DAY_LABELS.map((d, i) => (
@@ -422,7 +358,19 @@ function ScheduleFormDialog({
                                     value={i}
                                     selected={form.daysOfWeek?.includes(i) ?? false}
                                     onClick={() => toggleDay(i)}
-                                    sx={{ minWidth: 44, fontWeight: 700 }}
+                                    sx={{
+                                        minWidth: 44, fontWeight: 700,
+                                        '&.Mui-selected': {
+                                            bgcolor: 'primary.main',
+                                            color: '#fff',
+                                            '&:hover': { bgcolor: 'primary.dark' },
+                                        },
+                                        '&:not(.Mui-selected)': {
+                                            bgcolor: 'action.selected',
+                                            color: 'text.secondary',
+                                            '&:hover': { bgcolor: 'action.focus' },
+                                        },
+                                    }}
                                 >
                                     {d}
                                 </ToggleButton>
@@ -430,26 +378,11 @@ function ScheduleFormDialog({
                         </ToggleButtonGroup>
                     </Box>
 
-                    {/* Priority & Active */}
-                    <Grid container spacing={2} alignItems="center">
-                        <Grid size={{ xs: 6 }}>
-                            <TextField
-                                label="Priority (0–100)"
-                                type="number"
-                                value={form.priority}
-                                onChange={(e) => field('priority')(Math.min(100, Math.max(0, parseInt(e.target.value) || 0)))}
-                                inputProps={{ min: 0, max: 100 }}
-                                fullWidth
-                                helperText="Higher priority wins conflicts"
-                            />
-                        </Grid>
-                        <Grid size={{ xs: 6 }}>
-                            <FormControlLabel
-                                control={<Switch checked={form.isActive ?? true} onChange={(e) => field('isActive')(e.target.checked)} />}
-                                label="Active"
-                            />
-                        </Grid>
-                    </Grid>
+                    {/* Active */}
+                    <FormControlLabel
+                        control={<Switch checked={form.isActive ?? true} onChange={(e) => field('isActive')(e.target.checked)} />}
+                        label="Active"
+                    />
                 </Stack>
             </DialogContent>
             <DialogActions sx={{ p: 2.5 }}>
@@ -490,8 +423,21 @@ export default function SchedulesPage() {
     const toggleMutation = useMutation({
         mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) =>
             schedulesApi.toggleActive(id, isActive),
-        onSuccess: () => qc.invalidateQueries({ queryKey: ['schedules'] }),
-        onError: () => dispatch(pushToast({ severity: 'error', message: 'Failed to toggle schedule' })),
+        // Optimistic update: flip the switch immediately, rollback on error
+        onMutate: async ({ id, isActive }) => {
+            await qc.cancelQueries({ queryKey: ['schedules'] });
+            const prev = qc.getQueryData(['schedules', page, search, filterActive]);
+            qc.setQueryData(['schedules', page, search, filterActive], (old: typeof data) => {
+                if (!old) return old;
+                return { ...old, data: old.data.map(s => s.id === id ? { ...s, isActive } : s) };
+            });
+            return { prev };
+        },
+        onError: (err, _vars, ctx) => {
+            if (ctx?.prev) qc.setQueryData(['schedules', page, search, filterActive], ctx.prev);
+            dispatch(pushToast({ severity: 'error', message: getApiError(err, 'Failed to toggle schedule') }));
+        },
+        onSettled: () => qc.invalidateQueries({ queryKey: ['schedules'] }),
     });
 
     const deleteMutation = useMutation({
@@ -500,7 +446,7 @@ export default function SchedulesPage() {
             qc.invalidateQueries({ queryKey: ['schedules'] });
             dispatch(pushToast({ severity: 'success', message: 'Schedule deleted' }));
         },
-        onError: () => dispatch(pushToast({ severity: 'error', message: 'Delete failed' })),
+        onError: (err) => dispatch(pushToast({ severity: 'error', message: getApiError(err, 'Delete failed') })),
     });
 
     const handleDelete = (s: Schedule) => {
@@ -552,11 +498,9 @@ export default function SchedulesPage() {
                             <TableCell>Active</TableCell>
                             <TableCell>Name</TableCell>
                             <TableCell>Playlist</TableCell>
-                            <TableCell>Target</TableCell>
                             <TableCell>Date Range</TableCell>
                             <TableCell>Time Window</TableCell>
                             <TableCell>Days</TableCell>
-                            <TableCell align="center">Priority</TableCell>
                             <TableCell align="right">Actions</TableCell>
                         </TableRow>
                     </TableHead>
@@ -564,7 +508,7 @@ export default function SchedulesPage() {
                         {isLoading
                             ? Array.from({ length: 5 }).map((_, i) => (
                                 <TableRow key={i}>
-                                    {Array.from({ length: 9 }).map((_, j) => (
+                                    {Array.from({ length: 7 }).map((_, j) => (
                                         <TableCell key={j}><Skeleton variant="text" /></TableCell>
                                     ))}
                                 </TableRow>
@@ -589,9 +533,6 @@ export default function SchedulesPage() {
                                     {/* Name */}
                                     <TableCell>
                                         <Typography variant="body2" fontWeight={600}>{s.name}</Typography>
-                                        {s.priority > 0 && (
-                                            <Typography variant="caption" color="text.secondary">Priority {s.priority}</Typography>
-                                        )}
                                     </TableCell>
 
                                     {/* Playlist / Direct media */}
@@ -616,17 +557,17 @@ export default function SchedulesPage() {
                                         )}
                                     </TableCell>
 
-                                    {/* Target */}
-                                    <TableCell><TargetChip schedule={s} /></TableCell>
-
                                     {/* Date range */}
                                     <TableCell>
                                         <Stack direction="row" gap={0.5} alignItems="center">
                                             <CalendarMonth sx={{ fontSize: 14, color: 'text.secondary' }} />
-                                            <Typography variant="caption">
+                                            <Typography variant="caption" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                                                 {formatDate(s.startDate)}
                                                 {' → '}
-                                                {s.endDate ? formatDate(s.endDate) : '∞'}
+                                                {s.endDate
+                                                    ? formatDate(s.endDate)
+                                                    : <AllInclusive sx={{ fontSize: 16 }} />
+                                                }
                                             </Typography>
                                         </Stack>
                                     </TableCell>
@@ -648,16 +589,6 @@ export default function SchedulesPage() {
                                     {/* Days */}
                                     <TableCell sx={{ minWidth: 180 }}>
                                         <DaysChips days={s.daysOfWeek ?? []} />
-                                    </TableCell>
-
-                                    {/* Priority */}
-                                    <TableCell align="center">
-                                        <Chip
-                                            label={s.priority}
-                                            size="small"
-                                            color={s.priority >= 50 ? 'warning' : 'default'}
-                                            sx={{ fontWeight: 700, minWidth: 32 }}
-                                        />
                                     </TableCell>
 
                                     {/* Actions */}
@@ -685,13 +616,28 @@ export default function SchedulesPage() {
             {!isLoading && !data?.data.length && (
                 <Box textAlign="center" py={8}>
                     <EventNote sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
-                    <Typography variant="h6" gutterBottom>No schedules yet</Typography>
-                    <Typography variant="body2" color="text.secondary" mb={2}>
-                        Create a schedule to automatically push playlists to your devices.
-                    </Typography>
-                    <Button variant="contained" startIcon={<Add />} onClick={() => setCreateOpen(true)}>
-                        Create First Schedule
-                    </Button>
+                    {filterActive !== 'all' || search ? (
+                        <>
+                            <Typography variant="h6" gutterBottom>Không tìm thấy schedule nào</Typography>
+                            <Typography variant="body2" color="text.secondary">
+                                {filterActive === 'inactive'
+                                    ? 'Không có schedule nào đang Inactive.'
+                                    : filterActive === 'active'
+                                        ? 'Không có schedule nào đang Active.'
+                                        : `Không có kết quả cho "${search}".`}
+                            </Typography>
+                        </>
+                    ) : (
+                        <>
+                            <Typography variant="h6" gutterBottom>Chưa có schedule nào</Typography>
+                            <Typography variant="body2" color="text.secondary" mb={2}>
+                                Tạo schedule để tự động đẩy playlist đến thiết bị.
+                            </Typography>
+                            <Button variant="contained" startIcon={<Add />} onClick={() => setCreateOpen(true)}>
+                                Tạo Schedule đầu tiên
+                            </Button>
+                        </>
+                    )}
                 </Box>
             )}
 

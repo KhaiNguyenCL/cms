@@ -8,7 +8,7 @@ export const MEDIA_STATUSES = ['PROCESSING', 'READY', 'ERROR'] as const;
 export const listMediaSchema = z.object({
     query: z.object({
         page: z.coerce.number().int().min(1).catch(1),
-        limit: z.coerce.number().int().min(1).max(100).catch(20),
+        limit: z.coerce.number().int().min(1).max(500).catch(20),
         type: z.enum(MEDIA_TYPES).optional().catch(undefined),
         status: z.enum(MEDIA_STATUSES).optional().catch(undefined),
         search: z.string().optional(),

@@ -10,7 +10,7 @@ import logger from '../utils/logger';
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: false,
-    max: 20,
+    max: 50,
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 5_000,
     statement_timeout: 30_000,    // kill queries stuck > 30s

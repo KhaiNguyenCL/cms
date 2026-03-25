@@ -89,6 +89,17 @@ export async function updateDevicePin(req: Request, res: Response, next: NextFun
     }
 }
 
+// DELETE /api/organizations/:id  — SUPER_ADMIN
+export async function deleteOrganization(req: Request, res: Response, next: NextFunction) {
+    try {
+        const id = req.params.id as string;
+        await orgService.deleteOrganization(id, req.user!.userId);
+        res.json({ success: true, message: 'Tổ chức đã được xóa vĩnh viễn' });
+    } catch (err) {
+        next(err);
+    }
+}
+
 // POST /api/organizations/:id/license/add-points  — SUPER_ADMIN
 export async function addPoints(req: Request, res: Response, next: NextFunction) {
     try {

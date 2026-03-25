@@ -18,6 +18,12 @@ export const heartbeatSchema = z.object({
         macAddress: z.string().max(50).optional(),
         heapMemory: z.number().int().min(0).optional(),
         networkConnected: z.boolean().optional(),
+        processCpuPercent: z.number().min(0).max(100).optional(), // CPU% của riêng process player
+        isScreenOn: z.boolean().optional(),  // false khi màn hình tắt (SLEEP)
+        // Sprint 2: local content cache
+        downloadStatus:   z.enum(['PENDING','DOWNLOADING','READY','ERROR']).optional(),
+        downloadProgress: z.number().int().min(0).max(100).optional(),
+        contentReady:     z.boolean().optional(),
     }),
 });
 

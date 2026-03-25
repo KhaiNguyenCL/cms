@@ -40,11 +40,20 @@ router.get('/top-content', validate(topContentSchema), analyticsController.getTo
 router.get('/device-health', authorize('ADMIN', 'MANAGER'), validate(deviceHealthSchema), analyticsController.getDeviceHealth);
 
 /**
+ * @route   GET /api/analytics/device-charts
+ * @desc    Dữ liệu biểu đồ tròn: trạng thái, lịch phát, model, version
+ * @access  All roles
+ */
+router.get('/device-charts', analyticsController.getDeviceCharts);
+
+/**
  * @route   GET /api/analytics/device-activity
  * @desc    Hoạt động phát nội dung theo device (plays count, total minutes, last played)
  *          Params: from?, to?, limit (default 20)
  * @access  ADMIN, MANAGER
  */
 router.get('/device-activity', authorize('ADMIN', 'MANAGER'), analyticsController.getDeviceActivity);
+router.get('/top-playlists',  analyticsController.getTopPlaylists);
+router.get('/top-schedules',  analyticsController.getTopSchedules);
 
 export default router;

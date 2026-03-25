@@ -306,7 +306,7 @@ export function broadcastContentUpdate(orgId: string, eventType: 'content.update
 export function broadcastSyncState(
     orgId: string,
     payload: {
-        storeId: string;
+        storeId: string;   // DB column name kept for wire compatibility
         startEpoch: number | null;
         totalDurationMs: number | null;
         playlistId: string | null;
@@ -314,10 +314,10 @@ export function broadcastSyncState(
 ): void {
     if (!io) return;
     const event = 'sync.state';
-    const data = { ...payload, timestamp: new Date().toISOString() };
+    const data = { ...payload, siteId: payload.storeId, timestamp: new Date().toISOString() };
     io.of('/device').to(orgRoom(orgId)).emit(event, data);
     io.of('/admin').to(orgRoom(orgId)).emit(event, data);
-    logger.info('Sync state broadcast', { orgId, storeId: payload.storeId, startEpoch: payload.startEpoch });
+    logger.info('Sync state broadcast', { orgId, siteId: payload.storeId, startEpoch: payload.startEpoch });
 }
 
 /**

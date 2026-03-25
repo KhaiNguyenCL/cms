@@ -22,6 +22,7 @@ export const apiClient = axios.create({
 // ─── In-memory access token ───────────────────────────────────────────────────
 
 let _accessToken: string | null = null;
+let _isPlatformAdmin = false;
 
 export function setAccessToken(token: string | null): void {
     _accessToken = token;
@@ -31,7 +32,14 @@ export function getAccessToken(): string | null {
     return _accessToken;
 }
 
-let _managingOrgId: string | null = null;
+export function setIsPlatformAdmin(value: boolean): void {
+    _isPlatformAdmin = value;
+}
+
+const MANAGING_ORG_ID_KEY = 'cms_managing_org_id';
+
+// Restore from localStorage on page load so X-Organization-Id header survives reload
+let _managingOrgId: string | null = localStorage.getItem(MANAGING_ORG_ID_KEY);
 
 export function setManagingOrgId(orgId: string | null): void {
     _managingOrgId = orgId;
@@ -85,14 +93,14 @@ apiClient.interceptors.response.use(
             isRefreshing = true;
 
             try {
-                // Không cần gửi body — refresh token nằm trong HttpOnly cookie,
-                // browser tự đính kèm nhờ withCredentials: true
-                const { data } = await axios.post(
-                    '/api/auth/refresh-token',
-                    {},
-                    { withCredentials: true }
-                );
-                const newToken: string = data.data.accessToken;
+                // Pick refresh endpoint based on session type
+                const refreshUrl = _isPlatformAdmin
+                    ? '/api/platform/refresh'
+                    : '/api/auth/refresh-token';
+                const { data } = await axios.post(refreshUrl, {}, { withCredentials: true });
+                const newToken: string = _isPlatformAdmin
+                    ? data.data.accessToken
+                    : data.data.accessToken;
 
                 setAccessToken(newToken);
                 processQueue(null, newToken);
@@ -112,5 +120,17 @@ apiClient.interceptors.response.use(
         return Promise.reject(error);
     }
 );
+
+/**
+ * Extract a human-readable error message from an Axios error.
+ * Falls back to `fallback` if the server didn't send a specific message.
+ *
+ * Usage in React Query onError:
+ *   onError: (err) => dispatch(pushToast({ severity: 'error', message: getApiError(err, 'Tạo thất bại') }))
+ */
+export function getApiError(err: unknown, fallback: string): string {
+    const data = (err as { response?: { data?: { error?: string } } })?.response?.data;
+    return data?.error ?? fallback;
+}
 
 export default apiClient;

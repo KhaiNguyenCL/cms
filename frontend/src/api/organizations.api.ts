@@ -103,4 +103,8 @@ export const organizationsApi = {
         const { data } = await apiClient.patch<ApiResponse<null>>('/organizations/me/device-pin', { pin });
         return data;
     },
+
+    delete: async (id: string) => {
+        await apiClient.delete(`/organizations/${id}`);
+    },
 };

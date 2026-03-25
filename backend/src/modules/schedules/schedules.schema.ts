@@ -7,7 +7,7 @@ export const SCHEDULE_TARGETS = ['ALL', 'DEVICE', 'GROUP'] as const;
 export const listSchedulesSchema = z.object({
     query: z.object({
         page: z.coerce.number().int().min(1).catch(1),
-        limit: z.coerce.number().int().min(1).max(100).catch(20),
+        limit: z.coerce.number().int().min(1).max(500).catch(20),
         search: z.string().optional(),
         isActive: z.enum(['true', 'false']).optional().catch(undefined),
         targetType: z.enum(SCHEDULE_TARGETS).optional().catch(undefined),

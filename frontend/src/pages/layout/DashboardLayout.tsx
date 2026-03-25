@@ -7,21 +7,22 @@ import {
     List, ListItemButton, ListItemIcon, ListItemText, Tooltip,
     Divider, Menu, MenuItem, Badge, useTheme, useMediaQuery,
     Dialog, DialogTitle, DialogContent, DialogActions, Button,
-    Chip, alpha, Collapse,
+    Chip, alpha, Collapse, TextField, InputAdornment,
 } from '@mui/material';
 import {
     Dashboard, PermMedia, QueueMusic, CalendarMonth, BarChart,
     People, Settings, Menu as MenuIcon, LightMode, DarkMode,
     NotificationsNone, Logout, ChevronLeft, AdminPanelSettings, Close,
-    SwapHoriz, Business, CheckCircle, WorkspacePremium,
+    SwapHoriz, Business, CheckCircle, WorkspacePremium, Search,
     Storefront, DashboardCustomize, Slideshow, Today, History,
     NotificationsActive, PlayCircleOutline, SystemUpdate, TouchApp,
-    Assignment, ExpandMore, ExpandLess, DevicesOther, PhotoLibrary,
+    Assignment, ExpandMore, ExpandLess, DevicesOther, PhotoLibrary, LibraryBooks,
 } from '@mui/icons-material';
 import { useAppDispatch, useAppSelector } from '@store/hooks';
 import { toggleColorMode, setSidebarOpen, pushToast } from '@store/slices/uiSlice';
 import { logout, setManagingOrg } from '@store/slices/authSlice';
 import { authApi } from '@api/auth.api';
+import { platformAuthApi } from '@api/platform-auth.api';
 import { organizationsApi, type OrgWithStats } from '@api/organizations.api';
 
 const DRAWER_WIDTH = 240;
@@ -51,17 +52,15 @@ type NavEntry = NavLeaf | NavGroup;
 
 const navStructure: NavEntry[] = [
     { kind: 'item', label: 'Dashboard', icon: <Dashboard />, path: '/dashboard', roles: null },
-    { kind: 'item', label: 'Store Management', icon: <Storefront />, path: '/stores', roles: null },
+    { kind: 'item', label: 'Sites Management', icon: <Storefront />, path: '/sites', roles: null },
     { kind: 'item', label: 'Device Management', icon: <DevicesOther />, path: '/device-management', roles: null },
     {
         kind: 'group', id: 'content-management', label: 'Content Management', icon: <PhotoLibrary />,
         children: [
-            { kind: 'item', label: 'Contents Set', icon: <PermMedia />, path: '/media', roles: null },
-            { kind: 'item', label: 'Template', icon: <DashboardCustomize />, path: '/template', roles: null },
-            { kind: 'item', label: 'Slide', icon: <Slideshow />, path: '/slide', roles: null },
+            { kind: 'item', label: 'Media Library', icon: <PermMedia />, path: '/media', roles: null },
             { kind: 'item', label: 'Playlist', icon: <QueueMusic />, path: '/playlists', roles: null },
-            { kind: 'item', label: 'Daily Schedule', icon: <Today />, path: '/daily-schedule', roles: null },
-            { kind: 'item', label: 'Schedule', icon: <CalendarMonth />, path: '/schedules', roles: null },
+            { kind: 'item', label: 'Schedule', icon: <Today />, path: '/schedules', roles: null },
+            { kind: 'item', label: 'Schedule Assignment', icon: <CalendarMonth />, path: '/schedule-assignment', roles: null },
         ],
     },
     {
@@ -109,12 +108,15 @@ export default function DashboardLayout() {
     const sidebarOpen = useAppSelector((s) => s.ui.sidebarOpen);
     const colorMode = useAppSelector((s) => s.ui.colorMode);
     const user = useAppSelector((s) => s.auth.user);
+    const isPlatformAdmin = useAppSelector((s) => s.auth.isPlatformAdmin);
+    const platformAdmin = useAppSelector((s) => s.auth.platformAdmin);
     const managingOrgId = useAppSelector((s) => s.auth.managingOrgId);
     const managingOrgName = useAppSelector((s) => s.auth.managingOrgName);
     const isSwitched = !!managingOrgId && managingOrgId !== user?.organizationId;
 
     const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
     const [orgPickerOpen, setOrgPickerOpen] = useState(false);
+    const [orgSearch, setOrgSearch] = useState('');
 
     // Auto-expand groups that contain the current path
     const [expandedGroups, setExpandedGroups] = useState<Set<string>>(() => {
@@ -161,7 +163,7 @@ export default function DashboardLayout() {
     const { data: allOrgs = [] } = useQuery({
         queryKey: ['super-admin-orgs'],
         queryFn: organizationsApi.listAll,
-        enabled: user?.role === 'SUPER_ADMIN',
+        enabled: user?.role === 'SUPER_ADMIN' || isPlatformAdmin,
         staleTime: 2 * 60_000,
     });
 
@@ -209,18 +211,22 @@ export default function DashboardLayout() {
     const drawerWidth = sidebarOpen ? DRAWER_WIDTH : COLLAPSED_WIDTH;
 
     const handleLogout = async () => {
-        try { await authApi.logout(); } catch { /* ignore */ }
+        try {
+            if (isPlatformAdmin) {
+                await platformAuthApi.logout();
+            } else {
+                await authApi.logout();
+            }
+        } catch { /* ignore */ }
         dispatch(logout());
-        navigate('/login', { replace: true });
+        queryClient.clear();
+        navigate(isPlatformAdmin ? '/platform/login' : '/login', { replace: true, state: {} });
     };
 
     const handleSwitchOrg = (org: OrgWithStats) => {
-        if (org.id === user?.organizationId) {
-            if (isSwitched) handleExitOrg();
-            setOrgPickerOpen(false);
-            return;
-        }
         if (!org.isActive) return;
+        const currentOrgId = managingOrgId ?? user?.organizationId;
+        if (org.id === currentOrgId) { setOrgPickerOpen(false); return; }
         dispatch(setManagingOrg({ orgId: org.id, orgName: org.name }));
         queryClient.clear();
         setOrgPickerOpen(false);
@@ -344,7 +350,7 @@ export default function DashboardLayout() {
     const orgPickerDialog = (
         <Dialog
             open={orgPickerOpen}
-            onClose={() => setOrgPickerOpen(false)}
+            onClose={() => { setOrgPickerOpen(false); setOrgSearch(''); }}
             maxWidth="xs"
             fullWidth
             PaperProps={{ sx: { borderRadius: 3 } }}
@@ -363,17 +369,44 @@ export default function DashboardLayout() {
                         Chuyển tổ chức
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
-                        Chọn tổ chức để quản lý
+                        {allOrgs.length} tổ chức
                     </Typography>
                 </Box>
-                <IconButton size="small" onClick={() => setOrgPickerOpen(false)}>
+                <IconButton size="small" onClick={() => { setOrgPickerOpen(false); setOrgSearch(''); }}>
                     <Close fontSize="small" />
                 </IconButton>
             </DialogTitle>
             <Divider />
-            <DialogContent sx={{ p: 0, maxHeight: 360, overflowY: 'auto' }}>
+            <Box sx={{ px: 2, py: 1.5 }}>
+                <TextField
+                    size="small"
+                    fullWidth
+                    placeholder="Tìm tổ chức..."
+                    value={orgSearch}
+                    onChange={e => setOrgSearch(e.target.value)}
+                    autoFocus
+                    InputProps={{
+                        startAdornment: (
+                            <InputAdornment position="start">
+                                <Search sx={{ fontSize: 18, color: 'text.secondary' }} />
+                            </InputAdornment>
+                        ),
+                        endAdornment: orgSearch ? (
+                            <InputAdornment position="end">
+                                <IconButton size="small" onClick={() => setOrgSearch('')} edge="end">
+                                    <Close sx={{ fontSize: 16 }} />
+                                </IconButton>
+                            </InputAdornment>
+                        ) : null,
+                    }}
+                />
+            </Box>
+            <Divider />
+            <DialogContent sx={{ p: 0, maxHeight: 340, overflowY: 'auto' }}>
                 <List disablePadding>
-                    {allOrgs.map((org) => {
+                    {allOrgs
+                        .filter(o => o.name.toLowerCase().includes(orgSearch.toLowerCase()) || o.slug?.toLowerCase().includes(orgSearch.toLowerCase()))
+                        .map((org) => {
                         const isSelected = org.id === (managingOrgId ?? user?.organizationId);
                         const isOwn = org.id === user?.organizationId;
                         return (
@@ -428,6 +461,13 @@ export default function DashboardLayout() {
                             </ListItemButton>
                         );
                     })}
+                    {allOrgs.filter(o => o.name.toLowerCase().includes(orgSearch.toLowerCase()) || o.slug?.toLowerCase().includes(orgSearch.toLowerCase())).length === 0 && (
+                        <Box sx={{ py: 4, textAlign: 'center' }}>
+                            <Typography variant="body2" color="text.secondary">
+                                Không tìm thấy tổ chức nào
+                            </Typography>
+                        </Box>
+                    )}
                 </List>
             </DialogContent>
             {isSwitched && (
@@ -473,7 +513,8 @@ export default function DashboardLayout() {
                 ) : (
                     <Box
                         sx={{
-                            width: 32, height: 32, borderRadius: 2, mx: 'auto',
+                            width: 32, height: 32, minWidth: 32, borderRadius: 2, mx: 'auto',
+                            flexShrink: 0,
                             background: 'linear-gradient(135deg, #6C63FF, #FF6584)',
                             cursor: 'pointer',
                         }}
@@ -491,7 +532,7 @@ export default function DashboardLayout() {
                 })}
 
                 {/* Super Admin section */}
-                {user?.role === 'SUPER_ADMIN' && (
+                {(user?.role === 'SUPER_ADMIN' || isPlatformAdmin) && (
                     <>
                         <Divider sx={{ my: 1 }} />
                         {sidebarOpen && (
@@ -542,23 +583,31 @@ export default function DashboardLayout() {
 
             <Divider />
             {/* User section */}
-            <Box sx={{ p: sidebarOpen ? 2 : 1, display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <Box sx={{
+                p: sidebarOpen ? 2 : 1,
+                display: 'flex', alignItems: 'center', gap: 1.5,
+                justifyContent: sidebarOpen ? 'flex-start' : 'center',
+            }}>
                 <Avatar
                     sx={{
-                        width: 36, height: 36, bgcolor: 'primary.main',
+                        width: 36, height: 36, minWidth: 36, minHeight: 36,
+                        bgcolor: isPlatformAdmin ? '#c0392b' : 'primary.main',
                         cursor: 'pointer', fontSize: '0.875rem', flexShrink: 0,
                     }}
                     onClick={(e) => setAnchorEl(e.currentTarget)}
                 >
-                    {user?.email?.[0]?.toUpperCase()}
+                    {isPlatformAdmin
+                        ? (platformAdmin?.name?.[0] ?? 'P').toUpperCase()
+                        : user?.email?.[0]?.toUpperCase()}
                 </Avatar>
                 {sidebarOpen && (
                     <Box sx={{ overflow: 'hidden', flex: 1 }}>
                         <Typography variant="body2" fontWeight={600} noWrap>
-                            {user?.email}
+                            {isPlatformAdmin ? platformAdmin?.name : user?.email}
                         </Typography>
-                        <Typography variant="caption" color="text.secondary" noWrap>
-                            {user?.role}
+                        <Typography variant="caption" noWrap
+                            sx={{ color: isPlatformAdmin ? 'error.main' : 'text.secondary', fontWeight: isPlatformAdmin ? 700 : 400 }}>
+                            {isPlatformAdmin ? 'PLATFORM ADMIN' : user?.role}
                         </Typography>
                     </Box>
                 )}

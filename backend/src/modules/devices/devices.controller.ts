@@ -6,6 +6,7 @@ import {
     registerDeviceSchema,
     generatePairingCodeSchema,
     devicePairSchema,
+    reconnectDeviceSchema,
     refreshDeviceTokenSchema,
     batchGeneratePairingCodesSchema,
 } from './devices.schema';
@@ -68,6 +69,20 @@ export async function pairDevice(req: Request, res: Response, next: NextFunction
             message: 'Device ghép cặp thành công',
             data: result,
         });
+    } catch (err) {
+        next(err);
+    }
+}
+
+// POST /api/devices/reconnect
+// Device reconnects after reinstall using hwId (no pairing code needed)
+// Returns 404 if device has never been paired → show pairing form
+// No auth required - public endpoint for device
+export async function reconnectDevice(req: Request, res: Response, next: NextFunction) {
+    try {
+        const parsed = reconnectDeviceSchema.shape.body.parse(req.body);
+        const result = await pairingService.reconnectDevice(parsed, req.ip || '0.0.0.0');
+        res.json({ success: true, message: 'Device kết nối lại thành công', data: result });
     } catch (err) {
         next(err);
     }
@@ -195,6 +210,7 @@ export async function getDeviceHealth(req: Request, res: Response, next: NextFun
         res.json({ success: true, data: health });
     } catch (err) { next(err); }
 }
+
 
 // PATCH /api/devices/:id/license
 export async function setDeviceLicense(req: Request, res: Response, next: NextFunction) {

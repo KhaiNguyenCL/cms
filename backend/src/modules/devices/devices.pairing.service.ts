@@ -5,7 +5,7 @@ import { AppError } from '../../shared/middleware/error.middleware';
 import config from '../../config';
 import logger from '../../shared/utils/logger';
 import redis, { RedisKeys } from '../../shared/cache/redis';
-import type { RegisterDeviceBody, DevicePairBody, BatchGeneratePairingCodesBody } from './devices.schema';
+import type { RegisterDeviceBody, DevicePairBody, ReconnectDeviceBody, BatchGeneratePairingCodesBody } from './devices.schema';
 
 // Secret dùng để verify chữ ký từ Android app.
 // Android app tính: HMAC-SHA256(JSON.stringify(deviceInfo), DEVICE_SIGN_SECRET)
@@ -129,6 +129,56 @@ export async function pairDevice(
     );
 
     logger.info('Device paired', { deviceId: device.id, ip });
+    return { token, deviceId: device.id, organizationId: device.organizationId, name: device.name };
+}
+
+// ─── Reconnect device by hwId (skip pairing after reinstall) ─────────────────
+//
+// Flow: app reinstalled → no EncryptedPrefs → call /reconnect with hwId+sig
+// Server looks up device by androidId, issues new token — no pairing code needed.
+// Returns 404 if device has never been paired (first-time setup).
+
+export async function reconnectDevice(
+    data: ReconnectDeviceBody,
+    ip: string
+): Promise<{ token: string; deviceId: string; organizationId: string; name: string }> {
+    // Verify HMAC signature (same secret + format as pairDevice)
+    const expectedSig = crypto
+        .createHmac('sha256', DEVICE_SIGN_SECRET)
+        .update(JSON.stringify({ hwId: data.hwId, osVersion: data.osVersion, appVersion: data.appVersion }))
+        .digest('hex');
+    if (data.signature !== expectedSig) {
+        logger.warn('Reconnect signature mismatch', { ip });
+        throw new AppError(401, 'Xác thực thiết bị thất bại');
+    }
+
+    // Lookup by androidId — pick most recently seen if somehow duplicated
+    const device = await queryOne<{ id: string; organizationId: string; name: string }>(
+        `SELECT id, "organizationId", name FROM devices
+         WHERE "androidId" = $1
+         ORDER BY "lastSeen" DESC NULLS LAST LIMIT 1`,
+        [data.hwId]
+    );
+    if (!device) throw new AppError(404, 'Thiết bị chưa được đăng ký. Vui lòng nhập mã ghép cặp.');
+
+    // Clear any blacklist entry left from previous token
+    await redis.del(RedisKeys.deviceBlacklist(device.id));
+
+    // Update runtime info + mark online
+    await query(
+        `UPDATE devices SET "osVersion" = $1, "appVersion" = $2,
+                            status = 'ONLINE', "lastSeen" = NOW(), "updatedAt" = NOW()
+         WHERE id = $3`,
+        [data.osVersion, data.appVersion, device.id]
+    );
+
+    const token = jwt.sign(
+        { userId: device.id, organizationId: device.organizationId, role: 'DEVICE', type: 'device' },
+        config.jwt.secret,
+        { expiresIn: `${TOKEN_TTL_DAYS}d` }
+    );
+
+    logger.info('Device reconnected via hwId', { deviceId: device.id, ip });
     return { token, deviceId: device.id, organizationId: device.organizationId, name: device.name };
 }
 

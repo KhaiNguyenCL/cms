@@ -1,6 +1,6 @@
 import { query, queryOne } from '../../shared/database/db';
 import { randomBytes } from 'crypto';
-import { AppError } from '../../shared/middleware/error.middleware';
+import { AppError, handleUniqueViolation } from '../../shared/middleware/error.middleware';
 import logger from '../../shared/utils/logger';
 import type {
     ListDevicesQuery, UpdateDeviceBody,
@@ -20,13 +20,21 @@ export interface DeviceRow {
     appVersion: string | null;
     status: string;
     isLicensed: boolean;
+    licenseStartDate: string | null;  // ISO date
+    licenseEndDate: string | null;    // ISO date
     lastSeen: string | null;
+    lastOnlineAt: string | null;      // when device last transitioned to ONLINE
     lastOfflineAt: string | null;
     location: string | null;
     timezone: string;
     settings: Record<string, unknown> | null;
+    role: string;
+    downloadStatus: string;
+    contentReady: boolean;
     createdAt: string;
     updatedAt: string;
+    siteId: string | null;
+    siteName: string | null;
 }
 
 export interface DeviceGroupRow {
@@ -71,11 +79,17 @@ export async function listDevices(
         ),
         query<DeviceRow>(
             `SELECT d.id, d."organizationId", d.name, d."pairingCode", d."androidId", d.model,
-                    d."osVersion", d."appVersion", d.status, d."isLicensed", d."lastSeen", d."lastOfflineAt",
-                    d.location, d.timezone, d.settings, d."createdAt", d."updatedAt"
+                    d."osVersion", d."appVersion", d.status, d."isLicensed",
+                    d."licenseStartDate", d."licenseEndDate",
+                    d."lastSeen", d."lastOnlineAt", d."lastOfflineAt",
+                    d.location, d.timezone, d.settings,
+                    d.role, d."downloadStatus", d."contentReady",
+                    d."createdAt", d."updatedAt",
+                    d."storeId" AS "siteId", s.name AS "siteName"
              FROM devices d
+             LEFT JOIN stores s ON s.id = d."storeId"
              WHERE ${where}
-             ORDER BY d."lastSeen" DESC NULLS LAST, d."createdAt" DESC
+             ORDER BY d."createdAt" DESC
              LIMIT $${idx++} OFFSET $${idx++}`,
             [...values, limit, offset]
         ),
@@ -90,7 +104,9 @@ export async function listDevices(
 export async function getDeviceById(deviceId: string, organizationId: string): Promise<DeviceRow> {
     const device = await queryOne<DeviceRow>(
         `SELECT id, "organizationId", name, "pairingCode", "androidId", model, "osVersion", "appVersion",
-                status, "isLicensed", "lastSeen", "lastOfflineAt", location, timezone, settings, "createdAt", "updatedAt"
+                status, "isLicensed", "licenseStartDate", "licenseEndDate",
+                "lastSeen", "lastOnlineAt", "lastOfflineAt",
+                location, timezone, settings, "createdAt", "updatedAt"
          FROM devices
          WHERE id = $1 AND "organizationId" = $2`,
         [deviceId, organizationId]
@@ -116,23 +132,30 @@ export async function createDevice(
         if (!existing) break;
     }
 
-    const rows = await query<DeviceRow>(
-        `INSERT INTO devices (id, "organizationId", name, "pairingCode", status, location, timezone, settings, "createdAt", "updatedAt")
-         VALUES (gen_random_uuid()::text, $1, $2, $3, 'OFFLINE', $4, $5, $6, NOW(), NOW())
-         RETURNING id, "organizationId", name, "pairingCode", "androidId", model, "osVersion", "appVersion",
-                   status, "isLicensed", "lastSeen", "lastOfflineAt", location, timezone, settings, "createdAt", "updatedAt"`,
-        [
-            organizationId,
-            data.name,
-            pairingCode!,
-            data.location ?? null,
-            data.timezone ?? 'Asia/Ho_Chi_Minh',
-            data.settings ? JSON.stringify(data.settings) : null,
-        ]
-    );
+    let rows: DeviceRow[];
+    try {
+        rows = await query<DeviceRow>(
+            `INSERT INTO devices (id, "organizationId", name, "pairingCode", status, "isLicensed", location, timezone, settings, "createdAt", "updatedAt")
+             VALUES (gen_random_uuid()::text, $1, $2, $3, 'OFFLINE', false, $4, $5, $6, NOW(), NOW())
+             RETURNING id, "organizationId", name, "pairingCode", "androidId", model, "osVersion", "appVersion",
+                       status, "isLicensed", "licenseStartDate", "licenseEndDate",
+                       "lastSeen", "lastOnlineAt", "lastOfflineAt",
+                       location, timezone, settings, "createdAt", "updatedAt"`,
+            [
+                organizationId,
+                data.name,
+                pairingCode!,
+                data.location ?? null,
+                data.timezone ?? 'Asia/Ho_Chi_Minh',
+                data.settings ? JSON.stringify(data.settings) : null,
+            ]
+        );
+    } catch (err) {
+        handleUniqueViolation(err, 'Tên thiết bị đã tồn tại trong tổ chức');
+    }
 
-    logger.info('Device created', { deviceId: rows[0].id, pairingCode: pairingCode! });
-    return rows[0];
+    logger.info('Device created', { deviceId: rows![0].id, pairingCode: pairingCode! });
+    return rows![0];
 }
 
 // ─── Update device ─────────────────────────────────────────────────────────────
@@ -146,26 +169,35 @@ export async function updateDevice(
     const values: unknown[] = [];
     let idx = 1;
 
-    if (data.name !== undefined) { fields.push(`name = $${idx++}`); values.push(data.name); }
-    if (data.location !== undefined) { fields.push(`location = $${idx++}`); values.push(data.location); }
-    if (data.timezone !== undefined) { fields.push(`timezone = $${idx++}`); values.push(data.timezone); }
-    if (data.status !== undefined) { fields.push(`status = $${idx++}`); values.push(data.status); }
-    if (data.settings !== undefined) { fields.push(`settings = $${idx++}`); values.push(JSON.stringify(data.settings)); }
+    if (data.name !== undefined)             { fields.push(`name = $${idx++}`);              values.push(data.name); }
+    if (data.location !== undefined)         { fields.push(`location = $${idx++}`);          values.push(data.location); }
+    if (data.timezone !== undefined)         { fields.push(`timezone = $${idx++}`);          values.push(data.timezone); }
+    if (data.status !== undefined)           { fields.push(`status = $${idx++}`);            values.push(data.status); }
+    if (data.settings !== undefined)         { fields.push(`settings = $${idx++}`);          values.push(JSON.stringify(data.settings)); }
+    if (data.licenseStartDate !== undefined) { fields.push(`"licenseStartDate" = $${idx++}`); values.push(data.licenseStartDate); }
+    if (data.licenseEndDate !== undefined)   { fields.push(`"licenseEndDate" = $${idx++}`);   values.push(data.licenseEndDate); }
 
     if (fields.length === 0) throw new AppError(400, 'Không có dữ liệu để cập nhật');
 
     fields.push(`"updatedAt" = NOW()`);
     values.push(deviceId, organizationId);
 
-    const rows = await query<DeviceRow>(
-        `UPDATE devices
-         SET ${fields.join(', ')}
-         WHERE id = $${idx++} AND "organizationId" = $${idx++}
-         RETURNING id, "organizationId", name, "pairingCode", "androidId", model, "osVersion", "appVersion",
-                   status, "isLicensed", "lastSeen", "lastOfflineAt", location, timezone, settings, "createdAt", "updatedAt"`,
-        values
-    );
-    if (!rows[0]) throw new AppError(404, 'Device không tồn tại');
+    let rows: DeviceRow[];
+    try {
+        rows = await query<DeviceRow>(
+            `UPDATE devices
+             SET ${fields.join(', ')}
+             WHERE id = $${idx++} AND "organizationId" = $${idx++}
+             RETURNING id, "organizationId", name, "pairingCode", "androidId", model, "osVersion", "appVersion",
+                       status, "isLicensed", "licenseStartDate", "licenseEndDate",
+                       "lastSeen", "lastOnlineAt", "lastOfflineAt",
+                       location, timezone, settings, "createdAt", "updatedAt"`,
+            values
+        );
+    } catch (err) {
+        handleUniqueViolation(err, 'Tên thiết bị đã tồn tại trong tổ chức');
+    }
+    if (!rows![0]) throw new AppError(404, 'Device không tồn tại');
 
     logger.info('Device updated', { deviceId });
     return rows[0];
@@ -315,11 +347,24 @@ export async function setDeviceLicense(
          SET "isLicensed" = $1, "updatedAt" = NOW()
          WHERE id = $2 AND "organizationId" = $3
          RETURNING id, "organizationId", name, "pairingCode", "androidId", model, "osVersion", "appVersion",
-                   status, "isLicensed", "lastSeen", "lastOfflineAt", location, timezone, settings, "createdAt", "updatedAt"`,
+                   status, "isLicensed", "licenseStartDate", "licenseEndDate",
+                   "lastSeen", "lastOnlineAt", "lastOfflineAt",
+                   location, timezone, settings, "createdAt", "updatedAt"`,
         [isLicensed, deviceId, organizationId]
     );
     if (!rows[0]) throw new AppError(404, 'Device không tồn tại');
     logger.info('Device license updated', { deviceId, isLicensed });
+
+    // Push license change to device immediately — no need to wait for heartbeat
+    import('../../shared/socket/socket.server').then(({ getIO, deviceRoom }) => {
+        try {
+            getIO().of('/device').to(deviceRoom(deviceId)).emit('content.update', {
+                reason: 'license_changed',
+                timestamp: new Date().toISOString(),
+            });
+        } catch { /* socket not ready */ }
+    }).catch(() => {});
+
     return rows[0];
 }
 
@@ -562,3 +607,5 @@ export async function updateGroup(
     logger.info('Device group updated', { groupId });
     return updatedGroup!;
 }
+
+

@@ -188,9 +188,9 @@ export async function startSyncGroup(id: string, organizationId: string) {
     if (!group) throw new AppError(404, 'Sync group không tồn tại');
     if (!group.playlistId) throw new AppError(400, 'Sync group chưa có playlist — hãy gán playlist trước');
 
-    // Calculate total duration from playlist items
-    const items = await query<{ durationOverride: number | null; duration: number | null }>(
-        `SELECT pi."durationOverride", m.duration
+    // Calculate total duration from playlist items (must match calculateSyncPosition in frontend)
+    const items = await query<{ durationOverride: number | null; duration: number | null; transitionDuration: number | null }>(
+        `SELECT pi."durationOverride", pi."transitionDuration", m.duration
          FROM playlist_items pi
          LEFT JOIN media m ON m.id = pi."mediaId"
          WHERE pi."playlistId" = $1
@@ -199,10 +199,14 @@ export async function startSyncGroup(id: string, organizationId: string) {
     );
     if (items.length === 0) throw new AppError(400, 'Playlist không có media nào');
 
-    // durationOverride and media.duration are in seconds; convert to ms
-    const totalDurationMs = items.reduce((sum, item) => {
-        const secs = item.durationOverride ?? item.duration ?? 10;
-        return sum + secs * 1000;
+    // durationOverride and media.duration are in seconds; convert to ms.
+    // IMPORTANT: must include transitionDuration per item — same formula as frontend calculateSyncPosition.
+    const DEFAULT_TRANS_MS = 800;
+    const totalDurationMs = items.reduce((sum, item, idx) => {
+        const dur = (item.durationOverride ?? item.duration ?? 10) * 1000;
+        const nextItem = items[(idx + 1) % items.length];
+        const trans = nextItem.transitionDuration ?? DEFAULT_TRANS_MS;
+        return sum + dur + trans;
     }, 0);
 
     const startEpoch = Date.now();

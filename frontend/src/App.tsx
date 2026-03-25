@@ -45,7 +45,6 @@ import { lazy, Suspense } from 'react';
 import { Box, CircularProgress } from '@mui/material';
 
 const LoginPage = lazy(() => import('@pages/auth/LoginPage'));
-const RegisterPage = lazy(() => import('@pages/auth/RegisterPage'));
 const DashboardLayout = lazy(() => import('@pages/layout/DashboardLayout'));
 const DashboardPage = lazy(() => import('@pages/dashboard/DashboardPage'));
 const DevicesPage = lazy(() => import('@pages/devices/DevicesPage'));
@@ -59,7 +58,7 @@ const SuperAdminPage = lazy(() => import('@pages/superadmin/SuperAdminPage'));
 const LicensePage = lazy(() => import('@pages/license/LicensePage'));
 const NotFoundPage = lazy(() => import('@pages/NotFoundPage'));
 const PlayerPage = lazy(() => import('@pages/player/PlayerPage'));
-const StoreManagementPage = lazy(() => import('@pages/stores/StoreManagementPage'));
+const SitePage = lazy(() => import('@pages/sites/SitePage'));
 const TemplatePage         = lazy(() => import('@pages/content/TemplatePage'));
 const SlidePage            = lazy(() => import('@pages/content/SlidePage'));
 const DailySchedulePage    = lazy(() => import('@pages/schedules/DailySchedulePage'));
@@ -68,6 +67,8 @@ const ContentHistoryPage   = lazy(() => import('@pages/history/ContentHistoryPag
 const SoftwareHistoryPage  = lazy(() => import('@pages/history/SoftwareHistoryPage'));
 const TouchHistoryPage     = lazy(() => import('@pages/history/TouchHistoryPage'));
 const ActionHistoryPage    = lazy(() => import('@pages/history/ActionHistoryPage'));
+const ScheduleAssignmentPage = lazy(() => import('@pages/schedule-assignment/ScheduleAssignmentPage'));
+const PlatformLoginPage = lazy(() => import('@pages/platform/PlatformLoginPage'));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -99,7 +100,7 @@ function AppRoutes() {
           <Routes>
             {/* Public */}
             <Route path="/login" element={<LoginPage />} />
-            <Route path="/register" element={<RegisterPage />} />
+            <Route path="/platform/login" element={<PlatformLoginPage />} />
             {/* Android TV WebView player — device JWT, no admin auth */}
             <Route path="/player" element={
                 <PlayerErrorBoundary><PlayerPage /></PlayerErrorBoundary>
@@ -119,7 +120,7 @@ function AppRoutes() {
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/license" element={<LicensePage />} />
                 <Route path="/super-admin" element={<SuperAdminPage />} />
-                <Route path="/stores"           element={<StoreManagementPage />} />
+                <Route path="/sites"            element={<SitePage />} />
                 <Route path="/template"         element={<TemplatePage />} />
                 <Route path="/slide"            element={<SlidePage />} />
                 <Route path="/daily-schedule"   element={<DailySchedulePage />} />
@@ -128,6 +129,8 @@ function AppRoutes() {
                 <Route path="/history/software" element={<SoftwareHistoryPage />} />
                 <Route path="/history/touch"    element={<TouchHistoryPage />} />
                 <Route path="/history/action"   element={<ActionHistoryPage />} />
+                <Route path="/programs" element={<Navigate to="/schedule-assignment" replace />} />
+                <Route path="/schedule-assignment" element={<ScheduleAssignmentPage />} />
               </Route>
             </Route>
 

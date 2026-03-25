@@ -5,6 +5,7 @@
  *   active    — true = slot đang hiển thị, false = preloading ngầm (opacity 0)
  *   isPaused  — true = đóng băng slide hiện tại (timer dừng, video pause)
  *   onEnded   — gọi khi item kết thúc (chỉ gọi từ slot active, không gọi khi paused)
+ *   onWillEnd — gọi trước khi item kết thúc PRELOAD_BEFORE_MS ms (để preload item sau kế tiếp)
  *
  * IMAGE  : timer chạy khi active=true && !isPaused, ảnh tải ngầm khi active=false
  * VIDEO  : play khi active && !isPaused, pause khi inactive hoặc isPaused
@@ -18,10 +19,15 @@ import { useEffect, useRef, useState } from 'react';
 import { Box } from '@mui/material';
 import type { PlaylistItemSync } from '@api/device-player.api';
 
+/** Call onWillEnd this many ms before item ends (warms HTTP cache for after-next item). */
+const PRELOAD_BEFORE_MS = 5000;
+
 interface Props {
     item: PlaylistItemSync;
     active: boolean;
     onEnded: () => void;
+    /** Called ~5s before item ends — use to preload the item after next. */
+    onWillEnd?: () => void;
     /** Sync mode: start image timer or video seek at this offset (ms). Default 0. */
     startOffsetMs?: number;
     debug?: boolean;
@@ -30,10 +36,12 @@ interface Props {
 }
 
 export default function MediaSlide({
-    item, active, onEnded, startOffsetMs = 0, debug = false, isPaused = false,
+    item, active, onEnded, onWillEnd, startOffsetMs = 0, debug = false, isPaused = false,
 }: Props) {
-    const onEndedRef = useRef(onEnded);
+    const onEndedRef   = useRef(onEnded);
     onEndedRef.current = onEnded;
+    const onWillEndRef   = useRef(onWillEnd);
+    onWillEndRef.current = onWillEnd;
 
     // Stable refs so pause/resume effect doesn't need active/mediaType as deps
     const activeRef    = useRef(active);
@@ -46,11 +54,14 @@ export default function MediaSlide({
 
     // Guard: only call onEnded once per activation cycle
     const firedRef = useRef(false);
+    // Guard: only call onWillEnd once per activation cycle
+    const willEndFiredRef = useRef(false);
 
     // Timer state for pause/resume
-    const timerRef       = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const remainingMsRef = useRef(0);   // remaining display time (updated on pause)
-    const segStartRef    = useRef(0);   // Date.now() when current timer segment started
+    const timerRef        = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const willEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const remainingMsRef  = useRef(0);   // remaining display time (updated on pause)
+    const segStartRef     = useRef(0);   // Date.now() when current timer segment started
 
     const durationMs = Math.max(
         1,
@@ -65,9 +76,11 @@ export default function MediaSlide({
     useEffect(() => {
         if (!active || item.mediaType === 'VIDEO') return;
         setMediaError(null);
-        firedRef.current = false;
+        firedRef.current     = false;
+        willEndFiredRef.current = false;
 
         if (timerRef.current) clearTimeout(timerRef.current);
+        if (willEndTimerRef.current) { clearTimeout(willEndTimerRef.current); willEndTimerRef.current = null; }
 
         const initial = Math.max(1, durationMs - startOffsetMs);
         remainingMsRef.current = initial;
@@ -77,12 +90,24 @@ export default function MediaSlide({
             timerRef.current = setTimeout(() => {
                 if (!firedRef.current) { firedRef.current = true; onEndedRef.current(); }
             }, initial);
+
+            // Fire onWillEnd 5s before end so PlayerPage can warm HTTP cache for after-next item.
+            // Only schedule if there's enough time remaining.
+            if (initial > PRELOAD_BEFORE_MS) {
+                willEndTimerRef.current = setTimeout(() => {
+                    if (!willEndFiredRef.current) {
+                        willEndFiredRef.current = true;
+                        onWillEndRef.current?.();
+                    }
+                }, initial - PRELOAD_BEFORE_MS);
+            }
         }
         // If already paused when slot activates: remainingMsRef holds full duration,
         // timer will start when Effect 2 sees isPaused → false.
 
         return () => {
             if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+            if (willEndTimerRef.current) { clearTimeout(willEndTimerRef.current); willEndTimerRef.current = null; }
         };
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [active, item.id, durationMs, startOffsetMs]);
@@ -118,14 +143,24 @@ export default function MediaSlide({
         setMediaError(null);
 
         if (active) {
-            firedRef.current = false;
-            video.currentTime = startOffsetMs / 1000;
-            video.load();
+            firedRef.current      = false;
+            willEndFiredRef.current = false;
+            if (startOffsetMs > 0) {
+                // Sync seek mode: must reset to specific position
+                video.currentTime = startOffsetMs / 1000;
+                video.load();
+            } else {
+                // Normal mode: video was already buffering while inactive —
+                // just seek to start without calling load() (preserves buffered data).
+                video.currentTime = 0;
+            }
             if (!isPaused) {
                 video.play().catch(() => {});
             }
         } else {
             video.pause();
+            // Call load() only when src changes (handled by React re-render + deps change).
+            // Here we just start buffering the assigned src silently.
             video.load();
         }
     }, [active, item.mediaUrl, item.mediaType, startOffsetMs]);
@@ -189,6 +224,16 @@ export default function MediaSlide({
                     preload="auto"
                     playsInline
                     style={{ ...mediaStyle, objectFit: 'contain' }}
+                    onTimeUpdate={() => {
+                        // Fire onWillEnd 5s before video ends (only while active, only once)
+                        if (!active || willEndFiredRef.current) return;
+                        const video = videoRef.current;
+                        if (!video || !video.duration || isNaN(video.duration)) return;
+                        if (video.duration - video.currentTime <= PRELOAD_BEFORE_MS / 1000) {
+                            willEndFiredRef.current = true;
+                            onWillEndRef.current?.();
+                        }
+                    }}
                     onEnded={() => {
                         if (active && !firedRef.current) {
                             firedRef.current = true;

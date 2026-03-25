@@ -5,7 +5,7 @@ import { z } from 'zod';
 export const listPlaylistsSchema = z.object({
     query: z.object({
         page: z.coerce.number().int().min(1).catch(1),
-        limit: z.coerce.number().int().min(1).max(100).catch(20),
+        limit: z.coerce.number().int().min(1).max(500).catch(20),
         search: z.string().optional(),
     }),
 });
@@ -35,6 +35,7 @@ export const addItemSchema = z.object({
         mediaId: z.string().min(1),
         durationOverride: z.number().int().min(1).max(86400).optional().nullable(),
         transition: z.string().max(50).optional().nullable(),
+        transitionDuration: z.number().int().min(100).max(5000).optional().nullable(),
     }),
 });
 
@@ -43,6 +44,7 @@ export const updateItemSchema = z.object({
     body: z.object({
         durationOverride: z.number().int().min(1).max(86400).optional().nullable(),
         transition: z.string().max(50).optional().nullable(),
+        transitionDuration: z.number().int().min(100).max(5000).optional().nullable(),
     }).refine(d => Object.keys(d).length > 0, { message: 'Phải cung cấp ít nhất một trường' }),
 });
 

@@ -4,7 +4,7 @@ import crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import sharp from 'sharp';
 import { query, queryOne } from '../../shared/database/db';
-import { AppError } from '../../shared/middleware/error.middleware';
+import { AppError, handleUniqueViolation } from '../../shared/middleware/error.middleware';
 import logger from '../../shared/utils/logger';
 import { invalidateContentHashForOrg } from '../device-sync/device-sync.service';
 import { tempDir, mediaDir, thumbDir, MAX_IMAGE_BYTES } from './media.upload';
@@ -110,7 +110,8 @@ export async function uploadMedia(
     organizationId: string,
     uploadedById: string,
     file: Express.Multer.File,
-    title?: string
+    title?: string,
+    clientDuration?: number
 ): Promise<MediaRow> {
     const mediaType = detectType(file.mimetype);
 
@@ -159,30 +160,35 @@ export async function uploadMedia(
     // Images are already processed above (sharp), so they go straight to READY.
     const initialStatus = mediaType === 'VIDEO' ? 'PROCESSING' : 'READY';
 
-    const rows = await query<MediaRow>(
-        `INSERT INTO media (
-            id, "organizationId", "uploadedById", title, description, type,
-            "filePath", "fileSize", "mimeType", "fileHash",
-            duration, width, height, "thumbnailPath",
-            tags, metadata, status, "createdAt", "updatedAt"
-         ) VALUES (
-            gen_random_uuid()::text, $1, $2, $3, NULL, $4,
-            $5, $6, $7, $8,
-            NULL, $9, $10, $11,
-            $12, $13, $14, NOW(), NOW()
-         )
-         RETURNING id, "organizationId", "uploadedById", title, description, type,
-                   "filePath", "fileSize", "mimeType", "fileHash", duration, width, height,
-                   "thumbnailPath", tags, metadata, status, "createdAt", "updatedAt"`,
-        [
-            organizationId, uploadedById, displayTitle, mediaType,
-            finalPath, file.size, file.mimetype, hash,
-            width, height, thumbnailPath,
-            [],   // tags: text[] — pg driver handles JS array natively
-            {},   // metadata: jsonb — pg driver handles JS object natively
-            initialStatus,
-        ]
-    );
+    let rows: MediaRow[];
+    try {
+        rows = await query<MediaRow>(
+            `INSERT INTO media (
+                id, "organizationId", "uploadedById", title, description, type,
+                "filePath", "fileSize", "mimeType", "fileHash",
+                duration, width, height, "thumbnailPath",
+                tags, metadata, status, "createdAt", "updatedAt"
+             ) VALUES (
+                gen_random_uuid()::text, $1, $2, $3, NULL, $4,
+                $5, $6, $7, $8,
+                $9, $10, $11, $12,
+                $13, $14, $15, NOW(), NOW()
+             )
+             RETURNING id, "organizationId", "uploadedById", title, description, type,
+                       "filePath", "fileSize", "mimeType", "fileHash", duration, width, height,
+                       "thumbnailPath", tags, metadata, status, "createdAt", "updatedAt"`,
+            [
+                organizationId, uploadedById, displayTitle, mediaType,
+                finalPath, file.size, file.mimetype, hash,
+                (clientDuration && clientDuration > 0 ? clientDuration : null), width, height, thumbnailPath,
+                [],   // tags: text[] — pg driver handles JS array natively
+                {},   // metadata: jsonb — pg driver handles JS object natively
+                initialStatus,
+            ]
+        );
+    } catch (err) {
+        handleUniqueViolation(err, 'Tên media đã tồn tại trong tổ chức');
+    }
 
     logger.info('Media uploaded', { mediaId: rows[0].id, type: mediaType, size: file.size });
 
@@ -199,7 +205,7 @@ export async function uploadMedia(
         logger.info('Video transcoding job enqueued', { mediaId: rows[0].id });
     } else {
         // Image is READY immediately — invalidate content hash now
-        invalidateContentHashForOrg(organizationId).catch(() => {});
+        invalidateContentHashForOrg(organizationId, 'CONTENT').catch(() => {});
     }
 
     return rows[0];
@@ -224,15 +230,20 @@ export async function updateMedia(
     fields.push(`"updatedAt" = NOW()`);
     values.push(mediaId, organizationId);
 
-    const rows = await query<MediaRow>(
-        `UPDATE media SET ${fields.join(', ')}
-         WHERE id = $${idx++} AND "organizationId" = $${idx++}
-         RETURNING id, "organizationId", "uploadedById", title, description, type,
-                   "filePath", "fileSize", "mimeType", "fileHash", duration, width, height,
-                   "thumbnailPath", tags, metadata, status, "createdAt", "updatedAt"`,
-        values
-    );
-    if (!rows[0]) throw new AppError(404, 'Media không tồn tại');
+    let rows: MediaRow[];
+    try {
+        rows = await query<MediaRow>(
+            `UPDATE media SET ${fields.join(', ')}
+             WHERE id = $${idx++} AND "organizationId" = $${idx++}
+             RETURNING id, "organizationId", "uploadedById", title, description, type,
+                       "filePath", "fileSize", "mimeType", "fileHash", duration, width, height,
+                       "thumbnailPath", tags, metadata, status, "createdAt", "updatedAt"`,
+            values
+        );
+    } catch (err) {
+        handleUniqueViolation(err, 'Tên media đã tồn tại trong tổ chức');
+    }
+    if (!rows![0]) throw new AppError(404, 'Media không tồn tại');
     logger.info('Media updated', { mediaId });
     return rows[0];
 }
@@ -245,6 +256,21 @@ export async function deleteMedia(mediaId: string, organizationId: string): Prom
         [mediaId, organizationId]
     );
     if (!media) throw new AppError(404, 'Media không tồn tại');
+
+    // Check FK: playlists referencing this media
+    const refs = await query<{ name: string }>(
+        `SELECT DISTINCT p.name
+         FROM playlist_items pi
+         JOIN playlists p ON p.id = pi."playlistId"
+         WHERE pi."mediaId" = $1 AND p."organizationId" = $2
+           AND p."isAutoGenerated" = false
+         LIMIT 5`,
+        [mediaId, organizationId]
+    );
+    if (refs.length > 0) {
+        const names = refs.map(r => r.name).join(', ');
+        throw new AppError(409, `Xoá thất bại do media đang nằm trong playlist: ${names}`);
+    }
 
     // Xoá record trước
     await query(`DELETE FROM media WHERE id = $1`, [mediaId]);
@@ -259,7 +285,7 @@ export async function deleteMedia(mediaId: string, organizationId: string): Prom
         logger.warn('Could not delete media files from disk', { mediaId, error: (e as Error).message });
     }
     logger.info('Media deleted', { mediaId });
-    invalidateContentHashForOrg(organizationId).catch(() => {});
+    invalidateContentHashForOrg(organizationId, 'CONTENT').catch(() => {});
 }
 
 // ─── Thumbnail ────────────────────────────────────────────────────────────────

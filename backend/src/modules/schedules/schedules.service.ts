@@ -1,5 +1,5 @@
 import { query, queryOne } from '../../shared/database/db';
-import { AppError } from '../../shared/middleware/error.middleware';
+import { AppError, handleUniqueViolation } from '../../shared/middleware/error.middleware';
 import logger from '../../shared/utils/logger';
 import { invalidateContentHashForOrg } from '../device-sync/device-sync.service';
 import { findOrCreateAutoPlaylist } from '../playlists/playlists.service';
@@ -168,34 +168,39 @@ export async function createSchedule(
         if (!group) throw new AppError(404, 'Device group không tồn tại');
     }
 
-    const rows = await query<ScheduleRow>(
-        `INSERT INTO schedules (
-            id, "organizationId", name, "playlistId",
-            "targetType", "targetDeviceId", "targetGroupId",
-            "startDate", "endDate", "startTime", "endTime",
-            "daysOfWeek", priority, "isActive",
-            "createdAt", "updatedAt"
-         ) VALUES (
-            gen_random_uuid()::text, $1, $2, $3,
-            $4, $5, $6,
-            $7::timestamp, $8::timestamp, $9, $10,
-            $11, $12, $13,
-            NOW(), NOW()
-         )
-         RETURNING id, "organizationId", name, "playlistId",
-                   "targetType", "targetDeviceId", "targetGroupId",
-                   "startDate", "endDate", "startTime", "endTime",
-                   "daysOfWeek", priority, "isActive", "createdAt", "updatedAt"`,
-        [
-            organizationId, data.name, resolvedPlaylistId,
-            data.targetType, data.targetDeviceId ?? null, data.targetGroupId ?? null,
-            data.startDate, data.endDate ?? null, data.startTime ?? null, data.endTime ?? null,
-            data.daysOfWeek ?? [], data.priority ?? 0, data.isActive ?? true,
-        ]
-    );
+    let rows: ScheduleRow[];
+    try {
+        rows = await query<ScheduleRow>(
+            `INSERT INTO schedules (
+                id, "organizationId", name, "playlistId",
+                "targetType", "targetDeviceId", "targetGroupId",
+                "startDate", "endDate", "startTime", "endTime",
+                "daysOfWeek", priority, "isActive",
+                "createdAt", "updatedAt"
+             ) VALUES (
+                gen_random_uuid()::text, $1, $2, $3,
+                $4, $5, $6,
+                $7::timestamp, $8::timestamp, $9, $10,
+                $11, $12, $13,
+                NOW(), NOW()
+             )
+             RETURNING id, "organizationId", name, "playlistId",
+                       "targetType", "targetDeviceId", "targetGroupId",
+                       "startDate", "endDate", "startTime", "endTime",
+                       "daysOfWeek", priority, "isActive", "createdAt", "updatedAt"`,
+            [
+                organizationId, data.name, resolvedPlaylistId,
+                data.targetType, data.targetDeviceId ?? null, data.targetGroupId ?? null,
+                data.startDate, data.endDate ?? null, data.startTime ?? null, data.endTime ?? null,
+                data.daysOfWeek ?? [], data.priority ?? 0, data.isActive ?? true,
+            ]
+        );
+    } catch (err) {
+        handleUniqueViolation(err, 'Tên lịch phát đã tồn tại trong tổ chức');
+    }
 
-    logger.info('Schedule created', { scheduleId: rows[0].id, organizationId });
-    invalidateContentHashForOrg(organizationId).catch(() => {}); // fire-and-forget
+    logger.info('Schedule created', { scheduleId: rows![0].id, organizationId });
+    invalidateContentHashForOrg(organizationId, 'CONTENT').catch(() => {}); // fire-and-forget
     return rows[0];
 }
 
@@ -237,18 +242,25 @@ export async function updateSchedule(
     fields.push(`"updatedAt" = NOW()`);
     values.push(scheduleId, organizationId);
 
-    const rows = await query<ScheduleRow>(
-        `UPDATE schedules SET ${fields.join(', ')}
-         WHERE id = $${idx++} AND "organizationId" = $${idx++}
-         RETURNING id, "organizationId", name, "playlistId",
-                   "targetType", "targetDeviceId", "targetGroupId",
-                   "startDate", "endDate", "startTime", "endTime",
-                   "daysOfWeek", priority, "isActive", "createdAt", "updatedAt"`,
-        values
-    );
-    if (!rows[0]) throw new AppError(404, 'Schedule không tồn tại');
+    let rows: ScheduleRow[];
+    try {
+        rows = await query<ScheduleRow>(
+            `UPDATE schedules SET ${fields.join(', ')}
+             WHERE id = $${idx++} AND "organizationId" = $${idx++}
+             RETURNING id, "organizationId", name, "playlistId",
+                       "targetType", "targetDeviceId", "targetGroupId",
+                       "startDate", "endDate", "startTime", "endTime",
+                       "daysOfWeek", priority, "isActive", "createdAt", "updatedAt"`,
+            values
+        );
+    } catch (err) {
+        handleUniqueViolation(err, 'Tên lịch phát đã tồn tại trong tổ chức');
+    }
+    if (!rows![0]) throw new AppError(404, 'Schedule không tồn tại');
     logger.info('Schedule updated', { scheduleId });
-    invalidateContentHashForOrg(organizationId).catch(() => {}); // fire-and-forget
+    // If playlist/media changed → new files may need downloading; otherwise just timing/metadata
+    const contentChanged = !!(data.mediaId || data.playlistId !== undefined);
+    invalidateContentHashForOrg(organizationId, contentChanged ? 'CONTENT' : 'META').catch(() => {});
     return rows[0];
 }
 
@@ -261,7 +273,7 @@ export async function deleteSchedule(scheduleId: string, organizationId: string)
     );
     if (!result[0]) throw new AppError(404, 'Schedule không tồn tại');
     logger.info('Schedule deleted', { scheduleId });
-    invalidateContentHashForOrg(organizationId).catch(() => {}); // fire-and-forget
+    invalidateContentHashForOrg(organizationId, 'CONTENT').catch(() => {}); // fire-and-forget
 }
 
 // ─── Get active schedules for a device (used by device-sync) ─────────────────

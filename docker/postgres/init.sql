@@ -39,6 +39,21 @@ CREATE TABLE "organizations" (
 );
 CREATE UNIQUE INDEX "organizations_slug_key" ON "organizations"("slug");
 
+-- ─── Platform Admins (no org affiliation — manage all orgs) ──────────────────
+
+CREATE TABLE IF NOT EXISTS "platform_admins" (
+    "id"           TEXT        NOT NULL DEFAULT gen_random_uuid()::text,
+    "email"        TEXT        NOT NULL,
+    "passwordHash" TEXT        NOT NULL,
+    "name"         TEXT        NOT NULL DEFAULT '',
+    "isActive"     BOOLEAN     NOT NULL DEFAULT true,
+    "lastLoginAt"  TIMESTAMPTZ,
+    "createdAt"    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    "updatedAt"    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT "platform_admins_pkey" PRIMARY KEY ("id")
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "platform_admins_email_key" ON "platform_admins"("email");
+
 -- ─── Users ────────────────────────────────────────────────────────────────────
 
 CREATE TABLE "users" (
@@ -68,17 +83,21 @@ CREATE TABLE "devices" (
     "model"          TEXT,
     "osVersion"      TEXT,
     "appVersion"     TEXT,
-    "status"         "DeviceStatus" NOT NULL DEFAULT 'OFFLINE',
-    "isLicensed"     BOOLEAN        NOT NULL DEFAULT true,
-    "lastSeen"       TIMESTAMP(3),
-    "lastOfflineAt"  TIMESTAMPTZ,
-    "settings"       JSONB,
-    "createdAt"      TIMESTAMP(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt"      TIMESTAMP(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "status"          "DeviceStatus" NOT NULL DEFAULT 'OFFLINE',
+    "isLicensed"      BOOLEAN        NOT NULL DEFAULT true,
+    "lastSeen"        TIMESTAMP(3),
+    "lastOfflineAt"   TIMESTAMPTZ,
+    "settings"        JSONB,
+    "role"            TEXT           NOT NULL DEFAULT 'STANDALONE' CHECK ("role" IN ('MASTER','SLAVE','STANDALONE')),
+    "downloadStatus"  TEXT           NOT NULL DEFAULT 'PENDING'    CHECK ("downloadStatus" IN ('PENDING','DOWNLOADING','READY','ERROR')),
+    "contentReady"    BOOLEAN        NOT NULL DEFAULT false,
+    "createdAt"       TIMESTAMP(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt"       TIMESTAMP(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "devices_pkey" PRIMARY KEY ("id")
 );
 CREATE UNIQUE INDEX "devices_androidId_key"              ON "devices"("androidId") WHERE "androidId" IS NOT NULL;
 CREATE UNIQUE INDEX "devices_pairingCode_key"            ON "devices"("pairingCode") WHERE "pairingCode" IS NOT NULL;
+CREATE UNIQUE INDEX "devices_org_name_unique"            ON "devices"("organizationId", lower("name"));
 CREATE INDEX        "devices_organizationId_status_idx"  ON "devices"("organizationId", "status");
 CREATE INDEX        "devices_lastSeen_idx"               ON "devices"("lastSeen");
 
@@ -125,8 +144,9 @@ CREATE TABLE "media" (
     "updatedAt"      TIMESTAMP(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "media_pkey" PRIMARY KEY ("id")
 );
-CREATE INDEX "media_organizationId_type_status_idx" ON "media"("organizationId", "type", "status");
-CREATE INDEX "media_fileHash_idx"                   ON "media"("fileHash");
+CREATE UNIQUE INDEX "media_org_title_unique"            ON "media"("organizationId", lower("title"));
+CREATE INDEX        "media_organizationId_type_status_idx" ON "media"("organizationId", "type", "status");
+CREATE INDEX        "media_fileHash_idx"                   ON "media"("fileHash");
 
 -- ─── Playlists ────────────────────────────────────────────────────────────────
 
@@ -140,7 +160,8 @@ CREATE TABLE "playlists" (
     "updatedAt"      TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "playlists_pkey" PRIMARY KEY ("id")
 );
-CREATE INDEX "playlists_organizationId_idx" ON "playlists"("organizationId");
+CREATE UNIQUE INDEX "playlists_org_name_unique"  ON "playlists"("organizationId", lower("name"));
+CREATE INDEX        "playlists_organizationId_idx" ON "playlists"("organizationId");
 
 CREATE TABLE "playlist_items" (
     "id"               TEXT    NOT NULL DEFAULT gen_random_uuid()::text,
@@ -148,7 +169,8 @@ CREATE TABLE "playlist_items" (
     "mediaId"          TEXT    NOT NULL,
     "position"         INTEGER NOT NULL,
     "durationOverride" INTEGER,
-    "transition"       TEXT,
+    "transition"         TEXT,
+    "transitionDuration" INTEGER,
     CONSTRAINT "playlist_items_pkey" PRIMARY KEY ("id")
 );
 CREATE INDEX "playlist_items_playlistId_position_idx" ON "playlist_items"("playlistId", "position");
@@ -174,8 +196,9 @@ CREATE TABLE "schedules" (
     "updatedAt"      TIMESTAMP(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "schedules_pkey" PRIMARY KEY ("id")
 );
-CREATE INDEX "schedules_organizationId_isActive_idx" ON "schedules"("organizationId", "isActive");
-CREATE INDEX "schedules_startDate_endDate_idx"        ON "schedules"("startDate", "endDate");
+CREATE UNIQUE INDEX "schedules_org_name_unique"         ON "schedules"("organizationId", lower("name"));
+CREATE INDEX        "schedules_organizationId_isActive_idx" ON "schedules"("organizationId", "isActive");
+CREATE INDEX        "schedules_startDate_endDate_idx"        ON "schedules"("startDate", "endDate");
 
 -- ─── Analytics ────────────────────────────────────────────────────────────────
 
@@ -328,3 +351,66 @@ CREATE INDEX IF NOT EXISTS "idx_playback_logs_deviceId_playedAt"
 
 -- Run on existing DB (idempotent):
 -- ALTER TABLE organizations ADD COLUMN IF NOT EXISTS "deviceAdminPin" TEXT NOT NULL DEFAULT '0000';
+
+-- ─── Schedule Assignments ─────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS schedule_assignments (
+    id               TEXT        NOT NULL DEFAULT gen_random_uuid()::text,
+    "organizationId" TEXT        NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    "scheduleId"     TEXT        NOT NULL REFERENCES schedules(id) ON DELETE CASCADE,
+    "targetType"     TEXT        NOT NULL CHECK ("targetType" IN ('DEVICE', 'SITE')),
+    "targetId"       TEXT        NOT NULL,
+    "assignedById"   TEXT,
+    "assignedAt"     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    "sortOrder"      INT         NOT NULL DEFAULT 0,
+    CONSTRAINT "schedule_assignments_pkey" PRIMARY KEY (id),
+    CONSTRAINT "schedule_assignments_unique" UNIQUE ("scheduleId", "targetType", "targetId")
+);
+CREATE INDEX IF NOT EXISTS "sa_orgId_idx"        ON schedule_assignments ("organizationId");
+CREATE INDEX IF NOT EXISTS "sa_target_idx"       ON schedule_assignments ("targetType", "targetId");
+CREATE INDEX IF NOT EXISTS "sa_scheduleId_idx"   ON schedule_assignments ("scheduleId");
+
+-- ─── Programs (legacy — kept for migration only) ───────────────────────────────
+
+CREATE TABLE IF NOT EXISTS programs (
+    id               TEXT        NOT NULL DEFAULT gen_random_uuid()::text,
+    "organizationId" TEXT        NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    name             TEXT        NOT NULL,
+    description      TEXT,
+    "createdAt"      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    "updatedAt"      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT "programs_pkey" PRIMARY KEY (id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "programs_org_name_unique" ON programs("organizationId", lower(name));
+CREATE INDEX        IF NOT EXISTS "programs_orgId_idx"        ON programs("organizationId");
+
+CREATE TABLE IF NOT EXISTS program_schedules (
+    id           TEXT NOT NULL DEFAULT gen_random_uuid()::text,
+    "programId"  TEXT NOT NULL REFERENCES programs(id) ON DELETE CASCADE,
+    "scheduleId" TEXT NOT NULL REFERENCES schedules(id) ON DELETE CASCADE,
+    position     INT  NOT NULL DEFAULT 0,
+    CONSTRAINT "program_schedules_pkey" PRIMARY KEY (id),
+    CONSTRAINT "program_schedules_program_schedule_unique" UNIQUE ("programId", "scheduleId")
+);
+CREATE INDEX IF NOT EXISTS "ps_programId_idx" ON program_schedules("programId");
+
+CREATE TABLE IF NOT EXISTS program_assignments (
+    id               TEXT        NOT NULL DEFAULT gen_random_uuid()::text,
+    "organizationId" TEXT        NOT NULL,
+    "programId"      TEXT        NOT NULL REFERENCES programs(id) ON DELETE CASCADE,
+    "targetType"     TEXT        NOT NULL CHECK("targetType" IN ('STORE', 'DEVICE')),
+    "targetId"       TEXT        NOT NULL,
+    "assignedById"   TEXT,
+    "assignedAt"     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT "program_assignments_pkey" PRIMARY KEY (id),
+    CONSTRAINT "program_assignments_target_unique" UNIQUE ("targetType", "targetId")
+);
+CREATE INDEX IF NOT EXISTS "pa_orgId_idx"    ON program_assignments("organizationId");
+CREATE INDEX IF NOT EXISTS "pa_programId_idx" ON program_assignments("programId");
+
+-- ─── Unique name constraints per org (run IF NOT EXISTS for existing installs) ─
+CREATE UNIQUE INDEX IF NOT EXISTS "stores_org_name_unique" ON stores("organizationId", lower(name));
+
+-- ─── Site timezone (2026-03-17) ───────────────────────────────────────────────
+-- Run on existing DB:
+-- ALTER TABLE stores ADD COLUMN IF NOT EXISTS timezone TEXT DEFAULT NULL;

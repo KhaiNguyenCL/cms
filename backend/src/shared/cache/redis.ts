@@ -30,4 +30,11 @@ export const RedisKeys = {
     orgSettings: (orgId: string) => `org:${orgId}:settings`,
     deviceContentHash: (deviceId: string) => `device:${deviceId}:content_hash`,
     deviceBlacklist: (deviceId: string) => `device:${deviceId}:blacklisted`,
+    // Org-level content version counter — INCR on every content change.
+    // Per-device hash caches embed this version; stale if version mismatch.
+    orgContentVersion: (orgId: string) => `org:${orgId}:content_version`,
+    // Cached org license + device PIN — TTL 60s to avoid per-heartbeat DB read.
+    deviceLicenseCache: (deviceId: string) => `device:${deviceId}:license_cache`,
+    // Throttle device_health inserts to at most once per 5 min per device.
+    deviceHealthThrottle: (deviceId: string) => `device:${deviceId}:health_throttle`,
 };

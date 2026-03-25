@@ -20,7 +20,9 @@ import scheduleRoutes from '../modules/schedules/schedules.routes';
 import analyticsRoutes from '../modules/analytics/analytics.routes';
 import deviceSyncRoutes from '../modules/device-sync/device-sync.routes';
 import deviceGroupRoutes from '../modules/device-groups/device-groups.routes';
-import storeRoutes from '../modules/stores/stores.routes';
+import siteRoutes from '../modules/sites/sites.routes';
+import scheduleAssignmentRoutes from '../modules/schedule-assignments/schedule-assignments.routes';
+import platformAuthRoutes from '../modules/platform-auth/platform-auth.routes';
 
 // Middleware imports
 import { errorHandler } from './middleware/error.middleware';
@@ -49,7 +51,10 @@ if (config.env === 'production') {
         crossOriginEmbedderPolicy: false,   // needed for video blob URLs
     }));
 } else {
-    app.use(helmet({ contentSecurityPolicy: false }));
+    app.use(helmet({
+        contentSecurityPolicy: false,
+        crossOriginOpenerPolicy: false,
+    }));
 }
 
 // ── CORS ──────────────────────────────────────────────────────
@@ -65,20 +70,7 @@ app.use(cookieParser());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// ── Global rate limit (admin API only — device routes excluded) ───────────────
-// /api/device is an automated client (heartbeat/sync triggered by server push),
-// not a human browser — applying rate limits causes 429 during normal operation.
-const adminRateLimit = rateLimit({
-    windowMs: config.rateLimit.windowMs,
-    max: config.rateLimit.max,
-    standardHeaders: true,
-    legacyHeaders: false,
-    message: { error: 'Too many requests, please try again later.' },
-});
-app.use('/api', (req, res, next) => {
-    if (req.path.startsWith('/device')) return next();
-    return adminRateLimit(req, res, next);
-});
+// Rate limit disabled for development
 
 // ── Request logging ───────────────────────────────────────────
 app.use((req, _res, next) => {
@@ -104,6 +96,7 @@ app.get('/health', async (_req, res) => {
 
 // ── Public routes (no auth needed) ───────────────────────────
 app.use('/api/auth', authRoutes);
+app.use('/api/platform', platformAuthRoutes); // Platform admin auth + CRUD
 app.use('/api/device', deviceSyncRoutes); // Device player sync (uses device JWT)
 
 // ── Admin routes (requires user auth) ────────────────────────
@@ -114,7 +107,8 @@ app.use('/api/media', mediaRoutes);      // authenticate applied inside router
 app.use('/api/playlists', playlistRoutes);  // authenticate applied inside router
 app.use('/api/schedules', scheduleRoutes); // authenticate applied inside router
 app.use('/api/device-groups', deviceGroupRoutes); // authenticate applied inside router
-app.use('/api/stores',       storeRoutes);        // authenticate applied inside router
+app.use('/api/sites',        siteRoutes);         // authenticate applied inside router
+app.use('/api/schedule-assignments', scheduleAssignmentRoutes); // authenticate applied inside router
 app.use('/api/analytics', analyticsRoutes); // authenticate applied inside router
 
 // ── Serve built frontend (SPA) ────────────────────────────────

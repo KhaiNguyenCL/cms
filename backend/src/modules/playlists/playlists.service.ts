@@ -1,5 +1,5 @@
 import { query, queryOne, withTransaction } from '../../shared/database/db';
-import { AppError } from '../../shared/middleware/error.middleware';
+import { AppError, handleUniqueViolation } from '../../shared/middleware/error.middleware';
 import logger from '../../shared/utils/logger';
 import { invalidateContentHashForOrg } from '../device-sync/device-sync.service';
 import type {
@@ -28,6 +28,7 @@ export interface PlaylistItemRow {
     position: number;
     durationOverride: number | null;
     transition: string | null;
+    transitionDuration: number | null;
     // Joined media fields
     mediaTitle?: string;
     mediaType?: string;
@@ -101,7 +102,7 @@ export async function getPlaylistById(
 
     const items = await query<PlaylistItemRow>(
         `SELECT pi.id, pi."playlistId", pi."mediaId", pi.position,
-                pi."durationOverride", pi.transition,
+                pi."durationOverride", pi.transition, pi."transitionDuration",
                 m.title as "mediaTitle", m.type as "mediaType",
                 m."thumbnailPath" as "mediaThumbnailPath",
                 m.duration as "mediaDuration"
@@ -129,15 +130,20 @@ export async function createPlaylist(
         );
     }
 
-    const rows = await query<PlaylistRow>(
-        `INSERT INTO playlists (id, "organizationId", name, description, "isDefault", "createdAt", "updatedAt")
-         VALUES (gen_random_uuid()::text, $1, $2, $3, $4, NOW(), NOW())
-         RETURNING id, "organizationId", name, description, "isDefault", "createdAt", "updatedAt"`,
-        [organizationId, data.name, data.description ?? null, data.isDefault ?? false]
-    );
+    let rows: PlaylistRow[];
+    try {
+        rows = await query<PlaylistRow>(
+            `INSERT INTO playlists (id, "organizationId", name, description, "isDefault", "createdAt", "updatedAt")
+             VALUES (gen_random_uuid()::text, $1, $2, $3, $4, NOW(), NOW())
+             RETURNING id, "organizationId", name, description, "isDefault", "createdAt", "updatedAt"`,
+            [organizationId, data.name, data.description ?? null, data.isDefault ?? false]
+        );
+    } catch (err) {
+        handleUniqueViolation(err, 'Tên playlist đã tồn tại trong tổ chức');
+    }
 
-    logger.info('Playlist created', { playlistId: rows[0].id, organizationId });
-    return { ...rows[0], itemCount: 0 };
+    logger.info('Playlist created', { playlistId: rows![0].id, organizationId });
+    return { ...rows![0], itemCount: 0 };
 }
 
 // ─── Update playlist ──────────────────────────────────────────────────────────
@@ -168,13 +174,18 @@ export async function updatePlaylist(
     fields.push(`"updatedAt" = NOW()`);
     values.push(playlistId, organizationId);
 
-    const rows = await query<PlaylistRow>(
-        `UPDATE playlists SET ${fields.join(', ')}
-         WHERE id = $${idx++} AND "organizationId" = $${idx++}
-         RETURNING id, "organizationId", name, description, "isDefault", "createdAt", "updatedAt"`,
-        values
-    );
-    if (!rows[0]) throw new AppError(404, 'Playlist không tồn tại');
+    let rows: PlaylistRow[];
+    try {
+        rows = await query<PlaylistRow>(
+            `UPDATE playlists SET ${fields.join(', ')}
+             WHERE id = $${idx++} AND "organizationId" = $${idx++}
+             RETURNING id, "organizationId", name, description, "isDefault", "createdAt", "updatedAt"`,
+            values
+        );
+    } catch (err) {
+        handleUniqueViolation(err, 'Tên playlist đã tồn tại trong tổ chức');
+    }
+    if (!rows![0]) throw new AppError(404, 'Playlist không tồn tại');
     logger.info('Playlist updated', { playlistId });
     return rows[0];
 }
@@ -182,13 +193,26 @@ export async function updatePlaylist(
 // ─── Delete playlist ──────────────────────────────────────────────────────────
 
 export async function deletePlaylist(playlistId: string, organizationId: string): Promise<void> {
+    // Check FK: schedules referencing this playlist
+    const refs = await query<{ name: string }>(
+        `SELECT name FROM schedules WHERE "playlistId" = $1 AND "organizationId" = $2 LIMIT 5`,
+        [playlistId, organizationId]
+    );
+    if (refs.length > 0) {
+        const names = refs.map(r => r.name).join(', ');
+        throw new AppError(
+            409,
+            `Xoá thất bại do playlist đang nằm trong lịch phát: ${names}`
+        );
+    }
+
     const result = await query(
         `DELETE FROM playlists WHERE id = $1 AND "organizationId" = $2 RETURNING id`,
         [playlistId, organizationId]
     );
     if (!result[0]) throw new AppError(404, 'Playlist không tồn tại');
     logger.info('Playlist deleted', { playlistId });
-    invalidateContentHashForOrg(organizationId).catch(() => {});
+    invalidateContentHashForOrg(organizationId, 'CONTENT').catch(() => {});
 }
 
 // ─── Add item to playlist ─────────────────────────────────────────────────────
@@ -220,17 +244,17 @@ export async function addItem(
     const nextPosition = (maxPos?.max ?? -1) + 1;
 
     const rows = await query<PlaylistItemRow>(
-        `INSERT INTO playlist_items (id, "playlistId", "mediaId", position, "durationOverride", transition)
-         VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5)
-         RETURNING id, "playlistId", "mediaId", position, "durationOverride", transition`,
-        [playlistId, data.mediaId, nextPosition, data.durationOverride ?? null, data.transition ?? null]
+        `INSERT INTO playlist_items (id, "playlistId", "mediaId", position, "durationOverride", transition, "transitionDuration")
+         VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, $6)
+         RETURNING id, "playlistId", "mediaId", position, "durationOverride", transition, "transitionDuration"`,
+        [playlistId, data.mediaId, nextPosition, data.durationOverride ?? null, data.transition ?? null, data.transitionDuration ?? null]
     );
 
     // Update playlist updatedAt
     await query(`UPDATE playlists SET "updatedAt" = NOW() WHERE id = $1`, [playlistId]);
 
     logger.info('Playlist item added', { playlistId, mediaId: data.mediaId });
-    invalidateContentHashForOrg(organizationId).catch(() => {});
+    invalidateContentHashForOrg(organizationId, 'CONTENT').catch(() => {});
     return rows[0];
 }
 
@@ -253,8 +277,9 @@ export async function updateItem(
     const values: unknown[] = [];
     let idx = 1;
 
-    if (data.durationOverride !== undefined) { fields.push(`"durationOverride" = $${idx++}`); values.push(data.durationOverride); }
-    if (data.transition !== undefined) { fields.push(`transition = $${idx++}`); values.push(data.transition); }
+    if (data.durationOverride !== undefined)   { fields.push(`"durationOverride" = $${idx++}`);    values.push(data.durationOverride); }
+    if (data.transition !== undefined)         { fields.push(`transition = $${idx++}`);             values.push(data.transition); }
+    if (data.transitionDuration !== undefined) { fields.push(`"transitionDuration" = $${idx++}`);  values.push(data.transitionDuration); }
 
     if (fields.length === 0) throw new AppError(400, 'Không có dữ liệu để cập nhật');
     values.push(itemId, playlistId);
@@ -262,12 +287,12 @@ export async function updateItem(
     const rows = await query<PlaylistItemRow>(
         `UPDATE playlist_items SET ${fields.join(', ')}
          WHERE id = $${idx++} AND "playlistId" = $${idx++}
-         RETURNING id, "playlistId", "mediaId", position, "durationOverride", transition`,
+         RETURNING id, "playlistId", "mediaId", position, "durationOverride", transition, "transitionDuration"`,
         values
     );
     if (!rows[0]) throw new AppError(404, 'Playlist item không tồn tại');
     await query(`UPDATE playlists SET "updatedAt" = NOW() WHERE id = $1`, [playlistId]);
-    invalidateContentHashForOrg(organizationId).catch(() => {});
+    invalidateContentHashForOrg(organizationId, 'META').catch(() => {});
     return rows[0];
 }
 
@@ -298,7 +323,7 @@ export async function removeItem(
     );
     await query(`UPDATE playlists SET "updatedAt" = NOW() WHERE id = $1`, [playlistId]);
     logger.info('Playlist item removed', { playlistId, itemId });
-    invalidateContentHashForOrg(organizationId).catch(() => {});
+    invalidateContentHashForOrg(organizationId, 'CONTENT').catch(() => {});
 }
 
 // ─── Find or create auto-generated playlist for direct media scheduling ───────
@@ -364,7 +389,7 @@ export async function reorderItems(
         }
         await client.query(`UPDATE playlists SET "updatedAt" = NOW() WHERE id = $1`, [playlistId]);
     });
-    invalidateContentHashForOrg(organizationId).catch(() => {});
+    invalidateContentHashForOrg(organizationId, 'META').catch(() => {});
 
     // Return updated list
     return query<PlaylistItemRow>(

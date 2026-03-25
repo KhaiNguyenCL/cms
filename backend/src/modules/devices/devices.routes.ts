@@ -17,7 +17,7 @@ import {
     listDevicesSchema, updateDeviceSchema,
     deviceCommandSchema, createGroupSchema, updateGroupSchema, createDeviceSchema,
     registerDeviceSchema, generatePairingCodeSchema, devicePairSchema,
-    refreshDeviceTokenSchema, batchGeneratePairingCodesSchema,
+    reconnectDeviceSchema, refreshDeviceTokenSchema, batchGeneratePairingCodesSchema,
 } from './devices.schema';
 
 const router = Router();
@@ -59,6 +59,18 @@ router.post(
     '/pair',
     validate(devicePairSchema),
     devController.pairDevice
+);
+
+/**
+ * @route   POST /api/devices/reconnect
+ * @desc    Device reconnects after app reinstall using hwId (no pairing code)
+ *          Returns 404 if device never paired → show pairing form on Android
+ * @access  Public - Device only
+ */
+router.post(
+    '/reconnect',
+    validate(reconnectDeviceSchema),
+    devController.reconnectDevice
 );
 
 /**
@@ -112,11 +124,12 @@ router.post('/', authorize('ADMIN'), validate(createDeviceSchema), devController
 router.get('/:id', authorize('ADMIN', 'MANAGER'), devController.getDeviceById);
 
 /**
- * @route   PUT /api/devices/:id
- * @desc    Cập nhật device (tên, location, timezone, status, settings)
+ * @route   PUT/PATCH /api/devices/:id
+ * @desc    Cập nhật device (tên, location, timezone, status, settings, license dates)
  * @access  Private (ADMIN, MANAGER)
  */
-router.put('/:id', authorize('ADMIN', 'MANAGER'), validate(updateDeviceSchema), devController.updateDevice);
+router.put('/:id',   authorize('ADMIN', 'MANAGER'), validate(updateDeviceSchema), devController.updateDevice);
+router.patch('/:id', authorize('ADMIN', 'MANAGER'), validate(updateDeviceSchema), devController.updateDevice);
 
 /**
  * @route   DELETE /api/devices/:id
@@ -159,6 +172,7 @@ router.get('/:id/logs', authorize('ADMIN', 'MANAGER'), devController.getDeviceLo
  * @access  Private (ADMIN, MANAGER)
  */
 router.get('/:id/health', authorize('ADMIN', 'MANAGER'), devController.getDeviceHealth);
+
 
 /**
  * @route   PATCH /api/devices/:id/license

@@ -89,6 +89,7 @@ const offlineLimiter = rateLimit({
  * @access  Public
  */
 router.post('/register', registerLimiter, validate(registerDeviceSchema), deviceSyncController.registerDevice);
+router.get('/browser-token', registerLimiter, deviceSyncController.getBrowserToken);
 
 // ─── Device-authenticated routes ──────────────────────────────────────────────
 // authenticateDevice chạy TRƯỚC các limiters → req.user.userId có sẵn cho deviceKey()
@@ -123,6 +124,13 @@ router.post('/playback-log', playbackLogLimiter, validate(playbackLogSchema), de
  * @access  Device JWT
  */
 router.post('/playback-logs/batch', batchLogLimiter, validate(batchPlaybackLogSchema), deviceSyncController.batchLogPlayback);
+
+/**
+ * @route   GET /api/device/content-manifest
+ * @desc    List of all media files the device needs to download for its assigned schedules.
+ * @access  Device JWT
+ */
+router.get('/content-manifest', syncLimiter, deviceSyncController.getContentManifest);
 
 /**
  * @route   POST /api/device/offline

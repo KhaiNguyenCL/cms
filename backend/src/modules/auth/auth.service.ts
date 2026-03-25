@@ -52,7 +52,7 @@ function toPublicUser(u: UserRow): UserPublic {
 // ─── Token helpers ────────────────────────────────────────────────────────────
 
 function signAccessToken(payload: { userId: string; organizationId: string; role: string }) {
-    return jwt.sign({ ...payload, type: 'user' }, config.jwt.secret, { expiresIn: '15m' });
+    return jwt.sign({ ...payload, type: 'user' }, config.jwt.secret, { expiresIn: '2h' });
 }
 
 function signRefreshToken(tokenId: string, userId: string) {

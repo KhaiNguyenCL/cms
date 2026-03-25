@@ -30,11 +30,13 @@ export function handleUpload(req: Request, res: Response, next: NextFunction) {
         if (!req.file) return next(new AppError(400, 'Không có file được tải lên'));
 
         try {
+            const clientDuration = req.body.duration ? parseInt(req.body.duration as string, 10) : undefined;
             const media = await mediaService.uploadMedia(
                 req.user!.organizationId,
                 req.user!.userId,
                 req.file,
-                req.body.title as string | undefined
+                req.body.title as string | undefined,
+                clientDuration,
             );
             res.status(201).json({
                 success: true,

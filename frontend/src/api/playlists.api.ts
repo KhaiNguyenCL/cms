@@ -18,7 +18,7 @@ export const playlistsApi = {
     },
 
     update: async (id: string, payload: Partial<Playlist>) => {
-        const { data } = await apiClient.patch<ApiResponse<Playlist>>(`/playlists/${id}`, payload);
+        const { data } = await apiClient.put<ApiResponse<Playlist>>(`/playlists/${id}`, payload);
         return data.data;
     },
 
@@ -33,7 +33,7 @@ export const playlistsApi = {
         return data.data;
     },
 
-    updateItem: async (playlistId: string, itemId: string, payload: { durationOverride?: number | null; transition?: string | null }) => {
+    updateItem: async (playlistId: string, itemId: string, payload: { durationOverride?: number | null; transition?: string | null; transitionDuration?: number | null }) => {
         const { data } = await apiClient.put<ApiResponse<PlaylistItem>>(
             `/playlists/${playlistId}/items/${itemId}`, payload
         );

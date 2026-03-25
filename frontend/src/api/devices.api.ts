@@ -25,7 +25,14 @@ export const devicesApi = {
         return data.data;
     },
 
-    update: async (id: string, payload: Partial<Device>) => {
+    update: async (id: string, payload: {
+        name?: string;
+        location?: string | null;
+        timezone?: string;
+        status?: string;
+        licenseStartDate?: string | null;
+        licenseEndDate?: string | null;
+    }) => {
         const { data } = await apiClient.patch<ApiResponse<Device>>(`/devices/${id}`, payload);
         return data.data;
     },
@@ -39,8 +46,8 @@ export const devicesApi = {
         return data.data;
     },
 
-    sendCommand: async (id: string, command: string, params?: Record<string, unknown>) => {
-        const { data } = await apiClient.post<ApiResponse<null>>(`/devices/${id}/command`, { command, params });
+    sendCommand: async (id: string, command: string, payload?: Record<string, unknown>) => {
+        const { data } = await apiClient.post<ApiResponse<null>>(`/devices/${id}/command`, { command, payload });
         return data;
     },
 
@@ -59,6 +66,7 @@ export const devicesApi = {
         const { data } = await apiClient.post<ApiResponse<null>>(`/device-groups/${groupId}/members`, { deviceIds });
         return data;
     },
+
 
     setLicense: async (id: string, isLicensed: boolean) => {
         const { data } = await apiClient.patch<ApiResponse<null>>(`/devices/${id}/license`, { isLicensed });

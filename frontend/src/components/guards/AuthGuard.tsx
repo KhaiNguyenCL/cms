@@ -11,7 +11,7 @@ import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { Box, CircularProgress } from '@mui/material';
 import { useAppDispatch, useAppSelector } from '@store/hooks';
-import { logout, setCredentials, setLoading } from '@store/slices/authSlice';
+import { logout, setCredentials, setPlatformAdminCredentials, setLoading } from '@store/slices/authSlice';
 import type { RootState } from '@store/index';
 import type { User } from '@/types';
 
@@ -19,24 +19,33 @@ import type { User } from '@/types';
 
 export function AuthGuard() {
     const dispatch = useAppDispatch();
-    const { isAuthenticated, isLoading } = useAppSelector((s) => s.auth);
+    const { isAuthenticated, isLoading, isPlatformAdmin } = useAppSelector((s) => s.auth);
     const location = useLocation();
 
     // Khi mount: thử silent refresh — HttpOnly cookie được gửi tự động
+    // Platform admin dùng /api/platform/refresh; regular user dùng /api/auth/refresh-token
     useEffect(() => {
         let cancelled = false;
         (async () => {
             try {
-                // Dynamic import tránh circular dependency authApi → client → authSlice
-                const { authApi } = await import('@api/auth.api');
-                const result = await authApi.refresh();
-                if (cancelled) return;
-                dispatch(setCredentials({
-                    user: result.user,
-                    accessToken: result.accessToken,
-                }));
+                if (isPlatformAdmin) {
+                    const { platformAuthApi } = await import('@api/platform-auth.api');
+                    const result = await platformAuthApi.refresh();
+                    if (cancelled) return;
+                    dispatch(setPlatformAdminCredentials({
+                        admin: result.admin,
+                        accessToken: result.accessToken,
+                    }));
+                } else {
+                    const { authApi } = await import('@api/auth.api');
+                    const result = await authApi.refresh();
+                    if (cancelled) return;
+                    dispatch(setCredentials({
+                        user: result.user,
+                        accessToken: result.accessToken,
+                    }));
+                }
             } catch {
-                // Cookie không còn hợp lệ → yêu cầu đăng nhập lại
                 if (!cancelled) dispatch(logout());
             }
         })();

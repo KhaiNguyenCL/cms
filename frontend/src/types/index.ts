@@ -63,7 +63,7 @@ export interface OrgStats {
 
 // ─── Devices ──────────────────────────────────────────────────────────────────
 
-export type DeviceStatus = 'ONLINE' | 'OFFLINE' | 'ERROR';
+export type DeviceStatus = 'ONLINE' | 'OFFLINE' | 'SLEEP' | 'APP_EXIT' | 'ERROR';
 
 export interface Device {
     id: string;
@@ -76,45 +76,56 @@ export interface Device {
     appVersion: string | null;
     status: DeviceStatus;
     isLicensed: boolean;
+    licenseStartDate: string | null;  // ISO date — subscription start
+    licenseEndDate: string | null;    // ISO date — subscription end
     lastSeen: string | null;
+    lastOnlineAt: string | null;      // when device last came ONLINE (for uptime)
     lastOfflineAt: string | null;
     location: string | null;
     timezone: string;
     settings: Record<string, unknown> | null;
-    storeId: string | null;
-    storeName?: string | null;
+    role: 'MASTER' | 'SLAVE' | 'STANDALONE';
+    downloadStatus: 'PENDING' | 'DOWNLOADING' | 'READY' | 'ERROR';
+    contentReady: boolean;
+    siteId: string | null;
+    siteName?: string | null;
     createdAt: string;
     updatedAt: string;
 }
 
-// ─── Stores ───────────────────────────────────────────────────────────────────
+// ─── Sites ────────────────────────────────────────────────────────────────────
 
-export interface Store {
+export interface Site {
     id: string;
     organizationId: string;
     name: string;
     description: string | null;
     address: string | null;
     contact: string | null;
-    openDate: string | null;
-    closeDate: string | null;
+    timezone: string | null;      // IANA timezone — inherited by devices when device.timezone is null
+    timeOn: string | null;        // HH:MM — screen-on time
+    timeOff: string | null;       // HH:MM — screen-off time
+    deployDate: string | null;    // ISO date — deployment start
+    endDate: string | null;       // ISO date — deployment end
     playlistId: string | null;
     playlistName: string | null;
     startEpoch: number | null;       // Unix ms — null means stopped
     totalDurationMs: number | null;
     deviceCount: number;
     onlineCount: number;
-    devices?: StoreDevice[];
+    deviceNames: string[];
+    devices?: SiteDevice[];
     createdAt: string;
     updatedAt: string;
 }
 
-export interface StoreDevice {
+export interface SiteDevice {
     id: string;
     name: string;
     status: string;
     location: string | null;
     model: string | null;
+    role: string;
 }
 
 export interface DeviceHealth {
@@ -202,6 +213,8 @@ export interface PlaylistItem {
     mediaId: string;
     displayOrder: number;
     duration: number;
+    transition?: string | null;
+    transitionDuration?: number | null;
     media?: Pick<Media, 'id' | 'title' | 'type' | 'thumbnailPath' | 'duration'> & { thumbnailUrl?: string | null };
 }
 
@@ -269,12 +282,58 @@ export interface DeviceHealthStat {
     deviceName: string;
     isOnline: boolean;
     cpuUsage: number;
+    processCpuPercent: number | null;
     memoryUsage: number;
     storageUsed: number;
     storageTotal: number;
     storagePercent: number;
     networkType: string;
     reportedAt: string | null;
+}
+
+// ─── Programs ─────────────────────────────────────────────────────────────────
+
+export interface Program {
+    id: string;
+    organizationId: string;
+    name: string;
+    description: string | null;
+    scheduleCount: number;
+    assignmentCount: number;
+    createdAt: string;
+    updatedAt: string;
+}
+
+export interface ProgramScheduleItem {
+    id: string; // program_schedules.id
+    scheduleId: string;
+    scheduleName: string;
+    position: number;
+    // schedule details
+    startDate: string;
+    endDate: string | null;
+    startTime: string | null;
+    endTime: string | null;
+    daysOfWeek: number[];
+    isActive: boolean;
+    playlistName: string | null;
+}
+
+export interface ProgramAssignment {
+    id: string;
+    programId: string;
+    programName: string;
+    targetType: 'STORE' | 'DEVICE';
+    targetId: string;
+    targetName: string;
+    assignedAt: string;
+    scheduleCount?: number;
+    assignedByName?: string | null;
+}
+
+export interface ProgramDetail extends Program {
+    schedules: ProgramScheduleItem[];
+    assignments: ProgramAssignment[];
 }
 
 // ─── WebSocket events ─────────────────────────────────────────────────────────

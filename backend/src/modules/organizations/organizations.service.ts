@@ -296,6 +296,29 @@ export async function addPoints(
     return getLicenseInfo(orgId);
 }
 
+// ─── SUPER_ADMIN: delete organization ────────────────────────────────────────
+
+export async function deleteOrganization(orgId: string, requesterId: string): Promise<void> {
+    // Block deleting own org
+    const requester = await queryOne<{ organizationId: string }>(
+        `SELECT "organizationId" FROM users WHERE id = $1`,
+        [requesterId]
+    );
+    if (requester?.organizationId === orgId) {
+        throw new AppError(400, 'Không thể xóa tổ chức của chính mình');
+    }
+
+    const org = await queryOne<{ id: string }>(
+        `SELECT id FROM organizations WHERE id = $1`,
+        [orgId]
+    );
+    if (!org) throw new AppError(404, 'Organization không tồn tại');
+
+    // Cascade delete — all child tables have ON DELETE CASCADE
+    await query(`DELETE FROM organizations WHERE id = $1`, [orgId]);
+    logger.info('Organization deleted', { orgId, by: requesterId });
+}
+
 // ─── Update device admin PIN ──────────────────────────────────────────────────
 
 export async function updateDevicePin(organizationId: string, pin: string): Promise<void> {

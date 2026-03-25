@@ -23,6 +23,7 @@ export interface PlaylistItemSync {
     position: number;
     durationOverride: number | null;
     transition: string | null;
+    transitionDuration: number | null;
     mediaId: string;
     mediaTitle: string;
     mediaType: string;   // 'IMAGE' | 'VIDEO'
@@ -41,6 +42,10 @@ export interface ScheduleSync {
     startTime: string | null;   // "HH:MM"
     endTime: string | null;     // "HH:MM"
     daysOfWeek: number[];       // 0=Sun … 6=Sat
+    /** UTC ms — when today's playlist cycle started (backend-computed from startTime + timezone). */
+    startEpoch: number;
+    /** Sum of all item durations (ms). Used with startEpoch for global-clock sync. */
+    totalDurationMs: number;
     playlist: {
         id: string;
         name: string;
@@ -48,7 +53,7 @@ export interface ScheduleSync {
     };
 }
 
-export interface StoreState {
+export interface SiteState {
     id: string;
     startEpoch: number;           // Unix ms
     totalDurationMs: number;
@@ -59,6 +64,12 @@ export interface StoreState {
     };
 }
 
+export interface SyncConfig {
+    role: 'MASTER' | 'SLAVE' | 'STANDALONE';
+    broadcastPort: number;
+    siteId: string | null;
+}
+
 export interface SyncResponse {
     deviceId: string;
     organizationId: string;
@@ -67,7 +78,8 @@ export interface SyncResponse {
     settings: Record<string, unknown>;
     contentHash: string;
     schedules: ScheduleSync[];
-    syncGroup?: StoreState;   // present when device belongs to an active store
+    syncGroup?: SiteState;   // present when device belongs to an active site
+    syncConfig?: SyncConfig; // role + broadcast config (Sprint 2/3)
 }
 
 // ─── API calls ────────────────────────────────────────────────────────────────
@@ -80,6 +92,9 @@ export async function fetchSync(): Promise<SyncResponse> {
 export async function sendHeartbeat(currentContentHash?: string): Promise<{
     syncRequired: boolean;
     serverTime: string;
+    licenseStatus: string;
+    isLicensed: boolean;
+    deviceAdminPin?: string;
 }> {
     // Collect health metrics from Android NativeBridge (available when running in WebView).
     // Silently ignored when running in a desktop browser (NativeBridge not injected).
@@ -89,7 +104,7 @@ export async function sendHeartbeat(currentContentHash?: string): Promise<{
         if (raw) healthMetrics = JSON.parse(raw);
     } catch { /* not in Android WebView — skip */ }
 
-    const { data } = await client.post<{ data: { syncRequired: boolean; serverTime: string } }>(
+    const { data } = await client.post<{ data: { syncRequired: boolean; serverTime: string; licenseStatus: string; isLicensed: boolean; deviceAdminPin?: string } }>(
         '/heartbeat',
         { currentContentHash, ...healthMetrics },
     );

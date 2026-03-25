@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate, useLocation, Link as RouterLink } from 'react-router-dom';
+import { useNavigate, Link as RouterLink } from 'react-router-dom';
 import {
     Box, Card, CardContent, Typography, TextField, Button,
     IconButton, InputAdornment, Alert, CircularProgress, Stack,
@@ -12,8 +12,9 @@ import { authApi } from '@api/auth.api';
 export default function LoginPage() {
     const dispatch = useAppDispatch();
     const navigate = useNavigate();
-    const location = useLocation();
-    const from = (location.state as { from?: { pathname: string } })?.from?.pathname ?? '/dashboard';
+    // Always navigate to /dashboard after login — prevents stale "from" state
+    // carrying over from a previous session's last-visited page after logout.
+    const from = '/dashboard';
 
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
@@ -165,20 +166,6 @@ export default function LoginPage() {
                         </Stack>
                     </form>
 
-                {/* Link to register */}
-                <Stack direction="row" justifyContent="center" mt={3} gap={0.5}>
-                    <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.4)' }}>
-                        Chưa có tài khoản?
-                    </Typography>
-                    <Typography
-                        component={RouterLink}
-                        to="/register"
-                        variant="body2"
-                        sx={{ color: '#6C63FF', textDecoration: 'none', fontWeight: 600, '&:hover': { textDecoration: 'underline' } }}
-                    >
-                        Tạo tổ chức mới
-                    </Typography>
-                </Stack>
                 </CardContent>
             </Card>
         </Box>

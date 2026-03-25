@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const DEVICE_STATUSES = ['ONLINE', 'OFFLINE', 'ERROR'] as const;
+export const DEVICE_STATUSES = ['ONLINE', 'OFFLINE', 'SLEEP', 'APP_EXIT', 'ERROR'] as const;
 export const DEVICE_REG_STATUSES = ['REGISTERED', 'PAIRED', 'REVOKED', 'REPLACED'] as const;
 export const DEVICE_COMMANDS = [
     'RESTART', 'SCREENSHOT', 'RELOAD_CONTENT', 'CLEAR_CACHE',
@@ -42,6 +42,18 @@ export const devicePairSchema = z.object({
     }),
 });
 
+// ─── Reconnect Device (by hwId — skip pairing code after reinstall) ──────────
+
+export const reconnectDeviceSchema = z.object({
+    body: z.object({
+        hwId:       z.string().min(1, 'Hardware ID bắt buộc'),
+        osVersion:  z.string().min(1),
+        appVersion: z.string().min(1),
+        signature:  z.string().min(1, 'Signature bắt buộc'),
+    }),
+});
+export type ReconnectDeviceBody = z.infer<typeof reconnectDeviceSchema>['body'];
+
 // ─── Refresh Device Token ─────────────────────────────────────────────────────
 
 export const refreshDeviceTokenSchema = z.object({
@@ -68,7 +80,7 @@ export const batchGeneratePairingCodesSchema = z.object({
 export const listDevicesSchema = z.object({
     query: z.object({
         page: z.coerce.number().int().min(1).catch(1),
-        limit: z.coerce.number().int().min(1).max(100).catch(20),
+        limit: z.coerce.number().int().min(1).max(9999).catch(20),
         status: z.enum(DEVICE_STATUSES).optional().catch(undefined),
         regStatus: z.enum(DEVICE_REG_STATUSES).optional().catch(undefined),
         search: z.string().optional(),
@@ -92,11 +104,13 @@ export const createDeviceSchema = z.object({
 export const updateDeviceSchema = z.object({
     params: z.object({ id: z.string().min(1) }),
     body: z.object({
-        name: z.string().min(1).max(100).optional(),
-        location: z.string().max(200).optional().nullable(),
-        timezone: z.string().max(50).optional(),
-        status: z.enum(DEVICE_STATUSES).optional(),
-        settings: z.record(z.unknown()).optional(),
+        name:             z.string().min(1).max(100).optional(),
+        location:         z.string().max(200).optional().nullable(),
+        timezone:         z.string().max(50).optional(),
+        status:           z.enum(DEVICE_STATUSES).optional(),
+        settings:         z.record(z.unknown()).optional(),
+        licenseStartDate: z.string().optional().nullable(),   // ISO date YYYY-MM-DD
+        licenseEndDate:   z.string().optional().nullable(),   // ISO date YYYY-MM-DD
     }).refine(d => Object.keys(d).length > 0, { message: 'Phải cung cấp ít nhất một trường' }),
 });
 

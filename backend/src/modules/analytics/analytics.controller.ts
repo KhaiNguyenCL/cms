@@ -38,6 +38,36 @@ export async function getDeviceHealth(req: Request, res: Response, next: NextFun
     } catch (err) { next(err); }
 }
 
+// GET /api/analytics/device-charts
+export async function getDeviceCharts(req: Request, res: Response, next: NextFunction) {
+    try {
+        const data = await analyticsService.getDeviceCharts(req.user!.organizationId);
+        res.json({ success: true, data });
+    } catch (err) { next(err); }
+}
+
+// GET /api/analytics/top-playlists
+export async function getTopPlaylists(req: Request, res: Response, next: NextFunction) {
+    try {
+        const from  = req.query.from  as string | undefined;
+        const to    = req.query.to    as string | undefined;
+        const limit = req.query.limit ? parseInt(req.query.limit as string) : 10;
+        const data  = await analyticsService.getTopPlaylists(req.user!.organizationId, { from, to, limit });
+        res.json({ success: true, data });
+    } catch (err) { next(err); }
+}
+
+// GET /api/analytics/top-schedules
+export async function getTopSchedules(req: Request, res: Response, next: NextFunction) {
+    try {
+        const from  = req.query.from  as string | undefined;
+        const to    = req.query.to    as string | undefined;
+        const limit = req.query.limit ? parseInt(req.query.limit as string) : 10;
+        const data  = await analyticsService.getTopSchedules(req.user!.organizationId, { from, to, limit });
+        res.json({ success: true, data });
+    } catch (err) { next(err); }
+}
+
 // GET /api/analytics/device-activity
 export async function getDeviceActivity(req: Request, res: Response, next: NextFunction) {
     try {

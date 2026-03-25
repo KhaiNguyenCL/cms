@@ -20,10 +20,11 @@ export const mediaApi = {
         return data.data;
     },
 
-    upload: async (file: File, title: string, onProgress?: (pct: number) => void) => {
+    upload: async (file: File, title: string, onProgress?: (pct: number) => void, duration?: number) => {
         const form = new FormData();
         form.append('file', file);
         form.append('title', title);
+        if (duration != null && duration > 0) form.append('duration', String(duration));
         const { data } = await apiClient.post<ApiResponse<Media>>('/media/upload', form, {
             headers: { 'Content-Type': 'multipart/form-data' },
             onUploadProgress: (e) => {
@@ -34,7 +35,7 @@ export const mediaApi = {
     },
 
     update: async (id: string, payload: { title?: string; tags?: string[] }) => {
-        const { data } = await apiClient.patch<ApiResponse<Media>>(`/media/${id}`, payload);
+        const { data } = await apiClient.put<ApiResponse<Media>>(`/media/${id}`, payload);
         return data.data;
     },
 

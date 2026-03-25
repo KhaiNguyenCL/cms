@@ -224,6 +224,7 @@ export async function getDeviceHealth(organizationId: string, q: DeviceHealthQue
         `SELECT DISTINCT ON (dh."deviceId")
              dh."deviceId", d.name as "deviceName",
              dh."isOnline", dh."cpuUsage", dh."memoryUsage",
+             dh."processCpuPercent",
              dh."storageUsed", dh."storageTotal",
              CASE WHEN dh."storageTotal" > 0
                   THEN ROUND((dh."storageUsed"::float / dh."storageTotal" * 100)::numeric, 1)::float
@@ -238,7 +239,139 @@ export async function getDeviceHealth(organizationId: string, q: DeviceHealthQue
     );
 }
 
-// ─── 5. Device activity summary (plays per device) ────────────────────────────
+// ─── 5. Device charts (pie chart data for dashboard) ─────────────────────────
+
+export async function getDeviceCharts(organizationId: string) {
+    const [statusRows, scheduleRows, modelRows, versionRows, osVersionRows, licenseRows] = await Promise.all([
+        // Status breakdown: ONLINE / OFFLINE / ERROR
+        query<{ status: string; count: string }>(
+            `SELECT status, COUNT(*)::int AS count
+             FROM devices WHERE "organizationId" = $1
+             GROUP BY status`,
+            [organizationId],
+        ),
+        // Devices with vs without a program assignment
+        query<{ hasProgram: boolean; count: string }>(
+            `SELECT (pa."targetId" IS NOT NULL) AS "hasProgram", COUNT(d.id)::int AS count
+             FROM devices d
+             LEFT JOIN program_assignments pa
+                    ON pa."targetType" = 'device' AND pa."targetId" = d.id
+             WHERE d."organizationId" = $1
+             GROUP BY "hasProgram"`,
+            [organizationId],
+        ),
+        // Hardware model distribution (top 5 + Others)
+        query<{ model: string; count: string }>(
+            `SELECT COALESCE(NULLIF(model, ''), 'Unknown') AS model, COUNT(*)::int AS count
+             FROM devices WHERE "organizationId" = $1
+             GROUP BY model
+             ORDER BY count DESC
+             LIMIT 6`,
+            [organizationId],
+        ),
+        // App version distribution (top 5 + Others)
+        query<{ version: string; count: string }>(
+            `SELECT COALESCE(NULLIF("appVersion", ''), 'Unknown') AS version, COUNT(*)::int AS count
+             FROM devices WHERE "organizationId" = $1
+             GROUP BY "appVersion"
+             ORDER BY count DESC
+             LIMIT 6`,
+            [organizationId],
+        ),
+        // OS version (hardware type) distribution
+        query<{ osVersion: string; count: string }>(
+            `SELECT COALESCE(NULLIF("osVersion", ''), 'Unknown') AS "osVersion", COUNT(*)::int AS count
+             FROM devices WHERE "organizationId" = $1
+             GROUP BY "osVersion"
+             ORDER BY count DESC
+             LIMIT 6`,
+            [organizationId],
+        ),
+        // License breakdown
+        query<{ isLicensed: boolean; count: string }>(
+            `SELECT "isLicensed", COUNT(*)::int AS count
+             FROM devices WHERE "organizationId" = $1
+             GROUP BY "isLicensed"`,
+            [organizationId],
+        ),
+    ]);
+
+    return {
+        status:    statusRows.map(r => ({ name: r.status, value: parseInt(r.count) })),
+        schedule:  scheduleRows.map(r => ({ name: r.hasProgram ? 'Có lịch' : 'Chưa có lịch', value: parseInt(r.count) })),
+        model:     modelRows.map(r => ({ name: r.model, value: parseInt(r.count) })),
+        version:   versionRows.map(r => ({ name: r.version, value: parseInt(r.count) })),
+        osVersion: (osVersionRows ?? []).map(r => ({ name: r.osVersion, value: parseInt(r.count) })),
+        license:   licenseRows.map(r => ({ name: r.isLicensed ? 'Có license' : 'Hết license', value: parseInt(r.count) })),
+    };
+}
+
+// ─── 6b. Top playlists by plays ───────────────────────────────────────────────
+
+export async function getTopPlaylists(organizationId: string, q: { from?: string; to?: string; limit?: number }) {
+    const { from, to, limit = 10 } = q;
+    const conditions: string[] = [`p."organizationId" = $1`, `d."organizationId" = $1`];
+    const values: unknown[] = [organizationId];
+    let idx = 2;
+    if (from) { conditions.push(`pl."playedAt" >= $${idx++}::timestamp`); values.push(from); }
+    if (to)   { conditions.push(`pl."playedAt" <= ($${idx++}::timestamp + INTERVAL '1 day' - INTERVAL '1 second')`); values.push(to); }
+
+    const where = conditions.join(' AND ');
+    return query<{ playlistId: string; name: string; plays: string; completed: string; totalMinutes: string }>(
+        `SELECT p.id AS "playlistId", p.name,
+                COUNT(pl.id)::int AS plays,
+                COUNT(pl.id) FILTER (WHERE pl.completed = true)::int AS completed,
+                ROUND(COALESCE(SUM(pl."durationPlayed"), 0) / 60.0, 2)::float AS "totalMinutes"
+         FROM playlists p
+         JOIN playlist_items pi ON pi."playlistId" = p.id
+         JOIN playback_logs pl  ON pl."mediaId" = pi."mediaId"
+         JOIN devices d          ON d.id = pl."deviceId"
+         WHERE ${where}
+         GROUP BY p.id, p.name
+         ORDER BY plays DESC
+         LIMIT $${idx}`,
+        [...values, limit],
+    ).then(rows => rows.map(r => ({
+        playlistId: r.playlistId, name: r.name,
+        plays: parseInt(r.plays), completed: parseInt(r.completed),
+        totalMinutes: r.totalMinutes,
+    })));
+}
+
+// ─── 6c. Top schedules by plays ───────────────────────────────────────────────
+
+export async function getTopSchedules(organizationId: string, q: { from?: string; to?: string; limit?: number }) {
+    const { from, to, limit = 10 } = q;
+    const conditions: string[] = [`s."organizationId" = $1`, `d."organizationId" = $1`];
+    const values: unknown[] = [organizationId];
+    let idx = 2;
+    if (from) { conditions.push(`pl."playedAt" >= $${idx++}::timestamp`); values.push(from); }
+    if (to)   { conditions.push(`pl."playedAt" <= ($${idx++}::timestamp + INTERVAL '1 day' - INTERVAL '1 second')`); values.push(to); }
+
+    const where = conditions.join(' AND ');
+    return query<{ scheduleId: string; name: string; plays: string; completed: string; totalMinutes: string }>(
+        `SELECT s.id AS "scheduleId", s.name,
+                COUNT(pl.id)::int AS plays,
+                COUNT(pl.id) FILTER (WHERE pl.completed = true)::int AS completed,
+                ROUND(COALESCE(SUM(pl."durationPlayed"), 0) / 60.0, 2)::float AS "totalMinutes"
+         FROM schedules s
+         JOIN playlists p        ON p.id = s."playlistId"
+         JOIN playlist_items pi  ON pi."playlistId" = p.id
+         JOIN playback_logs pl   ON pl."mediaId" = pi."mediaId"
+         JOIN devices d           ON d.id = pl."deviceId"
+         WHERE ${where}
+         GROUP BY s.id, s.name
+         ORDER BY plays DESC
+         LIMIT $${idx}`,
+        [...values, limit],
+    ).then(rows => rows.map(r => ({
+        scheduleId: r.scheduleId, name: r.name,
+        plays: parseInt(r.plays), completed: parseInt(r.completed),
+        totalMinutes: r.totalMinutes,
+    })));
+}
+
+// ─── 6. Device activity summary (plays per device) ────────────────────────────
 
 export async function getDeviceActivity(organizationId: string, q: { from?: string; to?: string; limit?: number }) {
     const { from, to, limit = 20 } = q;

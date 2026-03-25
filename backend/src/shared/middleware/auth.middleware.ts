@@ -8,7 +8,7 @@ export interface JwtPayload {
     userId: string;
     organizationId: string;
     role: string;
-    type: 'user' | 'device';
+    type: 'user' | 'device' | 'platform_admin';
 }
 
 // Extend Express Request
@@ -29,15 +29,16 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
     const token = authHeader.split(' ')[1];
     try {
         const payload = jwt.verify(token, config.jwt.secret) as JwtPayload;
-        // Only allow user tokens on admin routes
-        if (payload.type !== 'user') {
+        // Allow both regular users and platform admins on admin routes
+        if (payload.type !== 'user' && payload.type !== 'platform_admin') {
             return next(new AppError(403, 'Invalid token type'));
         }
         req.user = payload;
 
-        if (payload.role === 'SUPER_ADMIN') {
+        // SUPER_ADMIN and PLATFORM_ADMIN can override org context via header
+        if (payload.role === 'SUPER_ADMIN' || payload.role === 'PLATFORM_ADMIN') {
             const overrideOrgId = req.headers['x-organization-id'] as string | undefined;
-            if (overrideOrgId && overrideOrgId !== payload.organizationId) {
+            if (overrideOrgId) {
                 const org = await queryOne<{ isActive: boolean }>(
                     `SELECT "isActive" FROM organizations WHERE id = $1`, [overrideOrgId]
                 );
@@ -47,6 +48,26 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
             }
         }
 
+        next();
+    } catch {
+        return next(new AppError(401, 'Invalid or expired token'));
+    }
+}
+
+// Middleware for platform-admin-only routes (checks type: 'platform_admin')
+export function authenticatePlatformAdmin(req: Request, _res: Response, next: NextFunction) {
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith('Bearer ')) {
+        return next(new AppError(401, 'Authorization token required'));
+    }
+
+    const token = authHeader.split(' ')[1];
+    try {
+        const payload = jwt.verify(token, config.jwt.secret) as JwtPayload;
+        if (payload.type !== 'platform_admin') {
+            return next(new AppError(403, 'Platform admin token required'));
+        }
+        req.user = payload;
         next();
     } catch {
         return next(new AppError(401, 'Invalid or expired token'));
@@ -79,11 +100,11 @@ export function authenticateDevice(req: Request, _res: Response, next: NextFunct
     }
 }
 
-// Role-based authorization — SUPER_ADMIN bypasses all role checks
+// Role-based authorization — SUPER_ADMIN and PLATFORM_ADMIN bypass all role checks
 export function authorize(...roles: string[]) {
     return (req: Request, _res: Response, next: NextFunction) => {
         if (!req.user) return next(new AppError(401, 'Not authenticated'));
-        if (req.user.role === 'SUPER_ADMIN') return next();
+        if (req.user.role === 'SUPER_ADMIN' || req.user.role === 'PLATFORM_ADMIN') return next();
         if (!roles.includes(req.user.role)) {
             return next(new AppError(403, 'Insufficient permissions'));
         }

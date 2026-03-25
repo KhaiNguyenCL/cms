@@ -7,11 +7,57 @@ import logger from '../../shared/utils/logger';
 import redis, { RedisKeys } from '../../shared/cache/redis';
 import type { JwtPayload } from '../../shared/middleware/auth.middleware';
 import type { HeartbeatBody, PlaybackLogBody, BatchPlaybackLogBody, RegisterDeviceBody } from './device-sync.schema';
-import { getActiveSchedulesForDevice } from '../schedules/schedules.service';
 import { signMediaUrl } from '../media/media.signing';
 
-// TTL Redis cho content hash (giây). Worst-case: device chậm nhận content change tối đa TTL này.
-const CONTENT_HASH_CACHE_TTL = 60;
+// Per-device hash cache TTL. Staleness is controlled by org version comparison,
+// not by expiry — so we keep keys alive for 1h to survive Redis restarts.
+const CONTENT_HASH_CACHE_TTL = 3_600;
+
+// Org license row is stable (changes only when admin acts) — cache 60s per device.
+const ORG_LICENSE_CACHE_TTL = 60;
+
+// Write device_health at most once every 5 minutes per device.
+// Reduces INSERT rate from 1000/30s → 1000/300s (10× fewer writes).
+const HEALTH_WRITE_INTERVAL_S = 300;
+
+// ─── Global clock helpers ──────────────────────────────────────────────────────
+
+/**
+ * Calculate the UTC epoch (ms) for "today at startTime in the given timezone".
+ * This is the anchor point all players use to compute elapsed time.
+ *
+ * Uses 2-iteration convergence so DST transitions are handled correctly:
+ *  Iteration 1: removes the bulk of the timezone offset.
+ *  Iteration 2: corrects any DST residual (always 0 after iter 1 for non-DST zones).
+ */
+function getScheduleStartEpochMs(startTime: string | null, timezone: string): number {
+    const [h, m] = (startTime ?? '0:0').split(':').map(s => parseInt(s, 10) || 0);
+
+    const now = new Date();
+    // "YYYY-MM-DD" in the device timezone (en-CA locale gives ISO date format)
+    const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: timezone }).format(now);
+    const [y, mo, d] = todayStr.split('-').map(Number);
+
+    // Start with naive UTC guess: treat target wall-clock as if it were UTC
+    let utcMs = Date.UTC(y, mo - 1, d, h, m, 0);
+
+    // Two iterations converge for all real-world timezone offsets (including DST)
+    for (let iter = 0; iter < 2; iter++) {
+        const parts = new Intl.DateTimeFormat('en-US', {
+            timeZone: timezone,
+            year: 'numeric', month: 'numeric', day: 'numeric',
+            hour: '2-digit', minute: '2-digit', second: '2-digit',
+            hour12: false,
+        }).formatToParts(new Date(utcMs));
+        const p: Record<string, number> = {};
+        parts.forEach(pt => { if (pt.type !== 'literal') p[pt.type] = parseInt(pt.value, 10); });
+        // Desired: tz shows (y, mo, d, h, m, 0) — correct by the difference
+        utcMs += Date.UTC(y, mo - 1, d, h, m, 0)
+               - Date.UTC(p.year, p.month - 1, p.day, p.hour % 24, p.minute, p.second);
+    }
+
+    return utcMs;
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -47,112 +93,299 @@ interface OrgLicenseRow {
 // Kết quả được cache Redis (CONTENT_HASH_CACHE_TTL giây) để tránh query DB
 // trên mỗi heartbeat. Cache bị invalidate khi admin thay đổi schedule/playlist/media.
 
+// ─── Schedule lookup via Schedule Assignments ─────────────────────────────────
+// Device plays schedules directly assigned via schedule_assignments table.
+// Priority: device-assigned schedules (1000+) > site-assigned schedules (500+).
+// Deduplication: site schedules that are also device-assigned are excluded.
+
+interface ScheduleHashRow {
+    scheduleId: string;
+    scheduleUpdatedAt: string;
+    programPosition: number;
+    source: string;       // 'DEVICE' | 'SITE'
+    playlistId: string;
+    playlistUpdatedAt: string;
+    mediaId: string | null;
+    fileHash: string | null;
+    itemPosition: number | null;
+    durationOverride: number | null;
+    transition: string | null;
+    transitionDuration: number | null;
+}
+
+type ScheduleRow = {
+    id: string; name: string; playlistId: string; playlistName: string | null;
+    startTime: string | null; endTime: string | null; daysOfWeek: number[];
+    updatedAt: string;
+};
+
+function buildTimeFilter(tzParam: string) {
+    return `
+        s."isActive" = true
+        AND s."startDate"::date <= (NOW() AT TIME ZONE ${tzParam})::date
+        AND (s."endDate" IS NULL OR s."endDate"::date >= (NOW() AT TIME ZONE ${tzParam})::date)
+        AND (
+            array_length(s."daysOfWeek", 1) IS NULL
+            OR EXTRACT(DOW FROM NOW() AT TIME ZONE ${tzParam})::int = ANY(s."daysOfWeek")
+        )
+        AND (s."startTime" IS NULL OR TO_CHAR(NOW() AT TIME ZONE ${tzParam}, 'HH24:MI') >= s."startTime")
+        AND (s."endTime"   IS NULL OR TO_CHAR(NOW() AT TIME ZONE ${tzParam}, 'HH24:MI') <  s."endTime")
+    `;
+}
+
+async function getSchedulesForDevice(deviceId: string, organizationId: string, timezone: string) {
+    const tf = buildTimeFilter('$2');
+
+    const deviceSchedules = await query<ScheduleRow>(
+        `SELECT s.id, s.name, s."playlistId", p.name AS "playlistName",
+                s."startTime", s."endTime", s."daysOfWeek", s."updatedAt"
+         FROM schedule_assignments sa
+         JOIN schedules s ON s.id = sa."scheduleId"
+         LEFT JOIN playlists p ON p.id = s."playlistId"
+         WHERE sa."organizationId" = $1
+           AND sa."targetType" = 'DEVICE' AND sa."targetId" = $3
+           AND ${tf}
+         ORDER BY sa."sortOrder" ASC, sa."assignedAt" ASC`,
+        [organizationId, timezone, deviceId],
+    );
+
+    const deviceScheduleIds = new Set(deviceSchedules.map(r => r.id));
+
+    const siteRow = await queryOne<{ storeId: string | null }>(
+        `SELECT "storeId" FROM devices WHERE id = $1`, [deviceId],
+    );
+    const siteId = siteRow?.storeId ?? null;
+
+    let siteSchedules: ScheduleRow[] = [];
+    if (siteId) {
+        const allSite = await query<ScheduleRow>(
+            `SELECT s.id, s.name, s."playlistId", p.name AS "playlistName",
+                    s."startTime", s."endTime", s."daysOfWeek", s."updatedAt"
+             FROM schedule_assignments sa
+             JOIN schedules s ON s.id = sa."scheduleId"
+             LEFT JOIN playlists p ON p.id = s."playlistId"
+             WHERE sa."organizationId" = $1
+               AND sa."targetType" = 'SITE' AND sa."targetId" = $3
+               AND ${tf}
+             ORDER BY sa."sortOrder" ASC, sa."assignedAt" ASC`,
+            [organizationId, timezone, siteId],
+        );
+        siteSchedules = allSite.filter(r => !deviceScheduleIds.has(r.id));
+    }
+
+    return [
+        ...deviceSchedules.map((s, i) => ({ ...s, priority: 1000 - i, source: 'DEVICE' as const })),
+        ...siteSchedules.map((s, i)    => ({ ...s, priority: 500  - i, source: 'SITE'   as const })),
+    ];
+}
+
 async function computeDeviceContentHash(deviceId: string, organizationId: string): Promise<string> {
-    const device = await queryOne<{ settings: Record<string, unknown>; timezone: string }>(
-        `SELECT settings, timezone FROM devices WHERE id = $1 AND "organizationId" = $2`,
+    const device = await queryOne<{ timezone: string | null; siteTimezone: string | null }>(
+        `SELECT d.timezone, s.timezone AS "siteTimezone"
+         FROM devices d
+         LEFT JOIN stores s ON s.id = d."storeId"
+         WHERE d.id = $1 AND d."organizationId" = $2`,
         [deviceId, organizationId]
     );
-    const groupId  = (device?.settings as Record<string, unknown> | undefined)?.groupId ?? null;
-    const timezone = device?.timezone ?? 'Asia/Ho_Chi_Minh';
+    const timezone = device?.timezone ?? device?.siteTimezone ?? 'Asia/Bangkok';
 
-    // Must apply the same daysOfWeek + time-window filters as getActiveSchedulesForDevice
-    // so the hash naturally changes when a schedule window opens or closes.
-    // Redis TTL (60 s) means the device will detect the change within ~1 minute.
-    const rows = await query<{
-        scheduleId: string;
-        scheduleUpdatedAt: string;
-        priority: number;
-        playlistId: string;
-        playlistUpdatedAt: string;
-        mediaId: string | null;
-        fileHash: string | null;
-        position: number | null;
-        durationOverride: number | null;
-    }>(
+    const tf = buildTimeFilter('$3');
+
+    const rows = await query<ScheduleHashRow>(
         `SELECT
              s.id               AS "scheduleId",
              s."updatedAt"      AS "scheduleUpdatedAt",
-             s.priority,
+             0                  AS "programPosition",
+             'DEVICE'           AS source,
              p.id               AS "playlistId",
              p."updatedAt"      AS "playlistUpdatedAt",
              m.id               AS "mediaId",
              m."fileHash",
-             pi.position,
-             pi."durationOverride"
-         FROM schedules s
+             pi.position        AS "itemPosition",
+             pi."durationOverride",
+             pi.transition, pi."transitionDuration"
+         FROM schedule_assignments sa
+         JOIN schedules s ON s.id = sa."scheduleId"
          JOIN playlists p ON p.id = s."playlistId"
          LEFT JOIN playlist_items pi ON pi."playlistId" = p.id
          LEFT JOIN media m ON m.id = pi."mediaId" AND m.status = 'READY'
-         WHERE s."organizationId" = $1
-           AND s."isActive" = true
-           AND s."startDate"::date <= (NOW() AT TIME ZONE $4)::date
-           AND (s."endDate" IS NULL OR s."endDate"::date >= (NOW() AT TIME ZONE $4)::date)
-           AND (
-               s."targetType" = 'ALL'
-               OR (s."targetType" = 'DEVICE' AND s."targetDeviceId" = $2)
-               OR (s."targetType" = 'GROUP'  AND s."targetGroupId"  = $3)
+         WHERE sa."organizationId" = $1
+           AND sa."targetType" = 'DEVICE' AND sa."targetId" = $2
+           AND ${tf}
+
+         UNION ALL
+
+         SELECT
+             s.id               AS "scheduleId",
+             s."updatedAt"      AS "scheduleUpdatedAt",
+             0                  AS "programPosition",
+             'SITE'             AS source,
+             p.id               AS "playlistId",
+             p."updatedAt"      AS "playlistUpdatedAt",
+             m.id               AS "mediaId",
+             m."fileHash",
+             pi.position        AS "itemPosition",
+             pi."durationOverride",
+             pi.transition, pi."transitionDuration"
+         FROM devices d
+         JOIN stores st ON st.id = d."storeId"
+         JOIN schedule_assignments sa ON sa."targetType" = 'SITE' AND sa."targetId" = st.id
+         JOIN schedules s ON s.id = sa."scheduleId"
+           AND s.id NOT IN (
+               SELECT sa2."scheduleId" FROM schedule_assignments sa2
+               WHERE sa2."targetType" = 'DEVICE' AND sa2."targetId" = $2
            )
-           AND (
-               array_length(s."daysOfWeek", 1) IS NULL
-               OR EXTRACT(DOW FROM NOW() AT TIME ZONE $4)::int = ANY(s."daysOfWeek")
-           )
-           AND (
-               s."startTime" IS NULL
-               OR TO_CHAR(NOW() AT TIME ZONE $4, 'HH24:MI') >= s."startTime"
-           )
-           AND (
-               s."endTime" IS NULL
-               OR TO_CHAR(NOW() AT TIME ZONE $4, 'HH24:MI') < s."endTime"
-           )
-         ORDER BY s.priority DESC, s.id, pi.position ASC NULLS LAST`,
-        [organizationId, deviceId, groupId, timezone]
+         JOIN playlists p ON p.id = s."playlistId"
+         LEFT JOIN playlist_items pi ON pi."playlistId" = p.id
+         LEFT JOIN media m ON m.id = pi."mediaId" AND m.status = 'READY'
+         WHERE d.id = $2 AND sa."organizationId" = $1
+           AND ${tf}
+
+         ORDER BY source DESC, "programPosition" ASC, "itemPosition" ASC NULLS LAST`,
+        [organizationId, deviceId, timezone]
     );
 
     const content = rows
         .map(r =>
-            `${r.scheduleId}:${r.scheduleUpdatedAt}:${r.priority}` +
+            `${r.scheduleId}:${r.scheduleUpdatedAt}:${r.programPosition}:${r.source}` +
             `:${r.playlistId}:${r.playlistUpdatedAt}` +
-            `:${r.mediaId ?? ''}:${r.fileHash ?? ''}:${r.position ?? ''}:${r.durationOverride ?? ''}`
+            `:${r.mediaId ?? ''}:${r.fileHash ?? ''}:${r.itemPosition ?? ''}:${r.durationOverride ?? ''}:${r.transition ?? ''}:${r.transitionDuration ?? ''}`
         )
         .join('|');
 
     return crypto.createHash('sha256').update(content || 'empty').digest('hex');
 }
 
-// Lấy content hash từ Redis cache, hoặc tính lại nếu cache miss rồi lưu vào cache.
+/**
+ * Thundering-herd-safe content hash lookup.
+ *
+ * Instead of DEL-ing all 1000 per-device keys when content changes (which
+ * causes every device to miss cache on the next heartbeat burst and recompute
+ * simultaneously), we use a single org-level version counter (INCR on change).
+ *
+ * Cache value format: "{orgVersion}:{sha256hash}"
+ *   - orgVersion mismatch → stale → recompute lazily on this device's heartbeat
+ *   - orgVersion matches  → fresh → return immediately
+ *
+ * Result: when admin changes content, devices recompute one-by-one as they
+ * naturally heartbeat over the next 10-30 s, spreading DB load evenly.
+ */
 async function getCachedContentHash(deviceId: string, organizationId: string): Promise<string> {
-    const cacheKey = RedisKeys.deviceContentHash(deviceId);
-    const cached = await redis.get(cacheKey);
-    if (cached) return cached;
+    const orgVersionKey = RedisKeys.orgContentVersion(organizationId);
+    const deviceHashKey = RedisKeys.deviceContentHash(deviceId);
+
+    // One round-trip to fetch both values
+    const [orgVersion, cached] = await redis.mget(orgVersionKey, deviceHashKey);
+    const currentVersion = orgVersion ?? '0';
+
+    if (cached) {
+        const sep = cached.indexOf(':');
+        if (sep !== -1 && cached.substring(0, sep) === currentVersion) {
+            return cached.substring(sep + 1); // version matches — cache hit
+        }
+        // Version mismatch — fall through to recompute
+    }
 
     const hash = await computeDeviceContentHash(deviceId, organizationId);
-    await redis.setex(cacheKey, CONTENT_HASH_CACHE_TTL, hash);
+    await redis.setex(deviceHashKey, CONTENT_HASH_CACHE_TTL, `${currentVersion}:${hash}`);
     return hash;
+}
+
+/**
+ * Org license info — cached per device for ORG_LICENSE_CACHE_TTL seconds.
+ * Avoids a JOIN query on every heartbeat when nothing has changed.
+ */
+async function getCachedOrgLicense(deviceId: string, organizationId: string) {
+    const key = RedisKeys.deviceLicenseCache(deviceId);
+    const cached = await redis.get(key);
+    if (cached) {
+        try { return JSON.parse(cached) as { licenseStatus: string; isLicensed: boolean; deviceAdminPin: string }; }
+        catch { /* corrupt entry — fall through */ }
+    }
+
+    const row = await queryOne<{ licenseStatus: string; isLicensed: boolean; deviceAdminPin: string }>(
+        `SELECT o."licenseStatus", o."deviceAdminPin", d."isLicensed"
+         FROM organizations o
+         JOIN devices d ON d.id = $1
+         WHERE o.id = $2`,
+        [deviceId, organizationId],
+    );
+    const result = {
+        licenseStatus:  row?.licenseStatus  ?? 'ACTIVE',
+        isLicensed:     row?.isLicensed     ?? true,
+        deviceAdminPin: row?.deviceAdminPin ?? '0000',
+    };
+    await redis.setex(key, ORG_LICENSE_CACHE_TTL, JSON.stringify(result));
+    return result;
 }
 
 // Gọi hàm này khi nội dung của một org thay đổi để buộc recompute hash.
 // Áp dụng cho TẤT CẢ devices trong org (khi schedule/playlist/media thay đổi).
-export async function invalidateContentHashForOrg(organizationId: string): Promise<void> {
-    const devices = await query<{ id: string }>(
-        `SELECT id FROM devices WHERE "organizationId" = $1`,
-        [organizationId]
-    );
-    if (devices.length === 0) return;
+/**
+ * 'CONTENT' — media files may have changed: device must call /sync AND re-enqueue downloads + prune cache.
+ * 'META'    — only ordering / timing / labels changed: device calls /sync to refresh playlist order,
+ *             but no new files to download and no cache pruning needed.
+ */
+export type ContentUpdateType = 'CONTENT' | 'META';
 
-    const pipeline = redis.pipeline();
-    for (const d of devices) {
-        pipeline.del(RedisKeys.deviceContentHash(d.id));
-    }
-    await pipeline.exec();
-    logger.debug('Content hash cache invalidated', { organizationId, deviceCount: devices.length });
+export async function invalidateContentHashForOrg(
+    organizationId: string,
+    updateType: ContentUpdateType = 'CONTENT',
+): Promise<void> {
+    // Increment org-level version counter (single key, O(1)).
+    // Per-device hash caches detect staleness on next heartbeat via version comparison,
+    // so recomputation is spread naturally over the heartbeat window — no thundering herd.
+    await redis.incr(RedisKeys.orgContentVersion(organizationId));
+    logger.debug('Content version incremented', { organizationId, updateType });
 
     // Push real-time update to all connected devices and admin dashboard clients
     try {
         const { broadcastContentUpdate } = await import('../../shared/socket/socket.server');
-        broadcastContentUpdate(organizationId, 'content.update');
+        broadcastContentUpdate(organizationId, 'content.update', { updateType });
     } catch {
         // Socket.IO not yet initialized (e.g., test environment) — fall through
     }
+}
+
+// ─── Content Manifest — list of media files the device must download ──────────
+// Device calls this on boot and on "content.update" event to know what to fetch.
+
+export async function getContentManifest(deviceId: string, organizationId: string) {
+    const device = await queryOne<{ timezone: string | null; siteTimezone: string | null; storeId: string | null }>(
+        `SELECT d.timezone, s.timezone AS "siteTimezone", d."storeId"
+         FROM devices d
+         LEFT JOIN stores s ON s.id = d."storeId"
+         WHERE d.id = $1 AND d."organizationId" = $2`,
+        [deviceId, organizationId],
+    );
+    const siteId = device?.storeId ?? null;
+
+    const params: unknown[] = [organizationId, deviceId];
+    let siteClause = '';
+    if (siteId) { params.push(siteId); siteClause = `OR (sa."targetType" = 'SITE' AND sa."targetId" = $3)`; }
+
+    const rows = await query<{
+        mediaId: string; filePath: string; fileHash: string; fileSize: number; mimeType: string;
+    }>(
+        `SELECT DISTINCT m.id AS "mediaId", m."filePath", m."fileHash", m."fileSize", m."mimeType"
+         FROM schedule_assignments sa
+         JOIN schedules s ON s.id = sa."scheduleId" AND s."isActive" = true
+         JOIN playlists p ON p.id = s."playlistId"
+         JOIN playlist_items pi ON pi."playlistId" = p.id
+         JOIN media m ON m.id = pi."mediaId" AND m.status = 'READY'
+         WHERE sa."organizationId" = $1
+           AND ((sa."targetType" = 'DEVICE' AND sa."targetId" = $2) ${siteClause})`,
+        params,
+    );
+
+    return rows.map(r => ({
+        mediaId:  r.mediaId,
+        fileName: r.filePath.split('/').pop() ?? r.mediaId,
+        fileUrl:  signMediaUrl(r.mediaId, 'file', 86400, false),
+        fileHash: r.fileHash,
+        fileSize: r.fileSize,
+        mimeType: r.mimeType,
+    }));
 }
 
 // ─── 1. Register device (first pairing via pairingCode) ──────────────────────
@@ -200,6 +433,29 @@ export async function registerDevice(data: RegisterDeviceBody): Promise<{
     return { token, deviceId: device.id, organizationId: device.organizationId, name: device.name };
 }
 
+// ─── 1b. Browser token — for Tizen / browser players ─────────────────────────
+
+export async function getBrowserToken(deviceId: string): Promise<{
+    token: string; deviceId: string; organizationId: string; name: string;
+}> {
+    const device = await queryOne<{ id: string; organizationId: string; name: string; pairingCode: string | null }>(
+        `SELECT id, "organizationId", name, "pairingCode" FROM devices WHERE id = $1`,
+        [deviceId],
+    );
+    if (!device) throw new AppError(404, 'Device not found');
+    // Only allow paired devices (pairingCode is NULL after pairing)
+    if (device.pairingCode !== null) throw new AppError(403, 'Device not paired yet');
+
+    const payload: Omit<JwtPayload, 'role'> & { role: string } = {
+        userId: device.id,
+        organizationId: device.organizationId,
+        role: 'DEVICE',
+        type: 'device',
+    };
+    const token = jwt.sign(payload, config.jwt.secret, { expiresIn: '365d' });
+    return { token, deviceId: device.id, organizationId: device.organizationId, name: device.name };
+}
+
 // ─── 2. Heartbeat — update status + upsert device_health ─────────────────────
 
 export async function heartbeat(deviceId: string, organizationId: string, data: HeartbeatBody): Promise<{
@@ -211,7 +467,18 @@ export async function heartbeat(deviceId: string, organizationId: string, data: 
     deviceAdminPin: string;
 }> {
     // Update device lastSeen + status, fetch lastOfflineAt for auto-start log
-    const updates: string[] = [`status = 'ONLINE'`, `"lastSeen" = NOW()`, `"updatedAt" = NOW()`];
+    const newStatus = data.isScreenOn === false ? 'SLEEP' : 'ONLINE';
+
+    const prevDevice = await queryOne<{ status: string; lastOfflineAt: string | null }>(
+        `SELECT status, "lastOfflineAt" FROM devices WHERE id = $1 AND "organizationId" = $2`,
+        [deviceId, organizationId]
+    );
+
+    const updates: string[] = [`status = '${newStatus}'`, `"lastSeen" = NOW()`, `"updatedAt" = NOW()`];
+    // Reset lastOnlineAt when device transitions to ONLINE from an offline/exit state
+    const wasOffline = prevDevice?.status === 'OFFLINE' || prevDevice?.status === 'APP_EXIT';
+    if (newStatus === 'ONLINE' && wasOffline) updates.push(`"lastOnlineAt" = NOW()`);
+
     const values: unknown[] = [];
     let idx = 1;
     if (data.appVersion) { updates.push(`"appVersion" = $${idx++}`); values.push(data.appVersion); }
@@ -219,18 +486,13 @@ export async function heartbeat(deviceId: string, organizationId: string, data: 
     if (data.model)      { updates.push(`model = $${idx++}`);        values.push(data.model); }
     values.push(deviceId, organizationId);
 
-    const prevDevice = await queryOne<{ status: string; lastOfflineAt: string | null }>(
-        `SELECT status, "lastOfflineAt" FROM devices WHERE id = $1 AND "organizationId" = $2`,
-        [deviceId, organizationId]
-    );
-
     await query(
         `UPDATE devices SET ${updates.join(', ')} WHERE id = $${idx++} AND "organizationId" = $${idx++}`,
         values
     );
 
-    // Auto-log when device comes back ONLINE after being OFFLINE (for auto-start tracking)
-    if (prevDevice?.status === 'OFFLINE' && prevDevice.lastOfflineAt) {
+    // Auto-log when device comes back ONLINE/SLEEP after being OFFLINE/APP_EXIT (for auto-start tracking)
+    if ((prevDevice?.status === 'OFFLINE' || prevDevice?.status === 'APP_EXIT') && prevDevice.lastOfflineAt) {
         const offlineDurationMs = Date.now() - new Date(prevDevice.lastOfflineAt).getTime();
         const mins = Math.round(offlineDurationMs / 60_000);
         const msg = `✅ Online trở lại sau ${mins} phút offline`;
@@ -239,26 +501,33 @@ export async function heartbeat(deviceId: string, organizationId: string, data: 
             .catch(() => {});
     }
 
-    // Always insert a device_health record on every heartbeat (isOnline = true).
-    // Fields absent from the payload will be NULL — that is expected for devices
-    // that don't yet report all metrics.
-    await query(
-        `INSERT INTO device_health (id, "deviceId", "cpuUsage", "memoryUsage", "storageTotal", "storageUsed",
-                                    "networkType", "isOnline", "ipAddress", "macAddress", "heapMemory", "networkConnected", "reportedAt")
-         VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, $6, true, $7, $8, $9, $10, NOW())`,
-        [
-            deviceId,
-            data.cpuUsage ?? null,
-            data.memoryUsage ?? null,
-            data.storageTotal ?? null,
-            data.storageUsed ?? null,
-            data.networkType ?? null,
-            data.ipAddress ?? null,
-            data.macAddress ?? null,
-            data.heapMemory ?? null,
-            data.networkConnected ?? null,
-        ]
-    );
+    // Insert device_health at most once per HEALTH_WRITE_INTERVAL_S (5 min).
+    // At 1000 devices × 30s heartbeat, this reduces health writes 10× while
+    // keeping enough granularity for monitoring dashboards.
+    const healthThrottleKey = RedisKeys.deviceHealthThrottle(deviceId);
+    const healthAlreadyWritten = await redis.get(healthThrottleKey);
+    if (!healthAlreadyWritten) {
+        await query(
+            `INSERT INTO device_health (id, "deviceId", "cpuUsage", "memoryUsage", "storageTotal", "storageUsed",
+                                        "networkType", "isOnline", "ipAddress", "macAddress", "heapMemory", "networkConnected",
+                                        "processCpuPercent", "reportedAt")
+             VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, $6, true, $7, $8, $9, $10, $11, NOW())`,
+            [
+                deviceId,
+                data.cpuUsage ?? null,
+                data.memoryUsage ?? null,
+                data.storageTotal ?? null,
+                data.storageUsed ?? null,
+                data.networkType ?? null,
+                data.ipAddress ?? null,
+                data.macAddress ?? null,
+                data.heapMemory ?? null,
+                data.networkConnected ?? null,
+                data.processCpuPercent ?? null,
+            ]
+        );
+        await redis.setex(healthThrottleKey, HEALTH_WRITE_INTERVAL_S, '1');
+    }
 
     // So sánh content hash của device với hash server tính được.
     // - Nếu device chưa gửi hash (lần boot đầu): syncRequired = true
@@ -267,17 +536,22 @@ export async function heartbeat(deviceId: string, organizationId: string, data: 
     const serverHash = await getCachedContentHash(deviceId, organizationId);
     const syncRequired = !data.currentContentHash || data.currentContentHash !== serverHash;
 
-    // Get org license status + device PIN for the device to react to
-    const orgLicense = await queryOne<{ licenseStatus: string; isLicensed: boolean; deviceAdminPin: string }>(
-        `SELECT o."licenseStatus", o."deviceAdminPin", d."isLicensed"
-         FROM organizations o
-         JOIN devices d ON d.id = $1
-         WHERE o.id = $2`,
-        [deviceId, organizationId]
-    );
-    const licenseStatus = orgLicense?.licenseStatus ?? 'ACTIVE';
-    const isDeviceLicensed = orgLicense?.isLicensed ?? true;
-    const deviceAdminPin = orgLicense?.deviceAdminPin ?? '0000';
+    // Get org license status + device PIN — served from Redis cache (60s TTL).
+    const orgLicense = await getCachedOrgLicense(deviceId, organizationId);
+    const licenseStatus   = orgLicense.licenseStatus;
+    const isDeviceLicensed = orgLicense.isLicensed;
+    const deviceAdminPin  = orgLicense.deviceAdminPin;
+
+    // Store download status / contentReady if device reported them
+    if (data.downloadStatus !== undefined || data.contentReady !== undefined) {
+        const fields: string[] = [];
+        const vals: unknown[] = [];
+        let fi = 1;
+        if (data.downloadStatus !== undefined) { fields.push(`"downloadStatus" = $${fi++}`); vals.push(data.downloadStatus); }
+        if (data.contentReady   !== undefined) { fields.push(`"contentReady"   = $${fi++}`); vals.push(data.contentReady); }
+        vals.push(deviceId);
+        await query(`UPDATE devices SET ${fields.join(', ')}, "updatedAt" = NOW() WHERE id = $${fi}`, vals);
+    }
 
     logger.debug('Device heartbeat', { deviceId, syncRequired, licenseStatus });
     return {
@@ -293,12 +567,20 @@ export async function heartbeat(deviceId: string, organizationId: string, data: 
 // ─── 3. Sync — return current schedule + playlist + media list ────────────────
 
 export async function getDeviceSync(deviceId: string, organizationId: string) {
-    // Get device info (including isLicensed)
-    const device = await queryOne<DeviceRow>(
-        `SELECT id, name, "organizationId", settings, timezone, "isLicensed" FROM devices WHERE id = $1 AND "organizationId" = $2`,
+    // Get device info (including isLicensed, role) with site timezone for cascade
+    const device = await queryOne<DeviceRow & { siteTimezone: string | null; role: string; storeId: string | null }>(
+        `SELECT d.id, d.name, d."organizationId", d.settings, d.timezone, d."isLicensed",
+                d.role, d."storeId",
+                s.timezone AS "siteTimezone"
+         FROM devices d
+         LEFT JOIN stores s ON s.id = d."storeId"
+         WHERE d.id = $1 AND d."organizationId" = $2`,
         [deviceId, organizationId]
     );
     if (!device) throw new AppError(404, 'Device không tồn tại');
+
+    // Cascade: device.timezone → site.timezone → Asia/Bangkok
+    const effectiveTimezone = device.timezone ?? device.siteTimezone ?? 'Asia/Bangkok';
 
     // Check org license
     const org = await queryOne<OrgLicenseRow>(
@@ -353,18 +635,19 @@ export async function getDeviceSync(deviceId: string, organizationId: string) {
         };
     }
 
-    // Get active schedules for this device (uses the getActiveSchedulesForDevice helper from schedules service)
-    const schedules = await getActiveSchedulesForDevice(deviceId, organizationId);
+    // Get schedules for this device via the program assignment system ONLY.
+    // Devices play only what has been explicitly assigned through programs.
+    const schedules = await getSchedulesForDevice(deviceId, organizationId, effectiveTimezone);
 
     // For each schedule, load playlist + items + signed media URLs
     const schedulesWithContent = await Promise.all(
         schedules.map(async (schedule) => {
             const items = await query<{
-                id: string; position: number; durationOverride: number | null; transition: string | null;
+                id: string; position: number; durationOverride: number | null; transition: string | null; transitionDuration: number | null;
                 mediaId: string; mediaTitle: string; mediaType: string; thumbnailPath: string | null;
                 mimeType: string; duration: number | null; width: number | null; height: number | null;
             }>(
-                `SELECT pi.id, pi.position, pi."durationOverride", pi.transition,
+                `SELECT pi.id, pi.position, pi."durationOverride", pi.transition, pi."transitionDuration",
                         m.id as "mediaId", m.title as "mediaTitle", m.type as "mediaType",
                         m."thumbnailPath", m."mimeType",
                         m.duration, m.width, m.height
@@ -375,6 +658,21 @@ export async function getDeviceSync(deviceId: string, organizationId: string) {
                 [schedule.playlistId]
             );
 
+            // Global clock anchor: all players compute elapsed = serverTime - startEpoch.
+            // Using % totalDurationMs they always land on the same slide regardless of start time.
+            // totalDurationMs includes each item's display duration PLUS the transition into the
+            // next item, so the clock accounts for the gap while the CSS transition plays.
+            const startEpoch = getScheduleStartEpochMs(schedule.startTime, effectiveTimezone);
+            const DEFAULT_TRANS_MS = 800;
+            const totalDurationMs = items.reduce((sum, item, idx) => {
+                const dur = ((item.durationOverride != null && item.durationOverride > 0)
+                    ? item.durationOverride
+                    : (item.duration ?? 10)) * 1000;
+                const nextItem = items[(idx + 1) % items.length];
+                const trans = nextItem.transitionDuration ?? DEFAULT_TRANS_MS;
+                return sum + dur + trans;
+            }, 0);
+
             return {
                 scheduleId: schedule.id,
                 scheduleName: schedule.name,
@@ -382,6 +680,8 @@ export async function getDeviceSync(deviceId: string, organizationId: string) {
                 startTime: schedule.startTime,
                 endTime: schedule.endTime,
                 daysOfWeek: schedule.daysOfWeek,
+                startEpoch,
+                totalDurationMs,
                 playlist: {
                     id: schedule.playlistId,
                     name: schedule.playlistName,
@@ -390,6 +690,7 @@ export async function getDeviceSync(deviceId: string, organizationId: string) {
                         position: item.position,
                         durationOverride: item.durationOverride,
                         transition: item.transition,
+                        transitionDuration: item.transitionDuration,
                         mediaId: item.mediaId,
                         mediaTitle: item.mediaTitle,
                         mediaType: item.mediaType,
@@ -416,11 +717,11 @@ export async function getDeviceSync(deviceId: string, organizationId: string) {
     // If sync group is actively playing, load its playlist items for the device
     if (syncGroup?.startEpoch && syncGroup.playlistId) {
         const sgItems = await query<{
-            id: string; position: number; durationOverride: number | null; transition: string | null;
+            id: string; position: number; durationOverride: number | null; transition: string | null; transitionDuration: number | null;
             mediaId: string; mediaTitle: string; mediaType: string;
             mimeType: string; duration: number | null; width: number | null; height: number | null;
         }>(
-            `SELECT pi.id, pi.position, pi."durationOverride", pi.transition,
+            `SELECT pi.id, pi.position, pi."durationOverride", pi.transition, pi."transitionDuration",
                     m.id AS "mediaId", m.title AS "mediaTitle", m.type AS "mediaType",
                     m."mimeType", m.duration, m.width, m.height
              FROM playlist_items pi
@@ -429,6 +730,18 @@ export async function getDeviceSync(deviceId: string, organizationId: string) {
              ORDER BY pi.position ASC`,
             [syncGroup.playlistId],
         );
+        // Recompute totalDurationMs from live items — must include transitionDuration
+        // to match calculateSyncPosition() in the frontend (which accumulates dur + trans).
+        // Using the stale DB value would cause position drift when playlist changes after Start.
+        const DEFAULT_TRANS_MS = 800;
+        const computedTotal = sgItems.reduce((sum, item, idx) => {
+            const dur = (item.durationOverride ?? item.duration ?? 10) * 1000;
+            const nextItem = sgItems[(idx + 1) % sgItems.length];
+            const trans = nextItem.transitionDuration ?? DEFAULT_TRANS_MS;
+            return sum + dur + trans;
+        }, 0);
+        if (computedTotal > 0) syncGroup.totalDurationMs = computedTotal;
+
         syncGroup.playlist = {
             id: syncGroup.playlistId,
             items: sgItems.map(item => ({
@@ -443,11 +756,16 @@ export async function getDeviceSync(deviceId: string, organizationId: string) {
         deviceId,
         organizationId,
         serverTime: new Date().toISOString(),
-        timezone: device.timezone ?? 'Asia/Ho_Chi_Minh',
+        timezone: effectiveTimezone,
         settings: device.settings ?? {},
         contentHash,
         schedules: schedulesWithContent,
         syncGroup: syncGroup ?? undefined,
+        syncConfig: {
+            role: (device.role ?? 'STANDALONE') as 'MASTER' | 'SLAVE' | 'STANDALONE',
+            broadcastPort: 9876,
+            siteId: device.storeId ?? null,
+        },
     };
 }
 
@@ -515,11 +833,15 @@ export async function batchLogPlayback(
 
 // ─── 6. Mark device offline (called on clean shutdown) ────────────────────────
 
-export async function markDeviceOffline(deviceId: string, organizationId: string): Promise<void> {
+export async function markDeviceOffline(
+    deviceId: string,
+    organizationId: string,
+    status: 'OFFLINE' | 'APP_EXIT' = 'OFFLINE'
+): Promise<void> {
     await query(
-        `UPDATE devices SET status = 'OFFLINE', "lastOfflineAt" = NOW(), "updatedAt" = NOW()
-         WHERE id = $1 AND "organizationId" = $2`,
-        [deviceId, organizationId]
+        `UPDATE devices SET status = $1, "lastOfflineAt" = NOW(), "updatedAt" = NOW()
+         WHERE id = $2 AND "organizationId" = $3`,
+        [status, deviceId, organizationId]
     );
     // Insert final health record marking offline
     await query(

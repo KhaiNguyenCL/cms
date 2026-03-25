@@ -13,6 +13,18 @@ export class AppError extends Error {
     }
 }
 
+/**
+ * Re-throws `err` unless it is a PostgreSQL unique-violation (code 23505),
+ * in which case it throws AppError(409) with the given message.
+ * Use in service create/update functions that have a DB unique constraint.
+ */
+export function handleUniqueViolation(err: unknown, message: string): never {
+    if ((err as { code?: string })?.code === '23505') {
+        throw new AppError(409, message);
+    }
+    throw err;
+}
+
 export function errorHandler(
     err: Error,
     _req: Request,
