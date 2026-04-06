@@ -250,9 +250,9 @@ export async function updateMedia(
 
 // ─── Delete ────────────────────────────────────────────────────────────────────
 
-export async function deleteMedia(mediaId: string, organizationId: string): Promise<void> {
-    const media = await queryOne<{ id: string; filePath: string; thumbnailPath: string | null }>(
-        `SELECT id, "filePath", "thumbnailPath" FROM media WHERE id = $1 AND "organizationId" = $2`,
+export async function deleteMedia(mediaId: string, organizationId: string): Promise<{ title: string }> {
+    const media = await queryOne<{ id: string; title: string; filePath: string; thumbnailPath: string | null }>(
+        `SELECT id, title, "filePath", "thumbnailPath" FROM media WHERE id = $1 AND "organizationId" = $2`,
         [mediaId, organizationId]
     );
     if (!media) throw new AppError(404, 'Media không tồn tại');
@@ -286,6 +286,7 @@ export async function deleteMedia(mediaId: string, organizationId: string): Prom
     }
     logger.info('Media deleted', { mediaId });
     invalidateContentHashForOrg(organizationId, 'CONTENT').catch(() => {});
+    return { title: media.title };
 }
 
 // ─── Thumbnail ────────────────────────────────────────────────────────────────

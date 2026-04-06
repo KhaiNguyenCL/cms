@@ -37,30 +37,31 @@ datasource db {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model Organization {
-  id                String    @id @default(uuid())
+  id                String   @id @default(uuid())
   name              String
-  slug              String    @unique
+  slug              String   @unique
   settings          Json?
-  isActive          Boolean   @default(true)
-  maxDevices        Int       @default(10)
-  maxUsers          Int       @default(5)
-  storageQuotaBytes BigInt    @default(10737418240)
-  pointsTotal       Int       @default(30)
-  pointsUsed        Int       @default(0)
-  licenseStatus     String    @default("TRIAL")
-  suspendedAt       DateTime?
-  deviceAdminPin    String    @default("0000")
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  isActive          Boolean  @default(true)
+  maxDevices        Int      @default(10)
+  maxUsers          Int      @default(5)
+  storageQuotaBytes BigInt   @default(10737418240)
+  pkg12m            Int      @default(0)
+  pkg24m            Int      @default(0)
+  pkg36m            Int      @default(0)
+  deviceAdminPin    String   @default("0000")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
-  users               User[]
-  devices             Device[]
-  deviceGroups        DeviceGroup[]
-  media               Media[]
-  playlists           Playlist[]
-  schedules           Schedule[]
-  licenseTransactions LicenseTransaction[]
-  stores              Store[]
+  users            User[]
+  devices          Device[]
+  deviceGroups     DeviceGroup[]
+  media            Media[]
+  playlists        Playlist[]
+  schedules        Schedule[]
+  stores           Store[]
+  deviceLicenses   DeviceLicense[]
+  licenseHistories LicenseHistory[]
+  purchaseRequests PurchaseRequest[]
 
   @@map("organizations")
 }
@@ -115,20 +116,23 @@ model Device {
   osVersion      String?
   appVersion     String?
   status         DeviceStatus @default(OFFLINE)
-  isLicensed     Boolean      @default(true)
-  lastSeen       DateTime?
-  lastOfflineAt  DateTime?
-  settings       Json?
-  storeId        String?
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  isLicensed       Boolean      @default(true)
+  licenseExpiresAt DateTime?
+  lastSeen         DateTime?
+  lastOfflineAt    DateTime?
+  settings         Json?
+  storeId          String?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
 
-  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  groupMembers DeviceGroupMember[]
-  playbackLogs PlaybackLog[]
-  healthReports DeviceHealth[]
-  comments     DeviceComment[]
-  store        Store?              @relation(fields: [storeId], references: [id], onDelete: SetNull)
+  organization   Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  groupMembers   DeviceGroupMember[]
+  playbackLogs   PlaybackLog[]
+  healthReports  DeviceHealth[]
+  comments       DeviceComment[]
+  store          Store?              @relation(fields: [storeId], references: [id], onDelete: SetNull)
+  deviceLicense  DeviceLicense?
+  licenseHistory LicenseHistory[]
 
   @@index([organizationId, status])
   @@index([lastSeen])
@@ -326,6 +330,8 @@ model DeviceHealth {
   macAddress       String?
   heapMemory       BigInt?
   networkConnected Boolean?
+  processCpuPercent Float?
+  wanIp            String?
   reportedAt       DateTime @default(now())
 
   device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
@@ -380,18 +386,59 @@ model Store {
 //  LICENSE
 // ─────────────────────────────────────────────────────────────────────────────
 
-model LicenseTransaction {
-  id             String   @id @default(uuid())
-  organizationId String
-  type           String   // PURCHASE | DAILY_DEDUCTION | ADJUSTMENT
-  points         Int      // positive = add, negative = deduct
-  deviceCount    Int?     // DAILY_DEDUCTION only: number of devices charged
-  description    String?
-  createdById    String?  // userId if done by a user, null if system job
-  createdAt      DateTime @default(now())
+model DeviceLicense {
+  id                      String   @id @default(uuid())
+  deviceId                String   @unique
+  organizationId          String
+  packageType             String   // '12M' | '24M' | '36M'
+  activatedAt             DateTime @default(now())
+  expiresAt               DateTime
+  activatedById           String?
+  activatedByName         String?
+  transferredFromDeviceId String?
+
+  device       Device       @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@map("device_licenses")
+}
+
+model LicenseHistory {
+  id              String   @id @default(uuid())
+  deviceId        String?
+  deviceName      String?
+  organizationId  String
+  action          String   // ASSIGN | TRANSFER | ADJUST_EXPIRY | REVOKE | EDIT_POOL
+  detail          Json?
+  performedById   String?
+  performedByName String?
+  createdAt       DateTime @default(now())
+
+  device       Device?      @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt(sort: Desc)])
+  @@map("license_history")
+}
+
+model PurchaseRequest {
+  id               String    @id @default(uuid())
+  organizationId   String
+  requestedById    String?
+  requestedByName  String?
+  packageType      String    // '12M' | '24M' | '36M'
+  quantity         Int
+  status           String    @default("PENDING") // PENDING | APPROVED | REJECTED
+  note             String?
+  adminNote        String?
+  resolvedById     String?
+  resolvedAt       DateTime?
+  createdAt        DateTime  @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([organizationId, createdAt(sort: Desc)])
-  @@map("license_transactions")
+  @@index([status, createdAt(sort: Desc)])
+  @@map("purchase_requests")
 }

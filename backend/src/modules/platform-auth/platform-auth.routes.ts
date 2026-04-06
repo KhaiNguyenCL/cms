@@ -11,6 +11,7 @@ router.post('/logout',  ctrl.logout);
 
 // Protected: manage platform admins (requires PLATFORM_ADMIN auth)
 router.use(authenticatePlatformAdmin);
+router.get('/me',            ctrl.getMe);
 router.get('/admins',        ctrl.listAdmins);
 router.post('/admins',       ctrl.createAdmin);
 router.patch('/admins/:id',  ctrl.updateAdmin);

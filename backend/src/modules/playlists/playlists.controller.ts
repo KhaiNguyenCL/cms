@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import * as playlistService from './playlists.service';
 import { listPlaylistsSchema } from './playlists.schema';
 import { signMediaUrl } from '../media/media.signing';
+import { logAction } from '../action-history/action-history.service';
 
 // GET /api/playlists
 export async function listPlaylists(req: Request, res: Response, next: NextFunction) {
@@ -16,6 +17,7 @@ export async function listPlaylists(req: Request, res: Response, next: NextFunct
 export async function createPlaylist(req: Request, res: Response, next: NextFunction) {
     try {
         const playlist = await playlistService.createPlaylist(req.user!.organizationId, req.body);
+        logAction(req.user!.organizationId, req.user!.userId, 'CREATE', 'PLAYLIST', playlist.id, playlist.name).catch(() => {});
         res.status(201).json({ success: true, message: 'Tạo playlist thành công', data: playlist });
     } catch (err) { next(err); }
 }
@@ -59,6 +61,7 @@ export async function updatePlaylist(req: Request, res: Response, next: NextFunc
             req.user!.organizationId,
             req.body
         );
+        logAction(req.user!.organizationId, req.user!.userId, 'UPDATE', 'PLAYLIST', playlist.id, playlist.name).catch(() => {});
         res.json({ success: true, message: 'Cập nhật playlist thành công', data: playlist });
     } catch (err) { next(err); }
 }
@@ -66,7 +69,8 @@ export async function updatePlaylist(req: Request, res: Response, next: NextFunc
 // DELETE /api/playlists/:id
 export async function deletePlaylist(req: Request, res: Response, next: NextFunction) {
     try {
-        await playlistService.deletePlaylist(req.params.id as string, req.user!.organizationId);
+        const { name } = await playlistService.deletePlaylist(req.params.id as string, req.user!.organizationId);
+        logAction(req.user!.organizationId, req.user!.userId, 'DELETE', 'PLAYLIST', req.params.id as string, name).catch(() => {});
         res.json({ success: true, message: 'Xoá playlist thành công' });
     } catch (err) { next(err); }
 }

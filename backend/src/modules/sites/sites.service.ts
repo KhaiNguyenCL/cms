@@ -41,7 +41,6 @@ export interface SiteDevice {
     status: string;
     location: string | null;
     model: string | null;
-    role: string;
 }
 
 // ─── List ─────────────────────────────────────────────────────────────────────
@@ -115,7 +114,7 @@ export async function getSiteById(id: string, organizationId: string) {
     if (!site) throw new AppError(404, 'Site không tồn tại');
 
     const devices = await query<SiteDevice>(
-        `SELECT id, name, status, location, model, role
+        `SELECT id, name, status, location, model
          FROM devices WHERE "storeId" = $1 ORDER BY name`,
         [id],
     );
@@ -231,12 +230,13 @@ export async function deleteSite(id: string, organizationId: string) {
     await query(
         `UPDATE devices SET "storeId" = NULL WHERE "storeId" = $1`, [id],
     );
-    const res = await queryOne<{ id: string }>(
-        `DELETE FROM stores WHERE id = $1 AND "organizationId" = $2 RETURNING id`,
+    const res = await queryOne<{ id: string; name: string }>(
+        `DELETE FROM stores WHERE id = $1 AND "organizationId" = $2 RETURNING id, name`,
         [id, organizationId],
     );
     if (!res) throw new AppError(404, 'Site không tồn tại');
     logger.info('Site deleted', { id, organizationId });
+    return { name: res.name };
 }
 
 // ─── Start / Restart / Stop ───────────────────────────────────────────────────
@@ -332,74 +332,25 @@ export async function updateSiteDevices(
         } else {
             // forceTransfer: detach devices from their current site before re-assigning
             await query(
-                `UPDATE devices SET "storeId" = NULL, role = 'STANDALONE', "updatedAt" = NOW()
+                `UPDATE devices SET "storeId" = NULL, "updatedAt" = NOW()
                  WHERE id = ANY($1::text[]) AND "organizationId" = $2 AND "storeId" <> $3`,
                 [data.add, organizationId, id],
             );
         }
 
-        // Check if site currently has a MASTER
-        const existing = await queryOne<{ hasMaster: boolean; count: string }>(
-            `SELECT COUNT(*) AS count,
-                    BOOL_OR(role = 'MASTER') AS "hasMaster"
-             FROM devices WHERE "storeId" = $1`,
-            [id],
+        await query(
+            `UPDATE devices SET "storeId" = $1, "updatedAt" = NOW()
+             WHERE id = ANY($2::text[]) AND "organizationId" = $3`,
+            [id, data.add, organizationId],
         );
-        const hasMaster = existing?.hasMaster ?? false;
-
-        // First device added to empty site → MASTER; all others → SLAVE
-        const addIds = data.add;
-        if (!hasMaster && addIds.length > 0) {
-            // First in the list becomes MASTER
-            await query(
-                `UPDATE devices SET "storeId" = $1, role = 'MASTER', "updatedAt" = NOW()
-                 WHERE id = $2 AND "organizationId" = $3`,
-                [id, addIds[0], organizationId],
-            );
-            if (addIds.length > 1) {
-                await query(
-                    `UPDATE devices SET "storeId" = $1, role = 'SLAVE', "updatedAt" = NOW()
-                     WHERE id = ANY($2::text[]) AND "organizationId" = $3`,
-                    [id, addIds.slice(1), organizationId],
-                );
-            }
-        } else {
-            // Site already has a MASTER — all new devices are SLAVE
-            await query(
-                `UPDATE devices SET "storeId" = $1, role = 'SLAVE', "updatedAt" = NOW()
-                 WHERE id = ANY($2::text[]) AND "organizationId" = $3`,
-                [id, addIds, organizationId],
-            );
-        }
     }
 
     if (data.remove && data.remove.length > 0) {
-        // Check if MASTER is being removed
-        const removingMaster = await queryOne<{ id: string }>(
-            `SELECT id FROM devices
-             WHERE id = ANY($1::text[]) AND "storeId" = $2 AND role = 'MASTER'`,
-            [data.remove, id],
-        );
-
         await query(
-            `UPDATE devices SET "storeId" = NULL, role = 'STANDALONE', "updatedAt" = NOW()
+            `UPDATE devices SET "storeId" = NULL, "updatedAt" = NOW()
              WHERE id = ANY($1::text[]) AND "storeId" = $2 AND "organizationId" = $3`,
             [data.remove, id, organizationId],
         );
-
-        // Promote first remaining SLAVE to MASTER if MASTER was removed
-        if (removingMaster) {
-            await query(
-                `UPDATE devices SET role = 'MASTER', "updatedAt" = NOW()
-                 WHERE id = (
-                     SELECT id FROM devices
-                     WHERE "storeId" = $1 AND role = 'SLAVE'
-                     ORDER BY "createdAt" ASC
-                     LIMIT 1
-                 )`,
-                [id],
-            );
-        }
     }
 
     // Notify affected devices to re-sync (role changed, storeId changed)

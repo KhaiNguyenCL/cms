@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import * as devService from './devices.service';
 import * as pairingService from './devices.pairing.service';
+import { logAction } from '../action-history/action-history.service';
 import {
     listDevicesSchema,
     registerDeviceSchema,
@@ -141,6 +142,7 @@ export async function listDevices(req: Request, res: Response, next: NextFunctio
 export async function createDevice(req: Request, res: Response, next: NextFunction) {
     try {
         const device = await devService.createDevice(req.user!.organizationId, req.body);
+        logAction(req.user!.organizationId, req.user!.userId, 'CREATE', 'DEVICE', device.id, device.name).catch(() => {});
         res.status(201).json({ success: true, message: 'Device đã được tạo. Sàng lọc mã ghép cặp trên Android TV.', data: device });
     } catch (err) { next(err); }
 }
@@ -157,6 +159,7 @@ export async function getDeviceById(req: Request, res: Response, next: NextFunct
 export async function updateDevice(req: Request, res: Response, next: NextFunction) {
     try {
         const device = await devService.updateDevice(req.params.id as string, req.user!.organizationId, req.body);
+        logAction(req.user!.organizationId, req.user!.userId, 'UPDATE', 'DEVICE', device.id, device.name).catch(() => {});
         res.json({ success: true, message: 'Cập nhật device thành công', data: device });
     } catch (err) { next(err); }
 }
@@ -164,7 +167,8 @@ export async function updateDevice(req: Request, res: Response, next: NextFuncti
 // DELETE /api/devices/:id
 export async function deleteDevice(req: Request, res: Response, next: NextFunction) {
     try {
-        await devService.deleteDevice(req.params.id as string, req.user!.organizationId);
+        const { name } = await devService.deleteDevice(req.params.id as string, req.user!.organizationId);
+        logAction(req.user!.organizationId, req.user!.userId, 'DELETE', 'DEVICE', req.params.id as string, name).catch(() => {});
         res.json({ success: true, message: 'Device đã được xoá' });
     } catch (err) { next(err); }
 }
@@ -225,6 +229,15 @@ export async function setDeviceLicense(req: Request, res: Response, next: NextFu
 export async function getNowPlaying(req: Request, res: Response, next: NextFunction) {
     try {
         const result = await devService.getNowPlaying(req.params.id as string, req.user!.organizationId);
+        res.json({ success: true, data: result });
+    } catch (err) { next(err); }
+}
+
+// GET /api/devices/:id/active-schedules
+export async function getActiveSchedules(req: Request, res: Response, next: NextFunction) {
+    try {
+        const { getActiveSchedulesForDevice } = await import('../schedules/schedules.service');
+        const result = await getActiveSchedulesForDevice(req.params.id as string, req.user!.organizationId);
         res.json({ success: true, data: result });
     } catch (err) { next(err); }
 }

@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
     Box, Typography, Stack, Button, Chip, Tooltip, IconButton,
@@ -12,6 +12,7 @@ import {
     CalendarMonth, Search, DevicesOther, Storefront,
     Add, Delete, DragIndicator, FiberManualRecord,
     AllInclusive, ExpandMore, InfoOutlined, WarningAmber,
+    Save, Undo,
 } from '@mui/icons-material';
 import {
     DndContext, closestCenter,
@@ -83,7 +84,7 @@ function AddScheduleDialog({
 }: {
     open: boolean;
     onClose: () => void;
-    onAdd: (scheduleId: string) => void;
+    onAdd: (schedule: Schedule) => void;
     existingSiteScheduleIds: Set<string>;
     deviceConflicts: Map<string, DeviceConflict[]>;
 }) {
@@ -138,7 +139,7 @@ function AddScheduleDialog({
                             <ListItemButton
                                 key={s.id}
                                 disabled={alreadySite}
-                                onClick={() => { if (!alreadySite) { onAdd(s.id); onClose(); } }}
+                                onClick={() => { if (!alreadySite) { onAdd(s); onClose(); } }}
                                 sx={{ px: 2, alignItems: 'flex-start', py: 1 }}
                             >
                                 <ListItemIcon sx={{ minWidth: 32, mt: 0.25 }}>
@@ -326,20 +327,33 @@ function ScheduleListPanel({
     targetType,
     targetId,
     targetName,
+    siteId,
+    siteName,
 }: {
     targetType: 'DEVICE' | 'SITE';
     targetId: string;
     targetName: string;
+    siteId?: string | null;
+    siteName?: string | null;
 }) {
     const dispatch = useAppDispatch();
     const qc = useQueryClient();
     const [addOpen, setAddOpen] = useState(false);
-    const [localItems, setLocalItems] = useState<ScheduleAssignment[] | null>(null);
-    const [reordering, setReordering] = useState(false);
+    const [saving, setSaving] = useState(false);
+
+    // ── Draft state: buffered changes before Save ─────────────────────────────
+    // null = no unsaved changes (showing server state)
+    type DraftState = {
+        order: string[];                   // mix of real IDs + temp IDs (for pending adds)
+        adds: Map<string, Schedule>;       // tempId → Schedule (pending adds)
+        deletes: Set<string>;              // real assignment IDs to delete on Save
+    } | null;
+    const [draft, setDraft] = useState<DraftState>(null);
+    const isDirty = draft !== null;
 
     const queryKey = ['schedule-assignments', targetType, targetId];
 
-    // Site-level assignments (or device-level if targetType=DEVICE)
+    // Server state
     const { data: assignments = [], isLoading } = useQuery({
         queryKey,
         queryFn: () => scheduleAssignmentsApi.list({ targetType, targetId }),
@@ -353,9 +367,46 @@ function ScheduleListPanel({
         enabled: targetType === 'SITE',
     });
 
-    useEffect(() => { setLocalItems(assignments); }, [assignments]);
+    // Site-level assignments inherited by this device (only when DEVICE + belongs to a site)
+    const siteAssignKey = ['schedule-assignments', 'SITE', siteId];
+    const { data: siteInheritedAssignments = [], isLoading: siteInheritedLoading } = useQuery({
+        queryKey: siteAssignKey,
+        queryFn: () => scheduleAssignmentsApi.list({ targetType: 'SITE', targetId: siteId! }),
+        enabled: targetType === 'DEVICE' && !!siteId,
+    });
 
-    const items = localItems ?? assignments;
+    // Reset draft when target changes
+    useEffect(() => { setDraft(null); }, [targetId]);
+
+    // Build display items from draft or server state
+    const items: ScheduleAssignment[] = useMemo(() => {
+        if (!draft) return assignments;
+        return draft.order.map(id => {
+            const pending = draft.adds.get(id);
+            if (pending) {
+                // Build a display-compatible ScheduleAssignment from Schedule
+                return {
+                    id,
+                    organizationId: '',
+                    scheduleId: pending.id,
+                    scheduleName: pending.name,
+                    scheduleStartTime: pending.startTime,
+                    scheduleEndTime: pending.endTime,
+                    scheduleDaysOfWeek: pending.daysOfWeek,
+                    scheduleStartDate: pending.startDate,
+                    scheduleEndDate: pending.endDate ?? null,
+                    scheduleIsActive: pending.isActive,
+                    targetType,
+                    targetId,
+                    targetName: null,
+                    assignedById: null,
+                    assignedAt: new Date().toISOString(),
+                    sortOrder: 0,
+                } satisfies ScheduleAssignment;
+            }
+            return assignments.find(a => a.id === id);
+        }).filter((a): a is ScheduleAssignment => a !== undefined);
+    }, [draft, assignments, targetType, targetId]);
 
     // Map: scheduleId → list of devices that already have it (for Add dialog)
     const deviceConflicts = useMemo(() => {
@@ -381,57 +432,98 @@ function ScheduleListPanel({
         return [...groups.values()];
     }, [devAssignments]);
 
+    // Schedule IDs already in the draft (to disable in Add dialog)
     const existingSiteScheduleIds = useMemo(
         () => new Set(items.map(a => a.scheduleId)),
         [items],
     );
 
-    const assignMutation = useMutation({
-        mutationFn: (scheduleId: string) =>
-            scheduleAssignmentsApi.bulkAssign(scheduleId, [{ targetType, targetId }]),
-        onSuccess: () => {
-            qc.invalidateQueries({ queryKey });
-            dispatch(pushToast({ message: 'Đã thêm schedule', severity: 'success' }));
-        },
-        onError: () => dispatch(pushToast({ message: 'Thêm schedule thất bại', severity: 'error' })),
-    });
+    // ── Draft handlers ────────────────────────────────────────────────────────
 
-    const deleteMutation = useMutation({
-        mutationFn: (id: string) => scheduleAssignmentsApi.unassignOne(id),
-        onSuccess: () => {
-            qc.invalidateQueries({ queryKey });
-            dispatch(pushToast({ message: 'Đã xóa schedule', severity: 'success' }));
-        },
-        onError: () => dispatch(pushToast({ message: 'Xóa thất bại', severity: 'error' })),
-    });
+    const handleAdd = useCallback((schedule: Schedule) => {
+        const tempId = `temp_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+        setDraft(prev => {
+            const base = prev ?? { order: assignments.map(a => a.id), adds: new Map(), deletes: new Set() };
+            return {
+                order: [...base.order, tempId],
+                adds: new Map([...base.adds, [tempId, schedule]]),
+                deletes: base.deletes,
+            };
+        });
+    }, [assignments]);
 
-    const reorderMutation = useMutation({
-        mutationFn: (orderedIds: string[]) =>
-            scheduleAssignmentsApi.reorder(targetType, targetId, orderedIds),
-        onSettled: () => {
-            setReordering(false);
+    const handleDelete = useCallback((id: string) => {
+        setDraft(prev => {
+            const base = prev ?? { order: assignments.map(a => a.id), adds: new Map(), deletes: new Set() };
+            const newAdds = new Map(base.adds);
+            const newDeletes = new Set(base.deletes);
+            if (newAdds.has(id)) {
+                newAdds.delete(id);  // pending add → just remove, no server call needed
+            } else {
+                newDeletes.add(id);  // real assignment → mark for deletion
+            }
+            return { order: base.order.filter(x => x !== id), adds: newAdds, deletes: newDeletes };
+        });
+    }, [assignments]);
+
+    const handleDragEnd = useCallback((event: DragEndEvent) => {
+        const { active, over } = event;
+        if (!over || active.id === over.id) return;
+        setDraft(prev => {
+            const base = prev ?? { order: assignments.map(a => a.id), adds: new Map(), deletes: new Set() };
+            const oldIdx = base.order.indexOf(String(active.id));
+            const newIdx = base.order.indexOf(String(over.id));
+            if (oldIdx === -1 || newIdx === -1) return base;
+            return { ...base, order: arrayMove(base.order, oldIdx, newIdx) };
+        });
+    }, [assignments]);
+
+    const handleDiscard = useCallback(() => setDraft(null), []);
+
+    const handleSave = useCallback(async () => {
+        if (!draft) return;
+        setSaving(true);
+        try {
+            // 1. Execute all pending adds, collect real IDs in order
+            const tempToReal = new Map<string, string>();
+            await Promise.all(
+                [...draft.adds.entries()].map(async ([tempId, schedule]) => {
+                    const result = await scheduleAssignmentsApi.bulkAssign(
+                        schedule.id, [{ targetType, targetId }]
+                    );
+                    // bulkAssign returns { created, skipped } but we need the new assignment ID
+                    // Fetch the new assignment to get its real ID
+                    const fresh = await scheduleAssignmentsApi.list({ targetType, targetId });
+                    const newAssign = fresh.find(a => a.scheduleId === schedule.id && !assignments.find(ex => ex.id === a.id));
+                    if (newAssign) tempToReal.set(tempId, newAssign.id);
+                })
+            );
+
+            // 2. Execute all deletes
+            await Promise.all([...draft.deletes].map(id => scheduleAssignmentsApi.unassignOne(id)));
+
+            // 3. Reorder: map tempIds to real IDs, drop unknown
+            const finalOrder = draft.order
+                .map(id => tempToReal.get(id) ?? id)
+                .filter(id => !draft.deletes.has(id));
+            if (finalOrder.length > 1) {
+                await scheduleAssignmentsApi.reorder(targetType, targetId, finalOrder);
+            }
+
+            setDraft(null);
             qc.invalidateQueries({ queryKey });
-        },
-        onError: () =>
-            dispatch(pushToast({ message: 'Lưu thứ tự thất bại', severity: 'error' })),
-    });
+            dispatch(pushToast({ message: 'Đã lưu thay đổi', severity: 'success' }));
+        } catch {
+            dispatch(pushToast({ message: 'Lưu thất bại', severity: 'error' }));
+        } finally {
+            setSaving(false);
+        }
+    }, [draft, assignments, targetType, targetId, queryKey, qc, dispatch]);
 
     const sensors = useSensors(
         useSensor(PointerSensor),
         useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
     );
-
-    function handleDragEnd(event: DragEndEvent) {
-        const { active, over } = event;
-        if (!over || active.id === over.id) return;
-        const oldIdx = items.findIndex(a => a.id === active.id);
-        const newIdx = items.findIndex(a => a.id === over.id);
-        if (oldIdx === -1 || newIdx === -1) return;
-        const reordered = arrayMove(items, oldIdx, newIdx);
-        setLocalItems(reordered);
-        setReordering(true);
-        reorderMutation.mutate(reordered.map(a => a.id));
-    }
 
     const isSite = targetType === 'SITE';
 
@@ -456,11 +548,11 @@ function ScheduleListPanel({
                     variant="outlined"
                 />
                 <Button
-                    variant="contained" size="small" startIcon={<Add />}
+                    variant="outlined" size="small" startIcon={<Add />}
                     onClick={() => setAddOpen(true)}
-                    disabled={assignMutation.isPending}
+                    disabled={saving}
                 >
-                    Thêm Schedule
+                    Thêm
                 </Button>
             </Box>
 
@@ -498,7 +590,7 @@ function ScheduleListPanel({
                         <Typography variant="body2">Chưa có schedule nào</Typography>
                         <Button variant="outlined" size="small" startIcon={<Add />}
                             onClick={() => setAddOpen(true)}>
-                            Thêm Schedule
+                            Thêm
                         </Button>
                     </Stack>
                 ) : (
@@ -519,14 +611,84 @@ function ScheduleListPanel({
                                             key={a.id}
                                             assignment={a}
                                             index={i}
-                                            onDelete={id => deleteMutation.mutate(id)}
-                                            deleting={deleteMutation.isPending}
+                                            onDelete={handleDelete}
+                                            deleting={saving}
                                         />
                                     ))}
                                 </TableBody>
                             </Table>
                         </SortableContext>
                     </DndContext>
+                )}
+
+                {/* ── Site Inherited section (device only, when device belongs to a site) ── */}
+                {!isSite && siteId && (
+                    <Box sx={{ px: 2, pt: 2, pb: 1 }}>
+                        <Divider sx={{ mb: 1.5 }} />
+                        <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
+                            <Storefront fontSize="small" sx={{ color: 'text.secondary' }} />
+                            <Typography variant="caption" fontWeight={700} color="text.secondary"
+                                sx={{ textTransform: 'uppercase', letterSpacing: 1 }}>
+                                Kế thừa từ Site
+                            </Typography>
+                            {siteName && (
+                                <Chip label={siteName} size="small" color="secondary" variant="outlined"
+                                    sx={{ height: 18, fontSize: '0.6rem' }} />
+                            )}
+                            <Tooltip title="Schedule gán cho site sẽ áp dụng cho thiết bị này. Schedule gán trực tiếp cho device có độ ưu tiên CAO HƠN.">
+                                <InfoOutlined sx={{ fontSize: 14, color: 'text.disabled' }} />
+                            </Tooltip>
+                        </Stack>
+
+                        {siteInheritedLoading ? (
+                            Array.from({ length: 2 }).map((_, i) => (
+                                <Skeleton key={i} variant="rectangular" height={36} sx={{ mb: 1, borderRadius: 1 }} />
+                            ))
+                        ) : siteInheritedAssignments.length === 0 ? (
+                            <Typography variant="caption" color="text.disabled" sx={{ display: 'block', py: 1 }}>
+                                Site chưa có schedule nào
+                            </Typography>
+                        ) : (
+                            <Table size="small">
+                                <ScheduleTableHeader showDrag={false} />
+                                <TableBody>
+                                    {siteInheritedAssignments.map((a, i) => (
+                                        <TableRow key={a.id} hover sx={{ opacity: 0.85 }}>
+                                            <TableCell sx={{ width: 52, textAlign: 'center' }}>
+                                                <Chip label={i + 1} size="small"
+                                                    color={i === 0 ? 'error' : i === 1 ? 'warning' : 'default'}
+                                                    sx={{ fontWeight: 700, minWidth: 28 }} />
+                                            </TableCell>
+                                            <TableCell>
+                                                <Stack direction="row" spacing={0.75} alignItems="center">
+                                                    <FiberManualRecord sx={{
+                                                        fontSize: 10,
+                                                        color: a.scheduleIsActive ? 'success.main' : 'text.disabled',
+                                                    }} />
+                                                    <Typography variant="body2" fontWeight={600} noWrap>
+                                                        {a.scheduleName}
+                                                    </Typography>
+                                                </Stack>
+                                            </TableCell>
+                                            <TableCell><TimeRange start={a.scheduleStartTime} end={a.scheduleEndTime} /></TableCell>
+                                            <TableCell><DaysChips days={a.scheduleDaysOfWeek} /></TableCell>
+                                            <TableCell>
+                                                {a.scheduleStartDate || a.scheduleEndDate ? (
+                                                    <Typography variant="caption" color="text.secondary" noWrap>
+                                                        {a.scheduleStartDate ? new Date(a.scheduleStartDate).toLocaleDateString('vi-VN') : '—'}
+                                                        {' – '}
+                                                        {a.scheduleEndDate ? new Date(a.scheduleEndDate).toLocaleDateString('vi-VN') : '—'}
+                                                    </Typography>
+                                                ) : (
+                                                    <Typography variant="caption" color="text.disabled">—</Typography>
+                                                )}
+                                            </TableCell>
+                                        </TableRow>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                        )}
+                    </Box>
                 )}
 
                 {/* ── Device Override section (site only) ───────────────── */}
@@ -657,21 +819,30 @@ function ScheduleListPanel({
                 )}
             </Box>
 
-            {reordering && (
+            {/* Save / Discard bar */}
+            {isDirty && (
                 <Box sx={{
-                    px: 2, py: 0.5, borderTop: '1px solid', borderColor: 'divider',
-                    flexShrink: 0,
+                    px: 2, py: 1, borderTop: '1px solid', borderColor: 'warning.main',
+                    bgcolor: 'warning.lighter', flexShrink: 0,
+                    display: 'flex', alignItems: 'center', gap: 1,
                 }}>
-                    <Typography variant="caption" color="text.secondary">
-                        Đang lưu thứ tự…
+                    <Typography variant="caption" color="warning.dark" sx={{ flex: 1 }}>
+                        Có thay đổi chưa được lưu
                     </Typography>
+                    <Button size="small" startIcon={<Undo />} onClick={handleDiscard} disabled={saving}>
+                        Huỷ
+                    </Button>
+                    <Button size="small" variant="contained" startIcon={<Save />}
+                        onClick={handleSave} disabled={saving}>
+                        {saving ? 'Đang lưu…' : 'Lưu'}
+                    </Button>
                 </Box>
             )}
 
             <AddScheduleDialog
                 open={addOpen}
                 onClose={() => setAddOpen(false)}
-                onAdd={scheduleId => assignMutation.mutate(scheduleId)}
+                onAdd={handleAdd}
                 existingSiteScheduleIds={existingSiteScheduleIds}
                 deviceConflicts={isSite ? deviceConflicts : new Map()}
             />
@@ -687,6 +858,8 @@ interface TargetInfo {
     id: string;
     name: string;
     type: 'DEVICE' | 'SITE';
+    siteId?: string | null;
+    siteName?: string | null;
 }
 
 function TargetListPanel({
@@ -777,7 +950,7 @@ function TargetListPanel({
                                 <ListItemButton
                                     key={d.id}
                                     selected={selected?.id === d.id && selected?.type === 'DEVICE'}
-                                    onClick={() => onSelect({ id: d.id, name: d.name, type: 'DEVICE' })}
+                                    onClick={() => onSelect({ id: d.id, name: d.name, type: 'DEVICE', siteId: d.siteId, siteName: d.siteName })}
                                     sx={{ px: 2, py: 0.75 }}
                                 >
                                     <ListItemIcon sx={{ minWidth: 32 }}>
@@ -868,6 +1041,8 @@ export default function ScheduleAssignmentPage() {
                             targetType={selected.type}
                             targetId={selected.id}
                             targetName={selected.name}
+                            siteId={selected.siteId}
+                            siteName={selected.siteName}
                         />
                     ) : (
                         <Stack alignItems="center" justifyContent="center" spacing={1.5}

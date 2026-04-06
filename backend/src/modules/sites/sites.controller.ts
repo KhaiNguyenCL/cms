@@ -7,6 +7,7 @@ import type {
     UpdateSiteDevices,
 } from './sites.schema';
 import { broadcastSyncState } from '../../shared/socket/socket.server';
+import { logAction } from '../action-history/action-history.service';
 
 export async function listSites(req: Request, res: Response, next: NextFunction) {
     try {
@@ -31,6 +32,7 @@ export async function createSite(req: Request, res: Response, next: NextFunction
             req.user!.organizationId,
             req.body as CreateSiteBody,
         );
+        logAction(req.user!.organizationId, req.user!.userId, 'CREATE', 'STORE', site.id, site.name).catch(() => {});
         res.status(201).json({ data: site });
     } catch (err) { next(err); }
 }
@@ -42,6 +44,7 @@ export async function updateSite(req: Request, res: Response, next: NextFunction
             req.user!.organizationId,
             req.body as UpdateSiteBody,
         );
+        logAction(req.user!.organizationId, req.user!.userId, 'UPDATE', 'STORE', site.id, site.name).catch(() => {});
         res.json({ data: site });
     } catch (err) { next(err); }
 }
@@ -49,7 +52,8 @@ export async function updateSite(req: Request, res: Response, next: NextFunction
 export async function deleteSite(req: Request, res: Response, next: NextFunction) {
     try {
         const id = String(req.params.id);
-        await svc.deleteSite(id, req.user!.organizationId);
+        const { name } = await svc.deleteSite(id, req.user!.organizationId);
+        logAction(req.user!.organizationId, req.user!.userId, 'DELETE', 'STORE', id, name).catch(() => {});
         broadcastSyncState(req.user!.organizationId, {
             storeId: id,
             startEpoch: null,

@@ -5,6 +5,7 @@ export interface PlatformAdmin {
     email: string;
     name: string;
     isActive: boolean;
+    isRoot: boolean;
     lastLoginAt: string | null;
     createdAt: string;
     updatedAt: string;
@@ -27,6 +28,11 @@ export const platformAuthApi = {
 
     logout: async () => {
         await apiClient.post('/platform/logout');
+    },
+
+    getMe: async () => {
+        const { data } = await apiClient.get<{ data: PlatformAdmin | null }>('/platform/me');
+        return data.data;
     },
 
     listAdmins: async () => {

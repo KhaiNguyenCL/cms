@@ -182,14 +182,14 @@ export async function deleteUser(
     userId: string,
     organizationId: string,
     requesterId: string
-): Promise<void> {
+): Promise<{ email: string }> {
     // Không cho tự xoá bản thân
     if (userId === requesterId) {
         throw new AppError(400, 'Không thể tự xoá tài khoản của mình');
     }
 
-    const target = await queryOne<{ id: string; role: string }>(
-        `SELECT id, role FROM users WHERE id = $1 AND "organizationId" = $2`,
+    const target = await queryOne<{ id: string; role: string; email: string }>(
+        `SELECT id, role, email FROM users WHERE id = $1 AND "organizationId" = $2`,
         [userId, organizationId]
     );
     if (!target) throw new AppError(404, 'User không tồn tại');
@@ -206,4 +206,5 @@ export async function deleteUser(
     );
 
     logger.info('User deleted (soft)', { requesterId, targetUserId: userId });
+    return { email: target.email };
 }

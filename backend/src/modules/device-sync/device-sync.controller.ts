@@ -1,6 +1,13 @@
 import { Request, Response, NextFunction } from 'express';
 import * as deviceSyncService from './device-sync.service';
 
+// GET /api/device/my-ip — device calls this to discover its own WAN IP
+// Requires device JWT; Express trust proxy ensures req.ip = real client IP via nginx X-Forwarded-For
+export async function getMyIp(req: Request, res: Response) {
+    const ip = req.ip?.replace(/^::ffff:/, '') ?? null;
+    res.json({ success: true, data: { ip } });
+}
+
 // GET /api/device/browser-token?deviceId=xxx
 // Public — for Tizen / browser players that cannot use NativeBridge
 export async function getBrowserToken(req: Request, res: Response, next: NextFunction) {
@@ -31,7 +38,12 @@ export async function heartbeat(req: Request, res: Response, next: NextFunction)
     try {
         const deviceId = req.user!.userId;       // userId slot holds deviceId
         const organizationId = req.user!.organizationId;
-        const result = await deviceSyncService.heartbeat(deviceId, organizationId, req.body);
+        // Prefer wanIp sent by device (fetched from ipify.org); fall back to req.ip (unreliable on LAN)
+        const bodyWanIp = req.body?.wanIp ?? null;
+        const rawIp = (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim() ?? req.ip ?? null;
+        const fallbackIp = rawIp?.replace(/^::ffff:/, '') ?? null;
+        const wanIp = bodyWanIp ?? fallbackIp;
+        const result = await deviceSyncService.heartbeat(deviceId, organizationId, req.body, wanIp);
         res.json({ success: true, data: result });
     } catch (err) { next(err); }
 }

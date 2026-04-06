@@ -7,6 +7,7 @@ import { uploadMiddleware } from './media.upload';
 import { listMediaSchema } from './media.schema';
 import { AppError } from '../../shared/middleware/error.middleware';
 import config from '../../config';
+import { logAction } from '../action-history/action-history.service';
 
 
 // GET /api/media
@@ -38,6 +39,7 @@ export function handleUpload(req: Request, res: Response, next: NextFunction) {
                 req.body.title as string | undefined,
                 clientDuration,
             );
+            logAction(req.user!.organizationId, req.user!.userId, 'CREATE', 'MEDIA', media.id, media.title).catch(() => {});
             res.status(201).json({
                 success: true,
                 message: 'Upload thành công',
@@ -76,6 +78,7 @@ export async function getMediaById(req: Request, res: Response, next: NextFuncti
 export async function updateMedia(req: Request, res: Response, next: NextFunction) {
     try {
         const media = await mediaService.updateMedia(req.params.id as string, req.user!.organizationId, req.body);
+        logAction(req.user!.organizationId, req.user!.userId, 'UPDATE', 'MEDIA', media.id, media.title).catch(() => {});
         res.json({ success: true, message: 'Cập nhật thành công', data: media });
     } catch (err) { next(err); }
 }
@@ -83,7 +86,8 @@ export async function updateMedia(req: Request, res: Response, next: NextFunctio
 // DELETE /api/media/:id
 export async function deleteMedia(req: Request, res: Response, next: NextFunction) {
     try {
-        await mediaService.deleteMedia(req.params.id as string, req.user!.organizationId);
+        const { title } = await mediaService.deleteMedia(req.params.id as string, req.user!.organizationId);
+        logAction(req.user!.organizationId, req.user!.userId, 'DELETE', 'MEDIA', req.params.id as string, title).catch(() => {});
         res.json({ success: true, message: 'Xoá media thành công' });
     } catch (err) { next(err); }
 }

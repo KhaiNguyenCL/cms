@@ -12,7 +12,7 @@ import {
     KeyboardArrowDown, KeyboardArrowUp, CheckCircle, Cancel,
     Storage, PowerSettingsNew, ManageAccounts, AddCircle, WorkspacePremium,
     Visibility, VisibilityOff, Add, DeleteForever, AdminPanelSettings,
-    Edit, Block, CheckCircleOutline,
+    Edit, Block, CheckCircleOutline, Lock, Shield,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from '@store/hooks';
@@ -51,24 +51,8 @@ function StatChip({ icon, value, color }: { icon: React.ReactNode; value: string
 
 // ── Expanded detail row ───────────────────────────────────────────────────────
 
-const LICENSE_STATUS_COLOR: Record<string, 'primary' | 'success' | 'warning' | 'error'> = {
-    TRIAL: 'primary',
-    ACTIVE: 'success',
-    WARNING: 'warning',
-    SUSPENDED: 'error',
-    EXPIRED: 'error',
-};
-const LICENSE_STATUS_LABEL: Record<string, string> = {
-    TRIAL: 'Dùng thử',
-    ACTIVE: 'Hoạt động',
-    WARNING: 'Sắp hết',
-    SUSPENDED: 'Tạm ngừng',
-    EXPIRED: 'Hết hạn',
-};
 
 function DetailRow({ org }: { org: OrgWithStats }) {
-    const licenseColor = LICENSE_STATUS_COLOR[org.licenseStatus ?? 'TRIAL'] ?? 'default';
-    const licenseLabel = LICENSE_STATUS_LABEL[org.licenseStatus ?? 'TRIAL'] ?? org.licenseStatus;
     return (
         <Box sx={{ px: 3, py: 2, bgcolor: 'action.hover' }}>
             <Stack direction="row" gap={3} flexWrap="wrap">
@@ -87,14 +71,8 @@ function DetailRow({ org }: { org: OrgWithStats }) {
                     <Typography variant="body2" fontWeight={600}>{fmtDate(org.createdAt)}</Typography>
                 </Box>
                 <Box>
-                    <Typography variant="caption" color="text.secondary" display="block" mb={0.5}>License</Typography>
-                    <Stack direction="row" alignItems="center" gap={1}>
-                        <Chip label={licenseLabel} color={licenseColor} size="small" sx={{ fontWeight: 700, fontSize: '0.7rem' }} />
-                        <Typography variant="body2" color="text.secondary">
-                            {org.pointsRemaining ?? 0}/{org.pointsTotal ?? 0} pts
-                            {(org.licensedDevices ?? 0) > 0 && ` (~${org.daysRemaining ?? 0} ngày)`}
-                        </Typography>
-                    </Stack>
+                    <Typography variant="caption" color="text.secondary" display="block" mb={0.5}>Thiết bị được cấp phép</Typography>
+                    <Typography variant="body2" fontWeight={600}>{org.licensedDevices ?? 0} / {org.totalDevices}</Typography>
                 </Box>
             </Stack>
         </Box>
@@ -272,98 +250,6 @@ function CreateOrgDialog({ onClose }: { onClose: () => void }) {
     );
 }
 
-// ── Add Points dialog ─────────────────────────────────────────────────────────
-
-function AddPointsDialog({ org, onClose }: { org: OrgWithStats; onClose: () => void }) {
-    const qc = useQueryClient();
-    const dispatch = useAppDispatch();
-    const [points, setPoints] = useState('100');
-    const [type, setType] = useState<'PURCHASE' | 'ADJUSTMENT'>('PURCHASE');
-    const [description, setDescription] = useState('');
-
-    const mutation = useMutation({
-        mutationFn: () => organizationsApi.addPoints(org.id, {
-            points: parseInt(points),
-            type,
-            description,
-        }),
-        onSuccess: () => {
-            qc.invalidateQueries({ queryKey: ['super-admin-orgs'] });
-            dispatch(pushToast({ severity: 'success', message: `Đã thêm ${points} points cho "${org.name}"` }));
-            onClose();
-        },
-        onError: (e: any) => {
-            dispatch(pushToast({ severity: 'error', message: e?.response?.data?.message ?? 'Thêm points thất bại' }));
-        },
-    });
-
-    const remaining = (org.pointsTotal ?? 0) - (org.pointsUsed ?? 0);
-    const valid = parseInt(points) > 0 && description.trim().length > 0;
-
-    return (
-        <Dialog open onClose={onClose} maxWidth="xs" fullWidth>
-            <DialogTitle fontWeight={700}>
-                <Stack direction="row" alignItems="center" gap={1}>
-                    <WorkspacePremium color="primary" />
-                    Thêm points — {org.name}
-                </Stack>
-            </DialogTitle>
-            <DialogContent>
-                <Typography variant="body2" color="text.secondary" mb={2}>
-                    Hiện tại: <strong>{remaining}</strong>/{org.pointsTotal ?? 0} points còn lại
-                    {' '}
-                    <Chip label={LICENSE_STATUS_LABEL[org.licenseStatus ?? 'TRIAL'] ?? org.licenseStatus}
-                        color={LICENSE_STATUS_COLOR[org.licenseStatus ?? 'TRIAL'] ?? 'default'}
-                        size="small" sx={{ fontWeight: 700, fontSize: '0.7rem', ml: 0.5 }} />
-                </Typography>
-                <Stack spacing={2.5}>
-                    <TextField
-                        label="Số points"
-                        type="number"
-                        value={points}
-                        onChange={e => setPoints(e.target.value)}
-                        inputProps={{ min: 1, max: 100000 }}
-                        size="small"
-                        fullWidth
-                    />
-                    <TextField
-                        label="Loại giao dịch"
-                        select
-                        value={type}
-                        onChange={e => setType(e.target.value as 'PURCHASE' | 'ADJUSTMENT')}
-                        size="small"
-                        fullWidth
-                        SelectProps={{ native: true }}
-                    >
-                        <option value="PURCHASE">PURCHASE (Nạp tiền)</option>
-                        <option value="ADJUSTMENT">ADJUSTMENT (Điều chỉnh)</option>
-                    </TextField>
-                    <TextField
-                        label="Ghi chú"
-                        value={description}
-                        onChange={e => setDescription(e.target.value)}
-                        size="small"
-                        fullWidth
-                        required
-                        placeholder="VD: Nạp gói 1 năm 365 thiết bị"
-                    />
-                </Stack>
-            </DialogContent>
-            <DialogActions sx={{ px: 3, pb: 2 }}>
-                <Button onClick={onClose} size="small">Hủy</Button>
-                <Button
-                    variant="contained"
-                    size="small"
-                    disabled={!valid || mutation.isPending}
-                    onClick={() => mutation.mutate()}
-                    startIcon={<AddCircle />}
-                >
-                    {mutation.isPending ? 'Đang thêm…' : 'Thêm Points'}
-                </Button>
-            </DialogActions>
-        </Dialog>
-    );
-}
 
 // ── Confirm toggle dialog ─────────────────────────────────────────────────────
 
@@ -468,11 +354,10 @@ function DeleteOrgDialog({ org, onClose }: { org: OrgWithStats; onClose: () => v
 
 // ── Row ───────────────────────────────────────────────────────────────────────
 
-function OrgRow({ org, onToggle, onManage, onAddPoints, onDelete, currentOrgId }: {
+function OrgRow({ org, onToggle, onManage, onDelete, currentOrgId }: {
     org: OrgWithStats;
     onToggle: (org: OrgWithStats) => void;
     onManage: (org: OrgWithStats) => void;
-    onAddPoints: (org: OrgWithStats) => void;
     onDelete: (org: OrgWithStats) => void;
     currentOrgId?: string;
 }) {
@@ -555,11 +440,7 @@ function OrgRow({ org, onToggle, onManage, onAddPoints, onDelete, currentOrgId }
                         >
                             {managingOrgId === org.id ? 'Đang quản lý' : 'Quản lý'}
                         </Button>
-                        <Tooltip title="Thêm points">
-                            <IconButton size="small" color="primary" onClick={() => onAddPoints(org)}>
-                                <AddCircle fontSize="small" />
-                            </IconButton>
-                        </Tooltip>
+
                         <Tooltip title={org.id === currentOrgId ? 'Không thể tắt tổ chức của chính mình' : org.isActive ? 'Tắt tổ chức' : 'Bật tổ chức'}>
                             <span>
                                 <IconButton
@@ -664,16 +545,84 @@ function CreatePlatformAdminDialog({ onClose }: { onClose: () => void }) {
     );
 }
 
+function ChangePasswordDialog({ admin, onClose }: { admin: PlatformAdmin; onClose: () => void }) {
+    const dispatch = useAppDispatch();
+    const qc = useQueryClient();
+    const [pw, setPw] = useState('');
+    const [confirm, setConfirm] = useState('');
+    const [show, setShow] = useState(false);
+
+    const mutation = useMutation({
+        mutationFn: () => platformAuthApi.updateAdmin(admin.id, { password: pw }),
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ['platform-admins'] });
+            dispatch(pushToast({ severity: 'success', message: `Đã đổi mật khẩu "${admin.name}"` }));
+            onClose();
+        },
+        onError: (e: any) => dispatch(pushToast({ severity: 'error', message: e?.response?.data?.message ?? 'Đổi mật khẩu thất bại' })),
+    });
+
+    const valid = pw.length >= 8 && pw === confirm;
+
+    return (
+        <Dialog open onClose={onClose} maxWidth="xs" fullWidth>
+            <DialogTitle fontWeight={700}>
+                <Stack direction="row" alignItems="center" gap={1}>
+                    <Lock color="warning" />
+                    Đổi mật khẩu — {admin.name}
+                </Stack>
+            </DialogTitle>
+            <DialogContent dividers>
+                <Stack spacing={2.5} pt={0.5}>
+                    <TextField
+                        label="Mật khẩu mới" type={show ? 'text' : 'password'}
+                        value={pw} onChange={e => setPw(e.target.value)}
+                        fullWidth size="small" autoFocus helperText="Ít nhất 8 ký tự"
+                        InputProps={{
+                            endAdornment: (
+                                <InputAdornment position="end">
+                                    <IconButton size="small" onClick={() => setShow(s => !s)} edge="end">
+                                        {show ? <VisibilityOff fontSize="small" /> : <Visibility fontSize="small" />}
+                                    </IconButton>
+                                </InputAdornment>
+                            ),
+                        }}
+                    />
+                    <TextField
+                        label="Nhập lại mật khẩu" type={show ? 'text' : 'password'}
+                        value={confirm} onChange={e => setConfirm(e.target.value)}
+                        fullWidth size="small"
+                        error={confirm.length > 0 && pw !== confirm}
+                        helperText={confirm.length > 0 && pw !== confirm ? 'Mật khẩu không khớp' : ''}
+                    />
+                </Stack>
+            </DialogContent>
+            <DialogActions sx={{ px: 3, pb: 2 }}>
+                <Button onClick={onClose} size="small">Hủy</Button>
+                <Button variant="contained" color="warning" size="small"
+                    disabled={!valid || mutation.isPending}
+                    onClick={() => mutation.mutate()}>
+                    {mutation.isPending ? 'Đang lưu…' : 'Đổi mật khẩu'}
+                </Button>
+            </DialogActions>
+        </Dialog>
+    );
+}
+
 function PlatformAdminsSection({ currentAdminId }: { currentAdminId?: string }) {
     const qc = useQueryClient();
     const dispatch = useAppDispatch();
     const [createOpen, setCreateOpen] = useState(false);
+    const [changePwTarget, setChangePwTarget] = useState<PlatformAdmin | null>(null);
 
     const { data: admins = [], isLoading } = useQuery({
         queryKey: ['platform-admins'],
         queryFn: platformAuthApi.listAdmins,
         staleTime: 60_000,
     });
+
+    const currentAdmin = admins.find(a => a.id === currentAdminId);
+    const iCurrentRoot = currentAdmin?.isRoot ?? false;
 
     const toggleMutation = useMutation({
         mutationFn: (admin: PlatformAdmin) => platformAuthApi.updateAdmin(admin.id, { isActive: !admin.isActive }),
@@ -696,6 +645,18 @@ function PlatformAdminsSection({ currentAdminId }: { currentAdminId?: string }) 
             dispatch(pushToast({ severity: 'error', message: e?.response?.data?.message ?? 'Xóa thất bại' }));
         },
     });
+
+    const canChangePassword = (target: PlatformAdmin) => {
+        if (target.id === currentAdminId) return true;          // can change own password
+        if (target.isRoot) return false;                         // cannot change root's password
+        return true;                                             // can change others' password
+    };
+
+    const canToggleActive = (target: PlatformAdmin) =>
+        target.id !== currentAdminId && !target.isRoot;
+
+    const canDelete = (target: PlatformAdmin) =>
+        target.id !== currentAdminId && !target.isRoot;
 
     return (
         <Box>
@@ -743,20 +704,29 @@ function PlatformAdminsSection({ currentAdminId }: { currentAdminId?: string }) 
                                         </TableRow>
                                     )
                                     : admins.map(admin => (
-                                        <TableRow key={admin.id} hover>
+                                        <TableRow key={admin.id} hover
+                                            sx={{ bgcolor: admin.isRoot ? alpha('#c0392b', 0.04) : undefined }}>
                                             <TableCell>
                                                 <Stack direction="row" alignItems="center" gap={1}>
                                                     <Box sx={{
                                                         width: 30, height: 30, borderRadius: 2, flexShrink: 0,
-                                                        bgcolor: alpha('#c0392b', 0.12),
+                                                        bgcolor: admin.isRoot ? alpha('#c0392b', 0.18) : alpha('#c0392b', 0.10),
                                                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                                                         color: 'error.main', fontSize: 13, fontWeight: 700,
                                                     }}>
-                                                        {admin.name[0]?.toUpperCase()}
+                                                        {admin.isRoot
+                                                            ? <Shield sx={{ fontSize: 16 }} />
+                                                            : admin.name[0]?.toUpperCase()
+                                                        }
                                                     </Box>
                                                     <Typography variant="body2" fontWeight={600}>{admin.name}</Typography>
+                                                    {admin.isRoot && (
+                                                        <Chip label="Root" size="small" color="error" variant="filled"
+                                                            sx={{ height: 18, fontSize: '0.62rem', fontWeight: 700 }} />
+                                                    )}
                                                     {admin.id === currentAdminId && (
-                                                        <Chip label="Bạn" size="small" color="error" sx={{ height: 18, fontSize: '0.65rem' }} />
+                                                        <Chip label="Bạn" size="small" color="default"
+                                                            sx={{ height: 18, fontSize: '0.62rem' }} />
                                                     )}
                                                 </Stack>
                                             </TableCell>
@@ -766,7 +736,7 @@ function PlatformAdminsSection({ currentAdminId }: { currentAdminId?: string }) 
                                             <TableCell>
                                                 <Chip
                                                     size="small"
-                                                    label={admin.isActive ? 'Active' : 'Inactive'}
+                                                    label={admin.isRoot ? 'Root · Active' : admin.isActive ? 'Active' : 'Inactive'}
                                                     color={admin.isActive ? 'success' : 'default'}
                                                     icon={admin.isActive
                                                         ? <CheckCircle sx={{ fontSize: '12px !important' }} />
@@ -783,25 +753,48 @@ function PlatformAdminsSection({ currentAdminId }: { currentAdminId?: string }) 
                                             </TableCell>
                                             <TableCell align="right">
                                                 <Stack direction="row" gap={0.5} justifyContent="flex-end">
-                                                    <Tooltip title={admin.id === currentAdminId ? 'Không thể tắt chính mình' : admin.isActive ? 'Tắt' : 'Bật'}>
+                                                    {/* Change password */}
+                                                    <Tooltip title={
+                                                        !canChangePassword(admin)
+                                                            ? 'Không thể đổi mật khẩu tài khoản root'
+                                                            : 'Đổi mật khẩu'
+                                                    }>
                                                         <span>
-                                                            <IconButton
-                                                                size="small"
+                                                            <IconButton size="small" color="warning"
+                                                                disabled={!canChangePassword(admin)}
+                                                                onClick={() => setChangePwTarget(admin)}>
+                                                                <Lock fontSize="small" />
+                                                            </IconButton>
+                                                        </span>
+                                                    </Tooltip>
+                                                    {/* Toggle active */}
+                                                    <Tooltip title={
+                                                        admin.isRoot ? 'Tài khoản root không thể tắt' :
+                                                        admin.id === currentAdminId ? 'Không thể tắt chính mình' :
+                                                        admin.isActive ? 'Tắt' : 'Bật'
+                                                    }>
+                                                        <span>
+                                                            <IconButton size="small"
                                                                 color={admin.isActive ? 'error' : 'success'}
                                                                 onClick={() => toggleMutation.mutate(admin)}
-                                                                disabled={admin.id === currentAdminId}
-                                                            >
+                                                                disabled={!canToggleActive(admin)}>
                                                                 {admin.isActive ? <Block fontSize="small" /> : <CheckCircleOutline fontSize="small" />}
                                                             </IconButton>
                                                         </span>
                                                     </Tooltip>
-                                                    <Tooltip title={admin.id === currentAdminId ? 'Không thể xóa chính mình' : 'Xóa'}>
+                                                    {/* Delete */}
+                                                    <Tooltip title={
+                                                        admin.isRoot ? 'Không thể xóa tài khoản root' :
+                                                        admin.id === currentAdminId ? 'Không thể xóa chính mình' :
+                                                        'Xóa'
+                                                    }>
                                                         <span>
-                                                            <IconButton
-                                                                size="small" color="error"
-                                                                onClick={() => deleteMutation.mutate(admin.id)}
-                                                                disabled={admin.id === currentAdminId || deleteMutation.isPending}
-                                                            >
+                                                            <IconButton size="small" color="error"
+                                                                onClick={() => {
+                                                                    if (!window.confirm(`Xóa admin "${admin.name}"?`)) return;
+                                                                    deleteMutation.mutate(admin.id);
+                                                                }}
+                                                                disabled={!canDelete(admin) || deleteMutation.isPending}>
                                                                 <DeleteForever fontSize="small" />
                                                             </IconButton>
                                                         </span>
@@ -817,6 +810,7 @@ function PlatformAdminsSection({ currentAdminId }: { currentAdminId?: string }) 
             </Card>
 
             {createOpen && <CreatePlatformAdminDialog onClose={() => setCreateOpen(false)} />}
+            {changePwTarget && <ChangePasswordDialog admin={changePwTarget} onClose={() => setChangePwTarget(null)} />}
         </Box>
     );
 }
@@ -875,7 +869,7 @@ export default function SuperAdminPage() {
     const isPlatformAdmin = useAppSelector(s => s.auth.isPlatformAdmin);
     const platformAdmin = useAppSelector(s => s.auth.platformAdmin);
     const [confirmOrg, setConfirmOrg] = useState<OrgWithStats | null>(null);
-    const [addPointsOrg, setAddPointsOrg] = useState<OrgWithStats | null>(null);
+
     const [deleteOrg, setDeleteOrg] = useState<OrgWithStats | null>(null);
     const [createOrgOpen, setCreateOrgOpen] = useState(false);
 
@@ -885,8 +879,7 @@ export default function SuperAdminPage() {
         navigate('/dashboard');
     };
 
-    // Allow SUPER_ADMIN users and platform admins
-    if (!isPlatformAdmin && currentUser?.role !== 'SUPER_ADMIN') {
+    if (currentUser?.role !== 'SUPER_ADMIN') {
         navigate('/dashboard', { replace: true });
         return null;
     }
@@ -983,7 +976,7 @@ export default function SuperAdminPage() {
                                         </TableRow>
                                     )
                                     : orgs.map(org => (
-                                        <OrgRow key={org.id} org={org} onToggle={setConfirmOrg} onManage={handleManage} onAddPoints={setAddPointsOrg} onDelete={setDeleteOrg} currentOrgId={currentUser?.organizationId} />
+                                        <OrgRow key={org.id} org={org} onToggle={setConfirmOrg} onManage={handleManage} onDelete={setDeleteOrg} currentOrgId={currentUser?.organizationId} />
                                     ))
                             }
                         </TableBody>
@@ -1000,13 +993,6 @@ export default function SuperAdminPage() {
                 />
             )}
 
-            {/* Add points dialog */}
-            {addPointsOrg && (
-                <AddPointsDialog
-                    org={addPointsOrg}
-                    onClose={() => setAddPointsOrg(null)}
-                />
-            )}
 
             {/* Create org dialog */}
             {createOrgOpen && (
@@ -1021,11 +1007,11 @@ export default function SuperAdminPage() {
                 />
             )}
 
-            {/* Platform Admins section — visible to platform admins only */}
-            {isPlatformAdmin && (
+            {/* Platform Admins section — visible to root account only */}
+            {currentUser?.isRoot && (
                 <Box mt={4}>
                     <Divider sx={{ mb: 4 }} />
-                    <PlatformAdminsSection currentAdminId={platformAdmin?.id} />
+                    <PlatformAdminsSection currentAdminId={currentUser.id} />
                 </Box>
             )}
         </Box>

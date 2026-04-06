@@ -288,6 +288,12 @@ export function pushCommandToDevice(
  * Broadcast a content/schedule update to all devices in an org.
  * Called after admin creates/updates a schedule or playlist.
  */
+/** Emit any event to all admin/manager clients of an org (fire-and-forget helper). */
+export function emitToAdmins(orgId: string, event: string, data?: Record<string, unknown>): void {
+    if (!io) return;
+    io.of('/admin').to(orgRoom(orgId)).emit(event, { ...data, timestamp: new Date().toISOString() });
+}
+
 export function broadcastContentUpdate(orgId: string, eventType: 'content.update' | 'schedule.update', data?: Record<string, unknown>): void {
     if (!io) return;
     // Notify all admin dashboard clients
@@ -338,7 +344,8 @@ export type DeviceCommand =
     | 'command.reload_content'
     | 'command.clear_cache'
     | 'content.update'
-    | 'schedule.update';
+    | 'schedule.update'
+    | 'OTA_UPDATE';
 
 export interface DeviceStatusPayload {
     status: 'ONLINE' | 'OFFLINE' | 'ERROR';

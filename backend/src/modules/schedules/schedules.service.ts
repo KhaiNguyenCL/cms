@@ -266,14 +266,15 @@ export async function updateSchedule(
 
 // ─── Delete schedule ──────────────────────────────────────────────────────────
 
-export async function deleteSchedule(scheduleId: string, organizationId: string): Promise<void> {
-    const result = await query(
-        `DELETE FROM schedules WHERE id = $1 AND "organizationId" = $2 RETURNING id`,
+export async function deleteSchedule(scheduleId: string, organizationId: string): Promise<{ name: string }> {
+    const result = await query<{ id: string; name: string }>(
+        `DELETE FROM schedules WHERE id = $1 AND "organizationId" = $2 RETURNING id, name`,
         [scheduleId, organizationId]
     );
     if (!result[0]) throw new AppError(404, 'Schedule không tồn tại');
     logger.info('Schedule deleted', { scheduleId });
     invalidateContentHashForOrg(organizationId, 'CONTENT').catch(() => {}); // fire-and-forget
+    return { name: result[0].name };
 }
 
 // ─── Get active schedules for a device (used by device-sync) ─────────────────

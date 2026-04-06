@@ -595,9 +595,6 @@ function EditSiteDialog({ site, open, onClose }: EditSiteDialogProps) {
                                         <Box sx={{ flex: 1 }}>
                                             <Stack direction="row" alignItems="center" spacing={0.5}>
                                                 <Typography variant="body2" fontWeight={500}>{d.name}</Typography>
-                                                {d.role === 'MASTER' && (
-                                                    <Chip label="MASTER" size="small" color="warning" sx={{ fontSize: '0.6rem', height: 14, fontWeight: 700 }} />
-                                                )}
                                             </Stack>
                                             {d.location && (
                                                 <Typography variant="caption" color="text.secondary">{d.location}</Typography>

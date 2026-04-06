@@ -7,34 +7,11 @@ export interface Organization {
     slug: string;
     settings: Record<string, unknown>;
     isActive: boolean;
-    pointsTotal: number;
-    pointsUsed: number;
-    licenseStatus: string;
-    suspendedAt: string | null;
+    pkg12m: number;
+    pkg24m: number;
+    pkg36m: number;
     createdAt: string;
     updatedAt: string;
-}
-
-export interface LicenseTransaction {
-    id: string;
-    organizationId: string;
-    type: string;
-    points: number;
-    deviceCount: number | null;
-    description: string | null;
-    createdById: string | null;
-    createdAt: string;
-}
-
-export interface LicenseInfo {
-    pointsTotal: number;
-    pointsUsed: number;
-    pointsRemaining: number;
-    licenseStatus: string;
-    suspendedAt: string | null;
-    licensedDevices: number;
-    daysRemaining: number;
-    recentTransactions: LicenseTransaction[];
 }
 
 
@@ -51,8 +28,6 @@ export interface OrgStats {
 
 export interface OrgWithStats extends Organization, OrgStats {
     licensedDevices: number;
-    pointsRemaining: number;
-    daysRemaining: number;
 }
 
 export const organizationsApi = {
@@ -84,20 +59,6 @@ export const organizationsApi = {
     },
 
 
-    getLicenseInfo: async () => {
-        const { data } = await apiClient.get<ApiResponse<LicenseInfo>>('/organizations/me/license');
-        return data.data;
-    },
-
-    getOrgLicenseInfo: async (id: string) => {
-        const { data } = await apiClient.get<ApiResponse<LicenseInfo>>(`/organizations/${id}/license`);
-        return data.data;
-    },
-
-    addPoints: async (id: string, payload: { points: number; type?: string; description: string }) => {
-        const { data } = await apiClient.post<ApiResponse<LicenseInfo>>(`/organizations/${id}/license/add-points`, payload);
-        return data.data;
-    },
 
     updateDevicePin: async (pin: string) => {
         const { data } = await apiClient.patch<ApiResponse<null>>('/organizations/me/device-pin', { pin });

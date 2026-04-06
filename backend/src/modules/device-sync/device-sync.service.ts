@@ -78,9 +78,7 @@ interface DeviceRow {
     settings: Record<string, unknown>;
 }
 
-interface OrgLicenseRow {
-    licenseStatus: string;
-}
+// (org-level license removed — license is now per-device via licenseExpiresAt)
 
 // ─── Content Hash ─────────────────────────────────────────────────────────────
 // Tính SHA-256 từ toàn bộ nội dung active của thiết bị (schedules + playlists + media).
@@ -299,19 +297,18 @@ async function getCachedOrgLicense(deviceId: string, organizationId: string) {
     const key = RedisKeys.deviceLicenseCache(deviceId);
     const cached = await redis.get(key);
     if (cached) {
-        try { return JSON.parse(cached) as { licenseStatus: string; isLicensed: boolean; deviceAdminPin: string }; }
+        try { return JSON.parse(cached) as { isLicensed: boolean; deviceAdminPin: string }; }
         catch { /* corrupt entry — fall through */ }
     }
 
-    const row = await queryOne<{ licenseStatus: string; isLicensed: boolean; deviceAdminPin: string }>(
-        `SELECT o."licenseStatus", o."deviceAdminPin", d."isLicensed"
+    const row = await queryOne<{ isLicensed: boolean; deviceAdminPin: string }>(
+        `SELECT o."deviceAdminPin", d."isLicensed"
          FROM organizations o
          JOIN devices d ON d.id = $1
          WHERE o.id = $2`,
         [deviceId, organizationId],
     );
     const result = {
-        licenseStatus:  row?.licenseStatus  ?? 'ACTIVE',
         isLicensed:     row?.isLicensed     ?? true,
         deviceAdminPin: row?.deviceAdminPin ?? '0000',
     };
@@ -458,7 +455,7 @@ export async function getBrowserToken(deviceId: string): Promise<{
 
 // ─── 2. Heartbeat — update status + upsert device_health ─────────────────────
 
-export async function heartbeat(deviceId: string, organizationId: string, data: HeartbeatBody): Promise<{
+export async function heartbeat(deviceId: string, organizationId: string, data: HeartbeatBody, wanIp?: string | null): Promise<{
     deviceId: string;
     serverTime: string;
     syncRequired: boolean;
@@ -469,8 +466,8 @@ export async function heartbeat(deviceId: string, organizationId: string, data: 
     // Update device lastSeen + status, fetch lastOfflineAt for auto-start log
     const newStatus = data.isScreenOn === false ? 'SLEEP' : 'ONLINE';
 
-    const prevDevice = await queryOne<{ status: string; lastOfflineAt: string | null }>(
-        `SELECT status, "lastOfflineAt" FROM devices WHERE id = $1 AND "organizationId" = $2`,
+    const prevDevice = await queryOne<{ status: string; lastOfflineAt: string | null; appVersion: string | null }>(
+        `SELECT status, "lastOfflineAt", "appVersion" FROM devices WHERE id = $1 AND "organizationId" = $2`,
         [deviceId, organizationId]
     );
 
@@ -491,6 +488,14 @@ export async function heartbeat(deviceId: string, organizationId: string, data: 
         values
     );
 
+    // Log appVersion change to software history
+    if (data.appVersion && prevDevice && data.appVersion !== prevDevice.appVersion) {
+        import('../software-history/software-history.service')
+            .then(({ logVersionChange }) =>
+                logVersionChange(deviceId, organizationId, prevDevice.appVersion, data.appVersion!, 'HEARTBEAT')
+            ).catch(() => {});
+    }
+
     // Auto-log when device comes back ONLINE/SLEEP after being OFFLINE/APP_EXIT (for auto-start tracking)
     if ((prevDevice?.status === 'OFFLINE' || prevDevice?.status === 'APP_EXIT') && prevDevice.lastOfflineAt) {
         const offlineDurationMs = Date.now() - new Date(prevDevice.lastOfflineAt).getTime();
@@ -498,6 +503,10 @@ export async function heartbeat(deviceId: string, organizationId: string, data: 
         const msg = `✅ Online trở lại sau ${mins} phút offline`;
         import('../devices/devices.service')
             .then(({ autoLogDeviceEvent }) => autoLogDeviceEvent(deviceId, organizationId, msg))
+            .catch(() => {});
+        // Log ONLINE event to status history
+        import('../alarm/alarm.service')
+            .then(({ logStatusEvent }) => logStatusEvent(deviceId, organizationId, 'ONLINE', 'NETWORK'))
             .catch(() => {});
     }
 
@@ -510,8 +519,8 @@ export async function heartbeat(deviceId: string, organizationId: string, data: 
         await query(
             `INSERT INTO device_health (id, "deviceId", "cpuUsage", "memoryUsage", "storageTotal", "storageUsed",
                                         "networkType", "isOnline", "ipAddress", "macAddress", "heapMemory", "networkConnected",
-                                        "processCpuPercent", "reportedAt")
-             VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, $6, true, $7, $8, $9, $10, $11, NOW())`,
+                                        "processCpuPercent", "wanIp", "reportedAt")
+             VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, $6, true, $7, $8, $9, $10, $11, $12, NOW())`,
             [
                 deviceId,
                 data.cpuUsage ?? null,
@@ -524,6 +533,7 @@ export async function heartbeat(deviceId: string, organizationId: string, data: 
                 data.heapMemory ?? null,
                 data.networkConnected ?? null,
                 data.processCpuPercent ?? null,
+                wanIp ?? null,
             ]
         );
         await redis.setex(healthThrottleKey, HEALTH_WRITE_INTERVAL_S, '1');
@@ -538,9 +548,9 @@ export async function heartbeat(deviceId: string, organizationId: string, data: 
 
     // Get org license status + device PIN — served from Redis cache (60s TTL).
     const orgLicense = await getCachedOrgLicense(deviceId, organizationId);
-    const licenseStatus   = orgLicense.licenseStatus;
     const isDeviceLicensed = orgLicense.isLicensed;
-    const deviceAdminPin  = orgLicense.deviceAdminPin;
+    const licenseStatus    = isDeviceLicensed ? 'ACTIVE' : 'LICENSE_REQUIRED';
+    const deviceAdminPin   = orgLicense.deviceAdminPin;
 
     // Store download status / contentReady if device reported them
     if (data.downloadStatus !== undefined || data.contentReady !== undefined) {
@@ -581,22 +591,6 @@ export async function getDeviceSync(deviceId: string, organizationId: string) {
 
     // Cascade: device.timezone → site.timezone → Asia/Bangkok
     const effectiveTimezone = device.timezone ?? device.siteTimezone ?? 'Asia/Bangkok';
-
-    // Check org license
-    const org = await queryOne<OrgLicenseRow>(
-        `SELECT "licenseStatus" FROM organizations WHERE id = $1`,
-        [organizationId]
-    );
-    if (org?.licenseStatus === 'EXPIRED') {
-        return {
-            deviceId,
-            organizationId,
-            serverTime: new Date().toISOString(),
-            licenseStatus: 'LICENSE_EXPIRED',
-            message: 'Giấy phép đã hết hạn. Liên hệ admin để gia hạn.',
-            schedules: [],
-        };
-    }
 
     // Check device license
     if (!device.isLicensed) {
@@ -761,11 +755,6 @@ export async function getDeviceSync(deviceId: string, organizationId: string) {
         contentHash,
         schedules: schedulesWithContent,
         syncGroup: syncGroup ?? undefined,
-        syncConfig: {
-            role: (device.role ?? 'STANDALONE') as 'MASTER' | 'SLAVE' | 'STANDALONE',
-            broadcastPort: 9876,
-            siteId: device.storeId ?? null,
-        },
     };
 }
 
@@ -849,5 +838,19 @@ export async function markDeviceOffline(
          VALUES (gen_random_uuid()::text, $1, NULL, NULL, NULL, NULL, NULL, false, NOW())`,
         [deviceId]
     );
+    // Log OFFLINE event + send alert email
+    const reason = status === 'APP_EXIT' ? 'SOFTWARE' : 'NETWORK';
+    import('../alarm/alarm.service')
+        .then(async ({ logStatusEvent, sendOfflineAlert }) => {
+            await logStatusEvent(deviceId, organizationId, status, reason);
+            const dev = await queryOne<{ name: string }>(
+                `SELECT name FROM devices WHERE id = $1`, [deviceId]
+            );
+            if (dev) {
+                sendOfflineAlert(organizationId, dev.name, reason, new Date().toISOString())
+                    .catch(() => {});
+            }
+        })
+        .catch(() => {});
     logger.info('Device marked offline', { deviceId });
 }

@@ -22,6 +22,7 @@ interface UserRow {
     role: string;
     status: string;
     organization_id: string;
+    is_root: boolean;
     created_at: string;
     updated_at: string;
 }
@@ -33,6 +34,7 @@ export interface UserPublic {
     email: string;
     role: string;
     status: string;
+    isRoot: boolean;
     createdAt: string;
     updatedAt: string;
 }
@@ -44,6 +46,7 @@ function toPublicUser(u: UserRow): UserPublic {
         email: u.email,
         role: u.role,
         status: u.status,
+        isRoot: u.is_root ?? false,
         createdAt: u.created_at,
         updatedAt: u.updated_at,
     };
@@ -51,7 +54,7 @@ function toPublicUser(u: UserRow): UserPublic {
 
 // ─── Token helpers ────────────────────────────────────────────────────────────
 
-function signAccessToken(payload: { userId: string; organizationId: string; role: string }) {
+function signAccessToken(payload: { userId: string; organizationId: string; role: string; isRoot?: boolean }) {
     return jwt.sign({ ...payload, type: 'user' }, config.jwt.secret, { expiresIn: '2h' });
 }
 
@@ -65,6 +68,7 @@ async function generateTokenPair(user: UserRow) {
         userId: user.id,
         organizationId: user.organization_id,
         role: user.role,
+        isRoot: user.is_root ?? false,
     });
     const refreshToken = signRefreshToken(tokenId, user.id);
     await redis.set(`refresh:${tokenId}`, user.id, 'EX', REFRESH_TOKEN_TTL_SEC);
@@ -147,7 +151,7 @@ export async function login(data: LoginBody, ip: string) {
 
     const user = await queryOne<UserRow & { org_active: boolean }>(
         `SELECT u.id, u.email, u."passwordHash" as password_hash, u.role, u.status,
-                u."organizationId" as organization_id,
+                u."organizationId" as organization_id, u."isRoot" as is_root,
                 u."createdAt" as created_at, u."updatedAt" as updated_at,
                 o."isActive" as org_active
          FROM users u
@@ -198,7 +202,7 @@ export async function refreshAccessToken(refreshToken: string) {
 
     const user = await queryOne<UserRow & { org_active: boolean }>(
         `SELECT u.id, u.email, '' as password_hash, u.role, u.status,
-                u."organizationId" as organization_id,
+                u."organizationId" as organization_id, u."isRoot" as is_root,
                 u."createdAt" as created_at, u."updatedAt" as updated_at,
                 o."isActive" as org_active
          FROM users u

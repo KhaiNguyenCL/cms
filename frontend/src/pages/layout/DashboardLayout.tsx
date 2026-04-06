@@ -44,6 +44,7 @@ type NavGroup = {
     label: string;
     icon: ReactNode;
     children: NavLeaf[];
+    roles?: string[];
 };
 
 type NavEntry = NavLeaf | NavGroup;
@@ -65,22 +66,22 @@ const navStructure: NavEntry[] = [
     },
     {
         kind: 'group', id: 'history', label: 'History', icon: <History />,
+        roles: ['SUPER_ADMIN'],
         children: [
             { kind: 'item', label: 'Status Alarm', icon: <NotificationsActive />, path: '/history/alarm', roles: null },
             { kind: 'item', label: 'Content History', icon: <PlayCircleOutline />, path: '/history/content', roles: null },
             { kind: 'item', label: 'Software History', icon: <SystemUpdate />, path: '/history/software', roles: null },
-            { kind: 'item', label: 'Touch History', icon: <TouchApp />, path: '/history/touch', roles: null },
             { kind: 'item', label: 'Action History', icon: <Assignment />, path: '/history/action', roles: null },
         ],
     },
-    { kind: 'item', label: 'Analytics', icon: <BarChart />, path: '/analytics', roles: null },
-    { kind: 'item', label: 'Users', icon: <People />, path: '/users', roles: null },
-    { kind: 'item', label: 'License', icon: <WorkspacePremium />, path: '/license', roles: ['ADMIN', 'MANAGER'] },
-    { kind: 'item', label: 'Settings', icon: <Settings />, path: '/settings', roles: null },
+    { kind: 'item', label: 'Users', icon: <People />, path: '/users', roles: ['SUPER_ADMIN'] },
+    { kind: 'item', label: 'License', icon: <WorkspacePremium />, path: '/license', roles: ['ADMIN', 'MANAGER', 'SUPER_ADMIN'] },
+    { kind: 'item', label: 'Settings', icon: <Settings />, path: '/settings', roles: ['SUPER_ADMIN'] },
 ];
 
 const superAdminItems: NavLeaf[] = [
-    { kind: 'item', label: 'Super Admin', icon: <AdminPanelSettings />, path: '/super-admin' },
+    { kind: 'item', label: 'Super Admin',        icon: <AdminPanelSettings />, path: '/super-admin' },
+    { kind: 'item', label: 'License Management', icon: <WorkspacePremium />,   path: '/license-management' },
 ];
 
 // ── Label finder for AppBar ───────────────────────────────────────────────────
@@ -138,17 +139,24 @@ export default function DashboardLayout() {
         });
     };
 
-    // License info for badge (ADMIN/MANAGER only)
-    const { data: licenseInfo } = useQuery({
-        queryKey: ['org-license'],
-        queryFn: organizationsApi.getLicenseInfo,
-        enabled: user?.role === 'ADMIN' || user?.role === 'MANAGER',
+    // License stats for badge — highlight if any device expiring soon or expired
+    const { data: licenseStats } = useQuery({
+        queryKey: ['license-stats'],
+        queryFn: () => import('@api/license.api').then(m => m.default.getStats()),
+        enabled: user?.role === 'ADMIN' || user?.role === 'MANAGER' || user?.role === 'SUPER_ADMIN',
         staleTime: 5 * 60_000,
     });
-    const licenseNeedsAttention =
-        licenseInfo?.licenseStatus === 'WARNING' ||
-        licenseInfo?.licenseStatus === 'SUSPENDED' ||
-        licenseInfo?.licenseStatus === 'EXPIRED';
+    const licenseNeedsAttention = (licenseStats?.expiredDevices ?? 0) > 0 || (licenseStats?.expiringIn7 ?? 0) > 0;
+
+    // Pending purchase requests badge for SUPER_ADMIN
+    const { data: pendingRequestCount = 0 } = useQuery({
+        queryKey: ['license-requests-pending'],
+        queryFn: () => import('@api/license.api').then(m =>
+            m.default.getPurchaseRequests().then(list => list.filter(r => r.status === 'PENDING').length),
+        ),
+        enabled: user?.role === 'SUPER_ADMIN',
+        staleTime: 2 * 60_000,
+    });
 
     const queryClient = useQueryClient();
     const { socket } = useSocket();
@@ -247,7 +255,10 @@ export default function DashboardLayout() {
         if (item.roles && !(user?.role && item.roles.includes(user.role))) return null;
         const active = location.pathname.startsWith(item.path);
         const isLicenseItem = item.path === '/license';
-        const showBadge = isLicenseItem && licenseNeedsAttention;
+        const isLicenseMgmtItem = item.path === '/license-management';
+        const showBadge = (isLicenseItem && licenseNeedsAttention) || (isLicenseMgmtItem && pendingRequestCount > 0);
+        const badgeColor = isLicenseMgmtItem ? 'warning'
+            : (licenseStats?.expiringIn7 ?? 0) > 0 ? 'warning' : 'error';
 
         return (
             <Tooltip key={item.path} title={!sidebarOpen ? item.label : ''} placement="right">
@@ -270,8 +281,9 @@ export default function DashboardLayout() {
                 >
                     <ListItemIcon sx={{ minWidth: sidebarOpen ? 40 : 0, color: 'text.secondary' }}>
                         <Badge
-                            variant="dot"
-                            color={licenseInfo?.licenseStatus === 'WARNING' ? 'warning' : 'error'}
+                            badgeContent={isLicenseMgmtItem && sidebarOpen ? (pendingRequestCount || undefined) : undefined}
+                            variant={isLicenseMgmtItem && sidebarOpen ? 'standard' : 'dot'}
+                            color={badgeColor}
                             invisible={!showBadge}
                         >
                             {item.icon}
@@ -289,6 +301,7 @@ export default function DashboardLayout() {
     };
 
     const renderGroup = (group: NavGroup) => {
+        if (group.roles && !(user?.role && group.roles.includes(user.role))) return null;
         const isExpanded = expandedGroups.has(group.id);
         const isAnyChildActive = group.children.some((c) => location.pathname.startsWith(c.path));
 

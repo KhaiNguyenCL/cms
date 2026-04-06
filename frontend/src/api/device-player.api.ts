@@ -16,6 +16,24 @@ export function setDeviceToken(token: string) {
     client.defaults.headers.common['Authorization'] = `Bearer ${token}`;
 }
 
+// ─── WAN IP (fetched once via our own server, cached for session) ────────────
+// Uses /api/device/my-ip — server returns req.ip which nginx populates via
+// X-Forwarded-For. Works correctly when device connects from outside LAN.
+let _wanIpCache: string | null = null;
+let _wanIpFetching = false;
+
+export async function getWanIp(): Promise<string | null> {
+    if (_wanIpCache) return _wanIpCache;
+    if (_wanIpFetching) return null;
+    _wanIpFetching = true;
+    try {
+        const { data } = await client.get<{ data: { ip: string | null } }>('/my-ip');
+        _wanIpCache = data.data.ip ?? null;
+    } catch { /* silently skip */ }
+    _wanIpFetching = false;
+    return _wanIpCache;
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface PlaylistItemSync {
@@ -64,12 +82,6 @@ export interface SiteState {
     };
 }
 
-export interface SyncConfig {
-    role: 'MASTER' | 'SLAVE' | 'STANDALONE';
-    broadcastPort: number;
-    siteId: string | null;
-}
-
 export interface SyncResponse {
     deviceId: string;
     organizationId: string;
@@ -79,7 +91,6 @@ export interface SyncResponse {
     contentHash: string;
     schedules: ScheduleSync[];
     syncGroup?: SiteState;   // present when device belongs to an active site
-    syncConfig?: SyncConfig; // role + broadcast config (Sprint 2/3)
 }
 
 // ─── API calls ────────────────────────────────────────────────────────────────
@@ -104,9 +115,11 @@ export async function sendHeartbeat(currentContentHash?: string): Promise<{
         if (raw) healthMetrics = JSON.parse(raw);
     } catch { /* not in Android WebView — skip */ }
 
+    const wanIp = await getWanIp();
+
     const { data } = await client.post<{ data: { syncRequired: boolean; serverTime: string; licenseStatus: string; isLicensed: boolean; deviceAdminPin?: string } }>(
         '/heartbeat',
-        { currentContentHash, ...healthMetrics },
+        { currentContentHash, ...healthMetrics, ...(wanIp ? { wanIp } : {}) },
     );
     return data.data;
 }

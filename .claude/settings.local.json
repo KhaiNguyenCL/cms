@@ -45,7 +45,22 @@
       "Read(//e/cms/frontend/**)",
       "Bash(node_modules/.bin/tsc --noEmit -p backend/tsconfig.json)",
       "Bash(node_modules/.bin/tsc --noEmit)",
-      "Bash(backend/node_modules/.bin/tsc --noEmit -p backend/tsconfig.json)"
+      "Bash(backend/node_modules/.bin/tsc --noEmit -p backend/tsconfig.json)",
+      "Bash(find E:/cms/backend -name init.sql -o -name *.sql)",
+      "Bash(ls E:/cms/backend/src/shared/database/ grep -n \"device_events\\\\|offline_log\\\\|alarm\" E:/cms/backend/src/shared/database/init.sql)",
+      "Bash(find E:/cms/backend -name *.sql 2)",
+      "Bash(/dev/null grep:*)",
+      "Bash(npx tsx -e \":*)",
+      "Bash(1 __NEW_LINE_0ca6a16b7b2b5f18__ psql \"postgresql://signage_dev:dev_password123@127.0.0.1:5432/signage_cms_dev\" -c \"\\\\d schedule_assignments\")",
+      "Bash(pg_dump --version)",
+      "Bash(pg_dump \"postgresql://signage_dev:dev_password123@127.0.0.1:5432/signage_cms_dev?sslmode=disable\" --no-owner --no-privileges --format=plain --file=\"E:/cms/local_backup.sql\")",
+      "Bash(netstat -ano)",
+      "Bash(findstr :3000)",
+      "Bash(taskkill:*)",
+      "Bash(cmd:*)",
+      "Bash(findstr \":3000 \")",
+      "Bash(findstr LISTENING)",
+      "Bash(echo \"exit: $?\")"
     ],
     "additionalDirectories": [
       "E:\\player"

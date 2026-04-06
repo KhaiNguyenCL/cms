@@ -58,26 +58,6 @@ export async function setOrganizationStatus(req: Request, res: Response, next: N
 }
 
 
-// GET /api/organizations/me/license
-export async function getMyLicenseInfo(req: Request, res: Response, next: NextFunction) {
-    try {
-        const info = await orgService.getLicenseInfo(req.user!.organizationId);
-        res.json({ success: true, data: info });
-    } catch (err) {
-        next(err);
-    }
-}
-
-// GET /api/organizations/:id/license  — SUPER_ADMIN
-export async function getOrgLicenseInfo(req: Request, res: Response, next: NextFunction) {
-    try {
-        const id = req.params.id as string;
-        const info = await orgService.getLicenseInfo(id);
-        res.json({ success: true, data: info });
-    } catch (err) {
-        next(err);
-    }
-}
 
 // PATCH /api/organizations/me/device-pin  — ADMIN only
 export async function updateDevicePin(req: Request, res: Response, next: NextFunction) {
@@ -100,13 +80,3 @@ export async function deleteOrganization(req: Request, res: Response, next: Next
     }
 }
 
-// POST /api/organizations/:id/license/add-points  — SUPER_ADMIN
-export async function addPoints(req: Request, res: Response, next: NextFunction) {
-    try {
-        const id = req.params.id as string;
-        const info = await orgService.addPoints(id, req.body, req.user!.userId);
-        res.json({ success: true, message: 'Points đã được cộng thêm', data: info });
-    } catch (err) {
-        next(err);
-    }
-}

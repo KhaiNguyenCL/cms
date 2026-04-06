@@ -15,6 +15,7 @@ export interface PlatformAdmin {
     email: string;
     name: string;
     isActive: boolean;
+    isRoot: boolean;
     lastLoginAt: string | null;
     createdAt: string;
     updatedAt: string;
@@ -114,8 +115,8 @@ export async function logoutPlatformAdmin(refreshToken: string): Promise<void> {
 
 export async function listPlatformAdmins(): Promise<PlatformAdmin[]> {
     return query<PlatformAdmin>(
-        `SELECT id, email, name, "isActive", "lastLoginAt", "createdAt", "updatedAt"
-         FROM platform_admins ORDER BY "createdAt" DESC`,
+        `SELECT id, email, name, "isActive", "isRoot", "lastLoginAt", "createdAt", "updatedAt"
+         FROM platform_admins ORDER BY "isRoot" DESC, "createdAt" ASC`,
         []
     );
 }
@@ -124,28 +125,53 @@ export async function createPlatformAdmin(email: string, password: string, name:
     const existing = await queryOne(`SELECT id FROM platform_admins WHERE LOWER(email) = LOWER($1)`, [email]);
     if (existing) throw new AppError(409, 'Email đã được sử dụng');
 
+    // First admin ever → automatically becomes root
+    const rootExists = await queryOne(`SELECT id FROM platform_admins WHERE "isRoot" = true LIMIT 1`, []);
+    const isRoot = !rootExists;
+
     const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
     const result = await queryOne<PlatformAdmin>(
-        `INSERT INTO platform_admins (id, email, "passwordHash", name, "isActive", "createdAt", "updatedAt")
-         VALUES (gen_random_uuid()::text, $1, $2, $3, true, NOW(), NOW())
-         RETURNING id, email, name, "isActive", "lastLoginAt", "createdAt", "updatedAt"`,
-        [email, passwordHash, name]
+        `INSERT INTO platform_admins (id, email, "passwordHash", name, "isActive", "isRoot", "createdAt", "updatedAt")
+         VALUES (gen_random_uuid()::text, $1, $2, $3, true, $4, NOW(), NOW())
+         RETURNING id, email, name, "isActive", "isRoot", "lastLoginAt", "createdAt", "updatedAt"`,
+        [email, passwordHash, name, isRoot]
     );
     if (!result) throw new AppError(500, 'Tạo platform admin thất bại');
-    logger.info('Platform admin created', { email });
+    logger.info('Platform admin created', { email, isRoot });
     return result;
 }
 
 export async function updatePlatformAdmin(
     id: string,
-    data: { name?: string; password?: string; isActive?: boolean }
+    data: { name?: string; password?: string; isActive?: boolean },
+    requesterId: string
 ): Promise<PlatformAdmin> {
+    const target = await queryOne<{ isRoot: boolean }>(
+        `SELECT "isRoot" FROM platform_admins WHERE id = $1`, [id]
+    );
+    if (!target) throw new AppError(404, 'Platform admin không tồn tại');
+
+    // Non-root requester cannot change password or deactivate the root account
+    if (target.isRoot && requesterId !== id) {
+        const requester = await queryOne<{ isRoot: boolean }>(
+            `SELECT "isRoot" FROM platform_admins WHERE id = $1`, [requesterId]
+        );
+        if (!requester?.isRoot) {
+            throw new AppError(403, 'Không có quyền chỉnh sửa tài khoản root');
+        }
+    }
+
     const fields: string[] = [];
     const values: unknown[] = [];
     let p = 1;
 
     if (data.name !== undefined)     { fields.push(`name = $${p++}`);        values.push(data.name); }
-    if (data.isActive !== undefined) { fields.push(`"isActive" = $${p++}`);  values.push(data.isActive); }
+    if (data.isActive !== undefined) {
+        // Root account cannot be deactivated
+        if (target.isRoot) throw new AppError(400, 'Không thể vô hiệu hóa tài khoản root');
+        fields.push(`"isActive" = $${p++}`);
+        values.push(data.isActive);
+    }
     if (data.password) {
         const hash = await bcrypt.hash(data.password, BCRYPT_ROUNDS);
         fields.push(`"passwordHash" = $${p++}`);
@@ -158,7 +184,7 @@ export async function updatePlatformAdmin(
 
     const result = await queryOne<PlatformAdmin>(
         `UPDATE platform_admins SET ${fields.join(', ')} WHERE id = $${p}
-         RETURNING id, email, name, "isActive", "lastLoginAt", "createdAt", "updatedAt"`,
+         RETURNING id, email, name, "isActive", "isRoot", "lastLoginAt", "createdAt", "updatedAt"`,
         values
     );
     if (!result) throw new AppError(404, 'Platform admin không tồn tại');
@@ -167,9 +193,12 @@ export async function updatePlatformAdmin(
 
 export async function deletePlatformAdmin(id: string, requesterId: string): Promise<void> {
     if (id === requesterId) throw new AppError(400, 'Không thể xóa chính mình');
-    const result = await queryOne<{ id: string }>(
-        `DELETE FROM platform_admins WHERE id = $1 RETURNING id`, [id]
+    const target = await queryOne<{ isRoot: boolean }>(
+        `SELECT "isRoot" FROM platform_admins WHERE id = $1`, [id]
     );
-    if (!result) throw new AppError(404, 'Platform admin không tồn tại');
+    if (!target) throw new AppError(404, 'Platform admin không tồn tại');
+    if (target.isRoot) throw new AppError(400, 'Không thể xóa tài khoản root');
+
+    await queryOne<{ id: string }>(`DELETE FROM platform_admins WHERE id = $1 RETURNING id`, [id]);
     logger.info('Platform admin deleted', { id });
 }

@@ -187,6 +187,7 @@ router.patch('/:id/license', authorize('ADMIN'), devController.setDeviceLicense)
  * @access  Private (ADMIN, MANAGER)
  */
 router.get('/:id/now-playing', authorize('ADMIN', 'MANAGER'), devController.getNowPlaying);
+router.get('/:id/active-schedules', authorize('ADMIN', 'MANAGER'), devController.getActiveSchedules);
 
 /**
  * @route   GET /api/devices/:id/comments

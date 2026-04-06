@@ -205,9 +205,9 @@ export async function updateDevice(
 
 // ─── Delete device ─────────────────────────────────────────────────────────────
 
-export async function deleteDevice(deviceId: string, organizationId: string): Promise<void> {
-    const result = await query(
-        `DELETE FROM devices WHERE id = $1 AND "organizationId" = $2 RETURNING id`,
+export async function deleteDevice(deviceId: string, organizationId: string): Promise<{ name: string }> {
+    const result = await query<{ id: string; name: string }>(
+        `DELETE FROM devices WHERE id = $1 AND "organizationId" = $2 RETURNING id, name`,
         [deviceId, organizationId]
     );
     if (!result[0]) throw new AppError(404, 'Device không tồn tại');
@@ -223,6 +223,7 @@ export async function deleteDevice(deviceId: string, organizationId: string): Pr
     } catch { /* device may be offline */ }
 
     logger.info('Device deleted', { deviceId });
+    return { name: result[0].name };
 }
 
 // ─── Reset device (revoke token, clear pairing, back to OFFLINE) ──────────────
@@ -380,6 +381,8 @@ export interface DeviceHealthRow {
     macAddress: string | null;
     heapMemory: number | null;
     networkConnected: boolean | null;
+    processCpuPercent: number | null;
+    wanIp: string | null;
     reportedAt: string | null;
 }
 
@@ -392,7 +395,8 @@ export async function getDeviceHealth(deviceId: string, organizationId: string):
 
     return queryOne<DeviceHealthRow>(
         `SELECT "cpuUsage", "memoryUsage", "storageTotal", "storageUsed", "networkType",
-                "ipAddress", "macAddress", "heapMemory", "networkConnected", "reportedAt"
+                "ipAddress", "macAddress", "heapMemory", "networkConnected",
+                "processCpuPercent", "wanIp", "reportedAt"
          FROM device_health
          WHERE "deviceId" = $1 AND "isOnline" = true
          ORDER BY "reportedAt" DESC

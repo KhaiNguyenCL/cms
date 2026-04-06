@@ -28,6 +28,7 @@ export interface User {
     email: string;
     role: 'SUPER_ADMIN' | 'ADMIN' | 'MANAGER' | 'VIEWER';
     status: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED';
+    isRoot?: boolean;
     createdAt: string;
     updatedAt: string;
 }
@@ -84,7 +85,6 @@ export interface Device {
     location: string | null;
     timezone: string;
     settings: Record<string, unknown> | null;
-    role: 'MASTER' | 'SLAVE' | 'STANDALONE';
     downloadStatus: 'PENDING' | 'DOWNLOADING' | 'READY' | 'ERROR';
     contentReady: boolean;
     siteId: string | null;
@@ -125,7 +125,6 @@ export interface SiteDevice {
     status: string;
     location: string | null;
     model: string | null;
-    role: string;
 }
 
 export interface DeviceHealth {
@@ -138,7 +137,23 @@ export interface DeviceHealth {
     macAddress: string | null;
     heapMemory: number | null;
     networkConnected: boolean | null;
+    processCpuPercent: number | null;
+    wanIp: string | null;
     reportedAt: string | null;
+}
+
+export interface ActiveSchedule {
+    id: string;
+    name: string;
+    playlistId: string | null;
+    playlistName: string | null;
+    targetType: string;
+    startDate: string | null;
+    endDate: string | null;
+    startTime: string | null;
+    endTime: string | null;
+    daysOfWeek: number[];
+    priority: number;
 }
 
 export interface NowPlaying {

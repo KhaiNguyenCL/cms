@@ -498,8 +498,8 @@ export default function SchedulesPage() {
                             <TableCell>Active</TableCell>
                             <TableCell>Name</TableCell>
                             <TableCell>Playlist</TableCell>
-                            <TableCell>Date Range</TableCell>
-                            <TableCell>Time Window</TableCell>
+                            <TableCell>Bắt đầu</TableCell>
+                            <TableCell>Kết thúc</TableCell>
                             <TableCell>Days</TableCell>
                             <TableCell align="right">Actions</TableCell>
                         </TableRow>
@@ -557,33 +557,43 @@ export default function SchedulesPage() {
                                         )}
                                     </TableCell>
 
-                                    {/* Date range */}
+                                    {/* Bắt đầu: date + time */}
                                     <TableCell>
-                                        <Stack direction="row" gap={0.5} alignItems="center">
-                                            <CalendarMonth sx={{ fontSize: 14, color: 'text.secondary' }} />
-                                            <Typography variant="caption" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                                {formatDate(s.startDate)}
-                                                {' → '}
-                                                {s.endDate
-                                                    ? formatDate(s.endDate)
-                                                    : <AllInclusive sx={{ fontSize: 16 }} />
-                                                }
-                                            </Typography>
+                                        <Stack spacing={0.25}>
+                                            <Stack direction="row" gap={0.5} alignItems="center">
+                                                <CalendarMonth sx={{ fontSize: 13, color: 'text.secondary' }} />
+                                                <Typography variant="caption">{formatDate(s.startDate)}</Typography>
+                                            </Stack>
+                                            {s.startTime ? (
+                                                <Stack direction="row" gap={0.5} alignItems="center">
+                                                    <AccessTime sx={{ fontSize: 13, color: 'text.secondary' }} />
+                                                    <Typography variant="caption" color="text.secondary">{s.startTime}</Typography>
+                                                </Stack>
+                                            ) : (
+                                                <Typography variant="caption" color="text.disabled">00:00</Typography>
+                                            )}
                                         </Stack>
                                     </TableCell>
 
-                                    {/* Time window */}
+                                    {/* Kết thúc: date + time */}
                                     <TableCell>
-                                        {s.startTime || s.endTime ? (
+                                        <Stack spacing={0.25}>
                                             <Stack direction="row" gap={0.5} alignItems="center">
-                                                <AccessTime sx={{ fontSize: 14, color: 'text.secondary' }} />
-                                                <Typography variant="caption">
-                                                    {s.startTime ?? '00:00'} – {s.endTime ?? '23:59'}
-                                                </Typography>
+                                                <CalendarMonth sx={{ fontSize: 13, color: 'text.secondary' }} />
+                                                {s.endDate
+                                                    ? <Typography variant="caption">{formatDate(s.endDate)}</Typography>
+                                                    : <AllInclusive sx={{ fontSize: 15, color: 'text.disabled' }} />
+                                                }
                                             </Stack>
-                                        ) : (
-                                            <Typography variant="caption" color="text.disabled">All day</Typography>
-                                        )}
+                                            {s.endTime ? (
+                                                <Stack direction="row" gap={0.5} alignItems="center">
+                                                    <AccessTime sx={{ fontSize: 13, color: 'text.secondary' }} />
+                                                    <Typography variant="caption" color="text.secondary">{s.endTime}</Typography>
+                                                </Stack>
+                                            ) : (
+                                                <Typography variant="caption" color="text.disabled">23:59</Typography>
+                                            )}
+                                        </Stack>
                                     </TableCell>
 
                                     {/* Days */}

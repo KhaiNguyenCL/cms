@@ -1,5 +1,5 @@
 import apiClient from './client';
-import type { ApiResponse, PaginatedResponse, Device, DeviceGroup, DeviceHealth, NowPlaying, DeviceComment } from '@/types';
+import type { ApiResponse, PaginatedResponse, Device, DeviceGroup, DeviceHealth, NowPlaying, DeviceComment, ActiveSchedule } from '@/types';
 
 export interface ListDevicesQuery {
     page?: number;
@@ -90,6 +90,11 @@ export const devicesApi = {
 
     addComment: async (id: string, comment: string, userName?: string) => {
         const { data } = await apiClient.post<ApiResponse<DeviceComment>>(`/devices/${id}/comments`, { comment, userName });
+        return data.data;
+    },
+
+    getActiveSchedules: async (id: string) => {
+        const { data } = await apiClient.get<ApiResponse<ActiveSchedule[]>>(`/devices/${id}/active-schedules`);
         return data.data;
     },
 };

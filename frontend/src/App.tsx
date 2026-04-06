@@ -51,11 +51,11 @@ const DevicesPage = lazy(() => import('@pages/devices/DevicesPage'));
 const MediaPage = lazy(() => import('@pages/media/MediaPage'));
 const PlaylistsPage = lazy(() => import('@pages/playlists/PlaylistsPage'));
 const SchedulesPage = lazy(() => import('@pages/schedules/SchedulesPage'));
-const AnalyticsPage = lazy(() => import('@pages/analytics/AnalyticsPage'));
 const UsersPage = lazy(() => import('@pages/users/UsersPage'));
 const SettingsPage = lazy(() => import('@pages/settings/SettingsPage'));
 const SuperAdminPage = lazy(() => import('@pages/superadmin/SuperAdminPage'));
 const LicensePage = lazy(() => import('@pages/license/LicensePage'));
+const LicenseManagementPage = lazy(() => import('@pages/license/LicenseManagementPage'));
 const NotFoundPage = lazy(() => import('@pages/NotFoundPage'));
 const PlayerPage = lazy(() => import('@pages/player/PlayerPage'));
 const SitePage = lazy(() => import('@pages/sites/SitePage'));
@@ -65,7 +65,6 @@ const DailySchedulePage    = lazy(() => import('@pages/schedules/DailySchedulePa
 const StatusAlarmPage      = lazy(() => import('@pages/history/StatusAlarmPage'));
 const ContentHistoryPage   = lazy(() => import('@pages/history/ContentHistoryPage'));
 const SoftwareHistoryPage  = lazy(() => import('@pages/history/SoftwareHistoryPage'));
-const TouchHistoryPage     = lazy(() => import('@pages/history/TouchHistoryPage'));
 const ActionHistoryPage    = lazy(() => import('@pages/history/ActionHistoryPage'));
 const ScheduleAssignmentPage = lazy(() => import('@pages/schedule-assignment/ScheduleAssignmentPage'));
 const PlatformLoginPage = lazy(() => import('@pages/platform/PlatformLoginPage'));
@@ -115,10 +114,10 @@ function AppRoutes() {
                 <Route path="/media" element={<MediaPage />} />
                 <Route path="/playlists" element={<PlaylistsPage />} />
                 <Route path="/schedules" element={<SchedulesPage />} />
-                <Route path="/analytics" element={<AnalyticsPage />} />
                 <Route path="/users" element={<UsersPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/license" element={<LicensePage />} />
+                <Route path="/license-management" element={<LicenseManagementPage />} />
                 <Route path="/super-admin" element={<SuperAdminPage />} />
                 <Route path="/sites"            element={<SitePage />} />
                 <Route path="/template"         element={<TemplatePage />} />
@@ -127,7 +126,6 @@ function AppRoutes() {
                 <Route path="/history/alarm"    element={<StatusAlarmPage />} />
                 <Route path="/history/content"  element={<ContentHistoryPage />} />
                 <Route path="/history/software" element={<SoftwareHistoryPage />} />
-                <Route path="/history/touch"    element={<TouchHistoryPage />} />
                 <Route path="/history/action"   element={<ActionHistoryPage />} />
                 <Route path="/programs" element={<Navigate to="/schedule-assignment" replace />} />
                 <Route path="/schedule-assignment" element={<ScheduleAssignmentPage />} />

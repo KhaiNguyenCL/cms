@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import * as userService from './users.service';
 import { listUsersSchema } from './users.schema';
+import { logAction } from '../action-history/action-history.service';
 
 // GET /api/users
 export async function listUsers(req: Request, res: Response, next: NextFunction) {
@@ -22,6 +23,7 @@ export async function createUser(req: Request, res: Response, next: NextFunction
             req.user!.userId,
             req.body
         );
+        logAction(req.user!.organizationId, req.user!.userId, 'CREATE', 'USER', user.id, user.email).catch(() => {});
         res.status(201).json({
             success: true,
             message: 'Tạo user thành công',
@@ -51,6 +53,7 @@ export async function updateUser(req: Request, res: Response, next: NextFunction
             req.user!.userId,
             req.body
         );
+        logAction(req.user!.organizationId, req.user!.userId, 'UPDATE', 'USER', user.id, user.email).catch(() => {});
         res.json({
             success: true,
             message: 'Cập nhật user thành công',
@@ -64,11 +67,12 @@ export async function updateUser(req: Request, res: Response, next: NextFunction
 // DELETE /api/users/:id
 export async function deleteUser(req: Request, res: Response, next: NextFunction) {
     try {
-        await userService.deleteUser(
+        const { email } = await userService.deleteUser(
             req.params.id as string,
             req.user!.organizationId,
             req.user!.userId
         );
+        logAction(req.user!.organizationId, req.user!.userId, 'DELETE', 'USER', req.params.id as string, email).catch(() => {});
         res.json({ success: true, message: 'User đã bị vô hiệu hoá' });
     } catch (err) {
         next(err);

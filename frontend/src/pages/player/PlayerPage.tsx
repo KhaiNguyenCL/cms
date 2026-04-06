@@ -23,6 +23,9 @@ import { Lock as LockIcon } from '@mui/icons-material';
 const DEBUG = new URLSearchParams(window.location.search).get('debug') === '1';
 const DEFAULT_TRANSITION_MS = 800; // fallback when item has no transitionDuration
 const SYNC_CACHE_KEY = 'signagecms_last_sync'; // localStorage key for offline cache
+// Grace window before first reveal: all devices that finish syncing within this window
+// will start playing at the same NTP position → no visible drift on boot.
+const FIRST_REVEAL_BUFFER_MS = 1500;
 
 function saveSyncCache(data: SyncResponse) {
     try { localStorage.setItem(SYNC_CACHE_KEY, JSON.stringify(data)); } catch { /* quota full */ }
@@ -67,20 +70,11 @@ interface NativeBridgeAPI {
     getDownloadStatus?(): 'PENDING' | 'DOWNLOADING' | 'READY' | 'ERROR';
     getDownloadProgress?(): number;   // 0–100
     forceDownload?(): void;
-    // Sprint 3: master-slave LAN sync
-    startMasterBroadcast?(siteId: string): void;
-    stopMasterBroadcast?(): void;
-    reportPosition?(slideIndex: number, elapsedMs: number): void;
-    startSlaveListening?(siteId: string): void;
-    stopSlaveListening?(): void;
 }
 
 declare global {
     interface Window {
         NativeBridge?: NativeBridgeAPI;
-        // Registered by PlayerPage; called by NativeBridge via evaluateJavascript
-        __onSyncSignal?: (slideIndex: number, elapsedMs: number) => void;
-        __onMasterLost?: () => void;
     }
 }
 
@@ -327,6 +321,10 @@ export default function PlayerPage() {
     const playedAtRef     = useRef<string>(new Date().toISOString());
     const syncingRef      = useRef(false);
     const initialSyncDone = useRef(false);
+    // True once the first-reveal buffer has fired — subsequent syncs show immediately.
+    const firstRevealDoneRef = useRef(false);
+    // Set to true by command.reload_content to force clockReset on next sync
+    const forceSyncResetRef = useRef(false);
     // Debounce guard: ngăn handleItemEnded bị gọi 2 lần trong cùng một transition window
     const lastAdvancedRef  = useRef<number>(0);
     const transitionMsRef  = useRef<number>(DEFAULT_TRANSITION_MS); // mirrors transitionMs state
@@ -336,12 +334,6 @@ export default function PlayerPage() {
     const syncGroupRef = useRef<SiteState | null>(null);
     // True when device is in an active sync group → faster heartbeat (10s vs 30s)
     const [inSyncGroup, setInSyncGroup] = useState(false);
-    // Role assigned by server — determines NTP-vs-UDP authority
-    const syncRoleRef = useRef<'MASTER' | 'SLAVE' | 'STANDALONE'>('STANDALONE');
-    // True while SLAVE is actively receiving UDP packets from master.
-    // When true: UDP is the authority → suppress NTP-based advances & drift correction.
-    // When false (master lost): fall back to NTP (same as STANDALONE).
-    const masterActiveRef = useRef(false);
 
     // ── Global clock refs (used by all schedules, not just sync groups) ────────
     // serverTimeMsRef: server UTC time captured at the last sync response
@@ -529,6 +521,9 @@ export default function PlayerPage() {
                 // setSyncError triggers the 15s retry timer to keep re-checking.
                 setSyncData(null);
                 setSyncError('license');
+                // Force clockReset() when license is restored — without this,
+                // initialSyncDone stays true and the device resumes at a stale position.
+                initialSyncDone.current = false;
                 syncingRef.current = false;
                 return;
             }
@@ -536,85 +531,45 @@ export default function PlayerPage() {
             // (heartbeat uses 60s cached values; /sync uses live DB — /sync is authoritative)
             setLicenseStatus(null);
 
-            setSyncData(data);           // triggers slot management effect below
-            contentHashRef.current = data.contentHash;
-            // Capture server clock for global-clock timeline calculations
+            // Capture server clock immediately — estimatedServerTimeMs() stays accurate
+            // even during the first-reveal buffer period.
+            contentHashRef.current  = data.contentHash;
             serverTimeMsRef.current = new Date(data.serverTime).getTime();
             syncedAtRef.current     = Date.now();
             setSyncError(null);
-            saveSyncCache(data);         // lưu cache để dùng khi offline
+            saveSyncCache(data);
 
             // Trigger Android to download/cache all media files (skipped for META-only updates)
             triggerNativeCacheSync(data, updateType);
 
-            // ── Master-Slave: configure broadcast / receive based on role ────
-            const role   = data.syncConfig?.role ?? 'STANDALONE';
-            const siteId = data.syncConfig?.siteId ?? null;
-            syncRoleRef.current = role;
+            if (!firstRevealDoneRef.current) {
+                // ── First reveal: wait until the next NTP item boundary ──────────────
+                // All devices that complete their initial sync during the SAME item will
+                // reveal at the start of the NEXT item — the same absolute wall-clock
+                // moment — so observers see all screens light up simultaneously.
+                // Fallback: 1500ms when no epoch/items available.
+                const snapServerMs  = new Date(data.serverTime).getTime();
+                const snapSchedule  = getActiveSchedule(data);
+                const snapItems     = snapSchedule?.playlist.items ?? [];
+                const snapEpoch     = snapSchedule?.startEpoch  ?? 0;
+                const snapTotal     = snapSchedule?.totalDurationMs ?? 0;
 
-            if (role === 'MASTER' && siteId) {
-                masterActiveRef.current = false; // N/A for master
-                window.NativeBridge?.startMasterBroadcast?.(siteId);
-                window.NativeBridge?.stopSlaveListening?.();
-                delete window.__onSyncSignal;
-                delete window.__onMasterLost;
-            } else if (role === 'SLAVE') {
-                masterActiveRef.current = false; // will be set true on first UDP packet
-                window.NativeBridge?.stopMasterBroadcast?.();
-                // Register global handlers — Kotlin calls these via evaluateJavascript
-                window.__onSyncSignal = (slideIndex: number, elapsedMs: number) => {
-                    // Mark master as active — suppresses NTP-based advances in handleItemEnded
-                    // and heartbeat drift correction while master is broadcasting.
-                    masterActiveRef.current = true;
-                    if (slideIndex !== currentIndexRef.current) {
-                        const items = itemsRef.current;
-                        if (items.length === 0) return;
-                        const clamped = Math.min(slideIndex, items.length - 1);
-                        currentIndexRef.current = clamped;
-                        setCurrentIndex(clamped);
-                        activeSlotRef.current = 'A';
-                        setActiveSlot('A');
-                        setSlotA(items[clamped]);
-                        setSlotAOffset(elapsedMs);
-                        setSlotB(items[(clamped + 1) % items.length]);
-                        setSlotBOffset(0);
-                        lastAdvancedRef.current = Date.now();
-                        playedAtRef.current = new Date().toISOString();
-                    }
-                };
-                window.__onMasterLost = () => {
-                    if (DEBUG) console.log('[Player] master lost — snapping to global clock');
-                    // Master is gone: re-enable NTP authority so the slave doesn't freeze.
-                    masterActiveRef.current = false;
-                    const sg = syncGroupRef.current;
-                    if (!sg?.startEpoch || !sg.totalDurationMs) return;
-                    const items = itemsRef.current;
-                    if (items.length === 0) return;
-                    const { index: expectedIdx, offsetMs } = calculateSyncPosition(
-                        items, sg.startEpoch, sg.totalDurationMs, estimatedServerTimeMs(),
+                let revealDelayMs = FIRST_REVEAL_BUFFER_MS;
+                if (snapEpoch && snapTotal > 0 && snapItems.length > 0) {
+                    const { index, offsetMs: itemOff } = calculateSyncPosition(
+                        snapItems, snapEpoch, snapTotal, snapServerMs,
                     );
-                    if (expectedIdx !== currentIndexRef.current) {
-                        const nextIdx = (expectedIdx + 1) % items.length;
-                        currentIndexRef.current = expectedIdx;
-                        setCurrentIndex(expectedIdx);
-                        activeSlotRef.current = 'A';
-                        setActiveSlot('A');
-                        setSlotA(items[expectedIdx]);
-                        setSlotAOffset(offsetMs);
-                        setSlotB(items[nextIdx]);
-                        setSlotBOffset(0);
-                        lastAdvancedRef.current = Date.now();
-                        playedAtRef.current = new Date().toISOString();
-                    }
-                };
-                window.NativeBridge?.startSlaveListening?.(siteId ?? '');
+                    const msUntilBoundary = getItemDurationMs(snapItems[index]) - itemOff;
+                    // +400ms render grace so slower devices finish painting before content appears
+                    revealDelayMs = Math.max(400, msUntilBoundary + 400);
+                }
+
+                setTimeout(() => {
+                    firstRevealDoneRef.current = true;
+                    setSyncData(data);
+                }, revealDelayMs);
             } else {
-                masterActiveRef.current = false;
-                syncRoleRef.current = 'STANDALONE';
-                window.NativeBridge?.stopMasterBroadcast?.();
-                window.NativeBridge?.stopSlaveListening?.();
-                delete window.__onSyncSignal;
-                delete window.__onMasterLost;
+                setSyncData(data);   // subsequent syncs — show immediately
             }
         } catch (e: unknown) {
             const msg = e instanceof Error ? `${e.message}` : String(e);
@@ -659,6 +614,7 @@ export default function PlayerPage() {
         deviceInfo?.token ?? null,
         (updateType) => doSync(updateType),
         () => doSync('CONTENT'),  // sync.state (site start/stop) always CONTENT
+        () => { forceSyncResetRef.current = true; doSync('CONTENT'); }, // reload_content → force NTP jump
     );
 
     // Offline = sync failed OR socket lost. Only meaningful after deviceInfo is loaded
@@ -682,18 +638,17 @@ export default function PlayerPage() {
                 }
 
                 if (hb.licenseStatus === 'EXPIRED' || !hb.isLicensed) {
-                    // Heartbeat says unlicensed — show license screen and stop content.
-                    // setSyncError('license') activates the 15s retry timer which calls doSync.
-                    // doSync uses live DB (not cached) and will clear licenseStatus only
-                    // when the device is actually re-licensed, preventing stale-cache races.
+                    // Heartbeat says unlicensed — show license screen.
+                    // Do NOT clear syncData here: heartbeat uses a 60s Redis cache that can
+                    // be stale (e.g. device just licensed). Clearing syncData would stop content.
+                    // The 15s retry timer (syncError='license') will call doSync which uses
+                    // live DB — doSync is the only authority that may clear syncData.
                     setLicenseStatus(hb.licenseStatus === 'EXPIRED' ? 'LICENSE_EXPIRED' : 'LICENSE_REQUIRED');
-                    setSyncData(null);
                     setSyncError('license');
                 } else {
-                    // Heartbeat OK — but heartbeat uses 60s cached license values.
-                    // Do NOT clear licenseStatus here — delegate to doSync (live DB check).
-                    // If licenseStatus is currently set, the 15s retry (syncError='license')
-                    // already has a doSync scheduled; don't double-trigger.
+                    // Heartbeat OK. Heartbeat uses 60s cached values so don't clear
+                    // licenseStatus here — delegate to doSync (live DB). The 15s retry
+                    // (active when syncError='license') will call doSync which clears it.
                     if (hb.syncRequired) {
                         doSync('CONTENT');
                     } else if (hb.serverTime && itemsRef.current.length > 0) {
@@ -702,39 +657,54 @@ export default function PlayerPage() {
                             // Re-anchor server clock on every heartbeat for better estimation
                             serverTimeMsRef.current = serverTimeMs;
                             syncedAtRef.current     = Date.now();
+                            // Reset NTP timer with freshly-anchored clock.
+                            // This corrects within-item offset drift: even when both devices
+                            // are on the same item, their timers may have been set from
+                            // slightly different server-time estimates. Re-anchoring here
+                            // ensures both fire at the same absolute wall-clock boundary.
+                            scheduleNTPTickRef.current();
 
-                            // ── Drift correction (sync groups + normal schedules) ──────────
-                            // Pick the right epoch: sync group takes precedence.
-                            // SLAVE while master is active: skip NTP correction.
-                            // Master's UDP signal is the authority; running NTP here
-                            // would fight the UDP signal every 15 seconds.
-                            const isSlaveWithMaster =
-                                syncRoleRef.current === 'SLAVE' && masterActiveRef.current;
+                            // ── Drift correction (sync groups + normal schedules) ────────
+                            // Sync groups: need sub-second accuracy.
+                            // Normal schedules: two devices that boot at different times may
+                            // start at different cycle positions and only converge when the
+                            // cycle wraps (could be minutes for long playlists). Heartbeat
+                            // correction bounds convergence to ≤1 heartbeat interval (30s).
+                            //
+                            // Backward-jump guard: at heartbeat time we are well inside an
+                            // item (30s >> 0.8s transition). Any index mismatch is genuine
+                            // drift — not a false positive from a timer firing at a boundary.
+                            const sg = syncGroupRef.current;
+                            const corrItems   = sg?.startEpoch ? (sg.playlist?.items ?? itemsRef.current) : itemsRef.current;
+                            const corrEpoch   = sg?.startEpoch   ?? scheduleEpochRef.current;
+                            const corrTotalMs = sg?.totalDurationMs ?? scheduleTotalMsRef.current;
 
-                            if (!isSlaveWithMaster) {
-                                const sg = syncGroupRef.current;
-                                const epoch   = sg?.startEpoch      ?? scheduleEpochRef.current;
-                                const totalMs = sg?.totalDurationMs ?? scheduleTotalMsRef.current;
-
-                                if (epoch > 0 && totalMs > 0) {
-                                    const { index: expectedIdx, offsetMs } = calculateSyncPosition(
-                                        itemsRef.current, epoch, totalMs, serverTimeMs,
-                                    );
-                                    if (expectedIdx !== currentIndexRef.current) {
-                                        const nextIdx = (expectedIdx + 1) % itemsRef.current.length;
-                                        currentIndexRef.current = expectedIdx;
-                                        setCurrentIndex(expectedIdx);
-                                        activeSlotRef.current = 'A';
-                                        setActiveSlot('A');
-                                        setSlotA(itemsRef.current[expectedIdx]);
+                            if (corrEpoch && corrTotalMs > 0 && corrItems.length > 0) {
+                                const { index: expectedIdx, offsetMs } = calculateSyncPosition(
+                                    corrItems, corrEpoch, corrTotalMs, serverTimeMs,
+                                );
+                                if (expectedIdx !== currentIndexRef.current) {
+                                    const nextIdx = (expectedIdx + 1) % corrItems.length;
+                                    currentIndexRef.current = expectedIdx;
+                                    setCurrentIndex(expectedIdx);
+                                    // Update the CURRENT active slot in-place — do NOT switch
+                                    // activeSlot. Switching triggers the CSS FADE transition
+                                    // which flashes the screen black on every correction.
+                                    const cur = activeSlotRef.current;
+                                    if (cur === 'A') {
+                                        setSlotA(corrItems[expectedIdx]);
                                         setSlotAOffset(offsetMs);
-                                        setSlotB(itemsRef.current[nextIdx]);
+                                        setSlotB(corrItems[nextIdx]);
                                         setSlotBOffset(0);
-                                        lastAdvancedRef.current = Date.now();
-                                        playedAtRef.current = new Date().toISOString();
-                                        // MASTER: update Kotlin broadcast position immediately after drift-correction jump
-                                        window.NativeBridge?.reportPosition?.(expectedIdx, offsetMs);
+                                    } else {
+                                        setSlotB(corrItems[expectedIdx]);
+                                        setSlotBOffset(offsetMs);
+                                        setSlotA(corrItems[nextIdx]);
+                                        setSlotAOffset(0);
                                     }
+                                    lastAdvancedRef.current = Date.now();
+                                    playedAtRef.current = new Date().toISOString();
+                                    scheduleNTPTickRef.current();
                                 }
                             }
                         }
@@ -756,6 +726,8 @@ export default function PlayerPage() {
             touchStartPosRef.current = null;
             isPausedRef.current = !isPausedRef.current;
             setIsPaused(isPausedRef.current);
+            // Restart NTP tick when unpausing (tick stops itself when isPaused)
+            if (!isPausedRef.current) scheduleNTPTickRef.current();
         }, 600);
     }, []);
 
@@ -848,12 +820,6 @@ export default function PlayerPage() {
                 setSlotBOffset(0);
                 playedAtRef.current = new Date().toISOString();
                 initialSyncDone.current = true;
-                // MASTER: seed Kotlin broadcast with the NTP-calculated position immediately.
-                // Without this, Kotlin broadcasts {slideIndex:0, elapsedMs:0} until the first
-                // handleItemEnded fires (~10s later), causing slaves to incorrectly jump to slide 0.
-                if (syncData.syncConfig?.role === 'MASTER') {
-                    window.NativeBridge?.reportPosition?.(index, offsetMs);
-                }
                 return; // Skip normal schedule slot management
             }
         }
@@ -900,6 +866,9 @@ export default function PlayerPage() {
                 currentIndexRef.current = index;
                 setCurrentIndex(index);
                 setSlotA(items[index]);
+                // Use offsetMs so both devices show the SAME position within the item.
+                // A device that boots mid-item will join at the correct offset, not restart
+                // the item from 0 — which would cause a permanent phase shift between screens.
                 setSlotAOffset(offsetMs);
                 setSlotB(items[nextIdx]);
                 setSlotBOffset(0);
@@ -911,11 +880,14 @@ export default function PlayerPage() {
                 setSlotA(items[0]);
                 setSlotB(items.length > 1 ? items[1] : items[0]);
             }
+            // Start NTP-aligned timer so subsequent advances stay locked to server clock
+            scheduleNTPTickRef.current();
         };
 
-        if (!initialSyncDone.current) {
-            // ── First sync: initialize both slots ──────────────────────────────
-            initialSyncDone.current = true;
+        if (!initialSyncDone.current || forceSyncResetRef.current) {
+            // ── First sync OR explicit reload command → jump to NTP position ───
+            initialSyncDone.current  = true;
+            forceSyncResetRef.current = false;
             clockReset();
         } else {
             const scheduleChanged = newScheduleId !== currentScheduleIdRef.current;
@@ -990,18 +962,24 @@ export default function PlayerPage() {
         return () => clearTimeout(timer);
     }, [syncData]);
 
-    // ── 6. Advance to next item — global clock edition ─────────────────────────
+    // ── 6. NTP-aligned timer ───────────────────────────────────────────────────
     //
-    // Instead of advancing by index, we ask "what should be playing RIGHT NOW
-    // according to the server clock?". This means all devices running the same
-    // schedule naturally converge to the same slide, regardless of when they
-    // started or how many items have played.
+    // Root cause of drift: `setTimeout(duration)` accumulates ±50ms error per item.
+    // Fix: always compute remaining time from NTP clock, not from item duration alone.
+    // Each timer fires at the exact NTP boundary → errors do NOT accumulate.
+    //
+    // Two mechanisms:
+    //   a) scheduleNTPTick() — fires at NTP boundary, calls doAdvanceTo(ntpIdx)
+    //   b) handleItemEnded() — MediaSlide callback (video onEnded / image timer backup)
+    // Both call doAdvanceTo() which has a debounce guard preventing double-fire.
+    // scheduleNTPTick is the primary driver; handleItemEnded is the backup.
 
-    const handleItemEnded = useCallback(async () => {
-        // Don't advance when frozen
-        if (isPausedRef.current) return;
-        // Debounce: reject calls within the current transition window + 100ms margin.
-        // Using transitionMsRef (not hardcoded 800) so fast transitions (100ms) don't get blocked.
+    const ntpTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    // Ref so clockReset (defined inside useEffect) can call scheduleNTPTick without stale closure
+    const scheduleNTPTickRef = useRef<() => void>(() => {});
+
+    // Shared crossfade logic used by both the NTP timer and MediaSlide callback.
+    const doAdvanceTo = useCallback((targetIdx: number, targetOffsetMs: number) => {
         const nowMs = Date.now();
         if (nowMs - lastAdvancedRef.current < Math.max(200, transitionMsRef.current) + 100) return;
         lastAdvancedRef.current = nowMs;
@@ -1009,61 +987,24 @@ export default function PlayerPage() {
         const items = itemsRef.current;
         if (items.length === 0) return;
 
-        const idx  = currentIndexRef.current;
-        const item = items[idx];
-
-        // Log playback
+        const prevIdx = currentIndexRef.current;
         logPlayback({
-            mediaId: item.mediaId,
+            mediaId: items[prevIdx].mediaId,
             playedAt: playedAtRef.current,
             durationPlayed: Math.round((nowMs - new Date(playedAtRef.current).getTime()) / 1000),
             completed: true,
         }).catch(() => {});
 
-        // ── Determine next slide ──────────────────────────────────────────────
-        // SLAVE + master active: advance sequentially — master's UDP signal is the
-        // authority and will correct any drift. Using NTP here would fight the UDP signal.
-        // Everyone else (MASTER, STANDALONE, SLAVE with lost master): use global clock
-        // so all devices converge to the same position regardless of start time.
-        let nextIdx: number;
-        let nextOffsetMs = 0;
-
-        const isSlaveFollowingMaster =
-            syncRoleRef.current === 'SLAVE' && masterActiveRef.current;
-
-        if (isSlaveFollowingMaster) {
-            // Let master drive; just advance to the next item naturally.
-            nextIdx = (idx + 1) % items.length;
-        } else {
-            const sg = syncGroupRef.current;
-            const epochForAdv   = sg?.startEpoch      ?? scheduleEpochRef.current;
-            const totalMsForAdv = sg?.totalDurationMs ?? scheduleTotalMsRef.current;
-
-            if (epochForAdv > 0 && totalMsForAdv > 0) {
-                const { index, offsetMs } = calculateSyncPosition(
-                    items, epochForAdv, totalMsForAdv, estimatedServerTimeMs(),
-                );
-                nextIdx      = index;
-                nextOffsetMs = offsetMs;
-            } else {
-                nextIdx = (idx + 1) % items.length;
-            }
-        }
-
-        currentIndexRef.current = nextIdx;
-        setCurrentIndex(nextIdx);
+        currentIndexRef.current = targetIdx;
+        setCurrentIndex(targetIdx);
         playedAtRef.current = new Date().toISOString();
-
-        // MASTER: report position so NativeBridge can broadcast via UDP
-        window.NativeBridge?.reportPosition?.(nextIdx, nextOffsetMs);
 
         const incomingSlot: 'A' | 'B' = activeSlotRef.current === 'A' ? 'B' : 'A';
         const outgoingSlot = activeSlotRef.current;
-
-        const nextTransition = items[nextIdx]?.transition ?? 'FADE';
-        const nextTransMs    = items[nextIdx]?.transitionDuration ?? DEFAULT_TRANSITION_MS;
-        transitionMsRef.current = nextTransMs; // update debounce guard for next call
-        const afterNextIdx   = (nextIdx + 1) % items.length;
+        const nextTransition = items[targetIdx]?.transition ?? 'FADE';
+        const nextTransMs    = items[targetIdx]?.transitionDuration ?? DEFAULT_TRANSITION_MS;
+        transitionMsRef.current = nextTransMs;
+        const afterNextIdx = (targetIdx + 1) % items.length;
         const needsPrePosition = nextTransition === 'SLIDE' || nextTransition === 'ZOOM'
                               || nextTransition === 'FLIP'  || nextTransition === 'WIPE';
 
@@ -1072,12 +1013,9 @@ export default function PlayerPage() {
                 setTransitionType(nextTransition);
                 setTransitionMs(nextTransMs);
                 setPrePositioningSlot(incomingSlot);
-                if (incomingSlot === 'A') { setSlotA(items[nextIdx]); setSlotAOffset(nextOffsetMs); }
-                else                      { setSlotB(items[nextIdx]); setSlotBOffset(nextOffsetMs); }
+                if (incomingSlot === 'A') { setSlotA(items[targetIdx]); setSlotAOffset(targetOffsetMs); }
+                else                      { setSlotB(items[targetIdx]); setSlotBOffset(targetOffsetMs); }
             });
-            // rAF fires on next paint frame (~16ms). On overloaded Android TV (GC pause, etc.)
-            // the frame can be delayed > 100ms leaving the incoming slot invisible.
-            // Fallback setTimeout(32ms) guarantees the swap happens even if rAF stalls.
             let rafFired = false;
             const doSwap = () => {
                 if (rafFired) return;
@@ -1091,21 +1029,86 @@ export default function PlayerPage() {
                 }, nextTransMs + 50);
             };
             requestAnimationFrame(doSwap);
-            setTimeout(doSwap, 32); // fallback: fire if rAF hasn't run within ~2 frames
+            setTimeout(doSwap, 32);
         } else {
-            if (incomingSlot === 'A') { setSlotA(items[nextIdx]); setSlotAOffset(nextOffsetMs); }
-            else                      { setSlotB(items[nextIdx]); setSlotBOffset(nextOffsetMs); }
+            if (incomingSlot === 'A') { setSlotA(items[targetIdx]); setSlotAOffset(targetOffsetMs); }
+            else                      { setSlotB(items[targetIdx]); setSlotBOffset(targetOffsetMs); }
             setTransitionType(nextTransition);
             setTransitionMs(nextTransMs);
             activeSlotRef.current = incomingSlot;
             setActiveSlot(incomingSlot);
-
             setTimeout(() => {
                 if (outgoingSlot === 'A') { setSlotA(items[afterNextIdx]); setSlotAOffset(0); }
                 else                      { setSlotB(items[afterNextIdx]); setSlotBOffset(0); }
             }, nextTransMs + 50);
         }
-    }, [estimatedServerTimeMs]);
+    }, []);
+
+    // Schedule the NTP-aligned timer. Each call computes exactly how many ms remain
+    // for the current NTP item, so errors from the previous tick do NOT carry over.
+    const scheduleNTPTick = useCallback(() => {
+        if (ntpTimerRef.current) { clearTimeout(ntpTimerRef.current); ntpTimerRef.current = null; }
+        const items = itemsRef.current;
+        const epoch = scheduleEpochRef.current;
+        const totalMs = scheduleTotalMsRef.current;
+        if (!epoch || !totalMs || items.length === 0) return; // no NTP epoch → skip
+        const serverMs = estimatedServerTimeMs();
+        const { index, offsetMs } = calculateSyncPosition(items, epoch, totalMs, serverMs);
+        const remaining = Math.max(100, getItemDurationMs(items[index]) - offsetMs);
+        ntpTimerRef.current = setTimeout(() => {
+            ntpTimerRef.current = null;
+            if (isPausedRef.current) return; // paused — tick restarts when unpaused
+            const now = estimatedServerTimeMs();
+            const { index: ntpIdx, offsetMs: ntpOff } = calculateSyncPosition(
+                itemsRef.current, scheduleEpochRef.current, scheduleTotalMsRef.current, now,
+            );
+            // Advance if NTP says different item. Debounce in doAdvanceTo prevents backward
+            // jumps when this fires slightly after handleItemEnded already advanced.
+            if (ntpIdx !== currentIndexRef.current) {
+                doAdvanceTo(ntpIdx, ntpOff);
+            }
+            scheduleNTPTick(); // reschedule for next boundary — errors don't accumulate
+        }, remaining);
+    }, [estimatedServerTimeMs, doAdvanceTo]);
+
+    // Keep ref in sync so clockReset (inside useEffect) can always call the latest version
+    scheduleNTPTickRef.current = scheduleNTPTick;
+
+    // Cleanup NTP timer on unmount
+    useEffect(() => () => {
+        if (ntpTimerRef.current) clearTimeout(ntpTimerRef.current);
+    }, []);
+
+    // MediaSlide callback — fires when image timer ends or video onEnded.
+    // IMPORTANT: always uses NTP to determine starting offset of the next item.
+    // Without this, one device may use handleItemEnded (offset=0) while the other
+    // uses the NTP timer (offset=ntpOff), causing a permanent phase shift of ntpOff ms.
+    const handleItemEnded = useCallback(() => {
+        if (isPausedRef.current) return;
+        const items = itemsRef.current;
+        if (items.length === 0) return;
+
+        const epoch   = scheduleEpochRef.current;
+        const totalMs = scheduleTotalMsRef.current;
+
+        if (epoch && totalMs > 0) {
+            // Ask NTP where we should be right now
+            const serverMs = estimatedServerTimeMs();
+            const { index: ntpIdx, offsetMs: ntpOff } = calculateSyncPosition(items, epoch, totalMs, serverMs);
+            if (ntpIdx !== currentIndexRef.current) {
+                // NTP already moved us past the current item (possibly by >1 item)
+                doAdvanceTo(ntpIdx, ntpOff);
+            }
+            // If NTP still says current item (timer fired early): do NOT advance.
+            // scheduleNTPTick() below will set a fresh timer for the true boundary.
+            // Both devices fire at the same absolute time → no within-item drift.
+        } else {
+            // No global clock epoch (edge case) — fall back to sequential
+            doAdvanceTo((currentIndexRef.current + 1) % items.length, 0);
+        }
+
+        scheduleNTPTick(); // re-anchor NTP timer after each advance
+    }, [doAdvanceTo, estimatedServerTimeMs, scheduleNTPTick]);
 
     // ── Render ────────────────────────────────────────────────────────────────
 
@@ -1182,7 +1185,21 @@ export default function PlayerPage() {
                 </div>
             )}
             <div>currentIndex: {currentIndex} | activeSlot: {activeSlot}</div>
-            <div>slotA: {slotA?.mediaTitle ?? '—'} | slotB: {slotB?.mediaTitle ?? '—'}</div>
+            <div>slotA: {slotA?.mediaTitle ?? '—'} (off={slotAOffset}ms) | slotB: {slotB?.mediaTitle ?? '—'} (off={slotBOffset}ms)</div>
+            {(() => {
+                const epoch = scheduleEpochRef.current;
+                const totalMs = scheduleTotalMsRef.current;
+                if (!epoch || !totalMs || syncGroupRef.current?.startEpoch) return null;
+                const serverMs = estimatedServerTimeMs();
+                const { index: ntpIdx, offsetMs: ntpOff } = calculateSyncPosition(itemsRef.current, epoch, totalMs, serverMs);
+                const idxMatch = Number(currentIndex) === Number(ntpIdx);
+                return (
+                    <div style={{ color: idxMatch ? '#0f0' : '#f66' }}>
+                        NTP: idx={ntpIdx} off={(ntpOff/1000).toFixed(1)}s | playing: idx={currentIndex}
+                        {' '}{idxMatch ? '✓' : `✗ expect idx=${ntpIdx} got idx=${currentIndex}`}
+                    </div>
+                );
+            })()}
             <div>contentHash: {syncData?.contentHash?.slice(0, 16) ?? '—'}</div>
             {syncData?.schedules.map((s, i) => (
                 <div key={i} style={{ marginTop: 4, color: '#adf' }}>

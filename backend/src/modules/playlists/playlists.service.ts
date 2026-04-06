@@ -192,7 +192,7 @@ export async function updatePlaylist(
 
 // ─── Delete playlist ──────────────────────────────────────────────────────────
 
-export async function deletePlaylist(playlistId: string, organizationId: string): Promise<void> {
+export async function deletePlaylist(playlistId: string, organizationId: string): Promise<{ name: string }> {
     // Check FK: schedules referencing this playlist
     const refs = await query<{ name: string }>(
         `SELECT name FROM schedules WHERE "playlistId" = $1 AND "organizationId" = $2 LIMIT 5`,
@@ -206,13 +206,14 @@ export async function deletePlaylist(playlistId: string, organizationId: string)
         );
     }
 
-    const result = await query(
-        `DELETE FROM playlists WHERE id = $1 AND "organizationId" = $2 RETURNING id`,
+    const result = await query<{ id: string; name: string }>(
+        `DELETE FROM playlists WHERE id = $1 AND "organizationId" = $2 RETURNING id, name`,
         [playlistId, organizationId]
     );
     if (!result[0]) throw new AppError(404, 'Playlist không tồn tại');
     logger.info('Playlist deleted', { playlistId });
     invalidateContentHashForOrg(organizationId, 'CONTENT').catch(() => {});
+    return { name: result[0].name };
 }
 
 // ─── Add item to playlist ─────────────────────────────────────────────────────

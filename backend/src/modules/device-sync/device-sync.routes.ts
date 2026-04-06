@@ -102,6 +102,7 @@ router.use(authenticateDevice);
  *          Response: { syncRequired } — true nếu content đã thay đổi.
  * @access  Device JWT
  */
+router.get('/my-ip', deviceSyncController.getMyIp);
 router.post('/heartbeat', heartbeatLimiter, validate(heartbeatSchema), deviceSyncController.heartbeat);
 
 /**

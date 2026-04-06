@@ -65,11 +65,11 @@ export async function setupScheduledJobs(): Promise<void> {
         'daily-deduction',
         { triggeredBy: 'scheduler' },
         {
-            repeat: { pattern: '1 0 * * *' },   // 00:01 UTC daily
+            repeat: { pattern: '1 17 * * *' },  // 17:01 UTC = 00:01 UTC+7
             jobId: 'license-deduction-daily',
         }
     );
-    logger.info('Scheduled: license-deduction daily at 00:01 UTC');
+    logger.info('Scheduled: license-deduction daily at 17:01 UTC (00:01 UTC+7)');
 
     logger.info('All scheduled jobs registered');
 }

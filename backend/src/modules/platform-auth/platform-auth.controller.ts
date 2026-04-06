@@ -41,6 +41,14 @@ export async function logout(req: Request, res: Response, next: NextFunction) {
     } catch (err) { next(err); }
 }
 
+export async function getMe(req: Request, res: Response, next: NextFunction) {
+    try {
+        const admins = await svc.listPlatformAdmins();
+        const me = admins.find(a => a.id === req.user!.userId) ?? null;
+        res.json({ success: true, data: me });
+    } catch (err) { next(err); }
+}
+
 export async function listAdmins(_req: Request, res: Response, next: NextFunction) {
     try {
         const admins = await svc.listPlatformAdmins();
@@ -59,7 +67,7 @@ export async function createAdmin(req: Request, res: Response, next: NextFunctio
 
 export async function updateAdmin(req: Request, res: Response, next: NextFunction) {
     try {
-        const admin = await svc.updatePlatformAdmin(req.params.id as string, req.body);
+        const admin = await svc.updatePlatformAdmin(req.params.id as string, req.body, req.user!.userId);
         res.json({ success: true, data: admin });
     } catch (err) { next(err); }
 }

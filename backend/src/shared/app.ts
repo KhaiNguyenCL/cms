@@ -23,12 +23,20 @@ import deviceGroupRoutes from '../modules/device-groups/device-groups.routes';
 import siteRoutes from '../modules/sites/sites.routes';
 import scheduleAssignmentRoutes from '../modules/schedule-assignments/schedule-assignments.routes';
 import platformAuthRoutes from '../modules/platform-auth/platform-auth.routes';
+import alarmRoutes from '../modules/alarm/alarm.routes';
+import contentHistoryRoutes from '../modules/content-history/content-history.routes';
+import softwareHistoryRoutes from '../modules/software-history/software-history.routes';
+import actionHistoryRoutes from '../modules/action-history/action-history.routes';
+import licenseRoutes from '../modules/license/license.routes';
 
 // Middleware imports
 import { errorHandler } from './middleware/error.middleware';
 import { authenticate } from './middleware/auth.middleware';
 
 const app = express();
+
+// Trust X-Forwarded-For from nginx reverse proxy (1 hop)
+app.set('trust proxy', 1);
 
 // ── Security headers ──────────────────────────────────────────
 // Production: full helmet with CSP allowing media (blobs + same-origin).
@@ -110,6 +118,11 @@ app.use('/api/device-groups', deviceGroupRoutes); // authenticate applied inside
 app.use('/api/sites',        siteRoutes);         // authenticate applied inside router
 app.use('/api/schedule-assignments', scheduleAssignmentRoutes); // authenticate applied inside router
 app.use('/api/analytics', analyticsRoutes); // authenticate applied inside router
+app.use('/api/alarm',             alarmRoutes);
+app.use('/api/content-history',   contentHistoryRoutes);
+app.use('/api/software-history',  softwareHistoryRoutes);
+app.use('/api/action-history',    actionHistoryRoutes);
+app.use('/api/license',           licenseRoutes);
 
 // ── Serve built frontend (SPA) ────────────────────────────────
 // In production: run `npm run build` in /frontend first.

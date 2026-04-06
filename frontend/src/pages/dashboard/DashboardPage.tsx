@@ -227,26 +227,31 @@ export default function DashboardPage() {
     const { data: overview, isLoading: loadingOverview } = useQuery({
         queryKey: ['analytics-overview', dateFrom, dateTo],
         queryFn: () => analyticsApi.overview({ startDate: dateFrom, endDate: dateTo }),
+        refetchInterval: 60_000,
     });
 
     const { data: playback = [], isLoading: loadingPlayback } = useQuery({
         queryKey: ['analytics-playback', dateFrom, dateTo, groupBy],
         queryFn: () => analyticsApi.playbackStats({ startDate: dateFrom, endDate: dateTo, groupBy }),
+        refetchInterval: 60_000,
     });
 
     const { data: topContent = [], isLoading: loadingTop } = useQuery({
         queryKey: ['analytics-top-content', dateFrom, dateTo],
         queryFn: () => analyticsApi.topContent({ startDate: dateFrom, endDate: dateTo, limit: 10 }),
+        refetchInterval: 60_000,
     });
 
     const { data: topPlaylists = [], isLoading: loadingTopPl } = useQuery({
         queryKey: ['analytics-top-playlists', dateFrom, dateTo],
         queryFn: () => analyticsApi.topPlaylists({ startDate: dateFrom, endDate: dateTo, limit: 10 }),
+        refetchInterval: 60_000,
     });
 
     const { data: topSchedules = [], isLoading: loadingTopSc } = useQuery({
         queryKey: ['analytics-top-schedules', dateFrom, dateTo],
         queryFn: () => analyticsApi.topSchedules({ startDate: dateFrom, endDate: dateTo, limit: 10 }),
+        refetchInterval: 60_000,
     });
 
     const fmtPeriod = groupBy === 'month' ? fmtDateMonth : groupBy === 'week' ? fmtDateWeek : fmtDate;

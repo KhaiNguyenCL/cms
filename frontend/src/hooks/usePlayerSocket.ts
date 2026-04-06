@@ -19,12 +19,15 @@ export function usePlayerSocket(
     token: string | null,
     onSync: (updateType: ContentUpdateType) => void,
     onSyncState?: (state: SyncStateEvent) => void,
+    onReload?: () => void,
 ): { emit: (event: string, data?: Record<string, unknown>) => void; isConnected: boolean } {
     const socketRef = useRef<Socket | null>(null);
     const onSyncRef = useRef(onSync);
     const onSyncStateRef = useRef(onSyncState);
+    const onReloadRef = useRef(onReload);
     onSyncRef.current = onSync;
     onSyncStateRef.current = onSyncState;
+    onReloadRef.current = onReload;
 
     const [isConnected, setIsConnected] = useState(false);
 
@@ -58,8 +61,10 @@ export function usePlayerSocket(
                 onSyncRef.current(type);
             }, 1500 + jitter); // 1.5–2s debounce: waits for burst to settle
         };
-        // Immediate reload on explicit command — always treat as CONTENT
-        const handleReload = () => onSyncRef.current('CONTENT');
+        // Immediate reload on explicit command — use dedicated callback if provided,
+        // otherwise fall back to regular sync. The dedicated callback lets PlayerPage
+        // force a clockReset so both devices jump to the same NTP position.
+        const handleReload = () => onReloadRef.current ? onReloadRef.current() : onSyncRef.current('CONTENT');
         // sync.state: admin started/restarted/stopped a sync group
         // Player must immediately recalculate position or exit sync mode
         const handleSyncState = (data: SyncStateEvent) => {

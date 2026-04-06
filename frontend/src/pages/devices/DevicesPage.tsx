@@ -20,15 +20,13 @@ import { sitesApi } from '@api/sites.api';
 import { getApiError } from '@api/client';
 import { useAppDispatch } from '@store/hooks';
 import { pushToast } from '@store/slices/uiSlice';
-import type { Device, DeviceHealth, NowPlaying, DeviceComment, Site } from '@/types';
+import type { Device, DeviceHealth, DeviceComment, Site, ActiveSchedule } from '@/types';
 
 // ── Column visibility ─────────────────────────────────────────────────────────
 
 const ALL_COLUMNS = [
     { id: 'device', label: 'Tên' },
     { id: 'status', label: 'Status' },
-    { id: 'role', label: 'Role' },
-    { id: 'content', label: 'Content' },
     { id: 'license', label: 'License' },
     { id: 'model', label: 'Model' },
     { id: 'sn', label: 'S/N' },
@@ -45,7 +43,7 @@ const ALL_COLUMNS = [
 
 type ColId = (typeof ALL_COLUMNS)[number]['id'];
 const DEFAULT_VISIBLE = new Set<ColId>([
-    'device', 'status', 'role', 'content', 'license', 'model', 'sn', 'osVersion', 'site', 'pairingCode', 'actions',
+    'device', 'status', 'license', 'model', 'sn', 'osVersion', 'site', 'pairingCode', 'actions',
 ]);
 
 function ColumnPicker({ visible, onChange }: { visible: Set<ColId>; onChange: (v: Set<ColId>) => void }) {
@@ -83,9 +81,9 @@ function ColumnPicker({ visible, onChange }: { visible: Set<ColId>; onChange: (v
                                         size="small"
                                         checked={visible.has(col.id)}
                                         onChange={() => toggle(col.id)}
-                                        disabled={col.id === 'device' || col.id === 'actions'|| col.id === 'status'
-                                             || col.id === 'license'|| col.id === 'model'|| col.id === 'sn'
-                                             || col.id === 'osVersion'|| col.id === 'site'|| col.id === 'pairingCode'}
+                                        disabled={col.id === 'device' || col.id === 'actions' || col.id === 'status'
+                                             || col.id === 'license' || col.id === 'model' || col.id === 'sn'
+                                             || col.id === 'osVersion' || col.id === 'site' || col.id === 'pairingCode'}
                                     />
                                 }
                                 label={<Typography variant="body2">{col.label}</Typography>}
@@ -114,40 +112,16 @@ function formatUptime(lastOnlineAt: string | null, status: string): string {
     return `${mins}m`;
 }
 
-// ── License chip + toggle ─────────────────────────────────────────────────────
+// ── License chip (read-only — quản lý tại trang License) ────────────────────
 
 function LicenseChip({ device }: { device: Device }) {
-    const dispatch = useAppDispatch();
-    const qc = useQueryClient();
-
-    const mutation = useMutation({
-        mutationFn: (isLicensed: boolean) => devicesApi.setLicense(device.id, isLicensed),
-        onSuccess: () => {
-            qc.invalidateQueries({ queryKey: ['devices'] });
-            qc.invalidateQueries({ queryKey: ['org-license'] });
-        },
-        onError: (err) => dispatch(pushToast({ severity: 'error', message: getApiError(err, 'Cập nhật license thất bại') })),
-    });
-
     const isLicensed = device.isLicensed === true;
-
-    const handleToggle = () => {
-        if (isLicensed) {
-            if (!window.confirm(`Vô hiệu hóa license cho "${device.name}"?\nThiết bị sẽ ngừng nhận nội dung.`)) return;
-        } else {
-            if (!window.confirm(`Kích hoạt license cho "${device.name}"?`)) return;
-        }
-        mutation.mutate(!isLicensed);
-    };
-
     return (
         <Chip
-            label={isLicensed ? 'Active' : 'Disabled'}
+            label={isLicensed ? 'Licensed' : 'Unlicensed'}
             color={isLicensed ? 'success' : 'default'}
             size="small"
-            onClick={handleToggle}
-            disabled={mutation.isPending}
-            sx={{ fontWeight: 600, fontSize: '0.7rem', cursor: 'pointer' }}
+            sx={{ fontWeight: 600, fontSize: '0.7rem' }}
         />
     );
 }
@@ -279,11 +253,11 @@ function DeviceManageDialog({ device, open, onClose }: { device: Device | null; 
         staleTime: 30_000,
     });
 
-    const { data: nowPlaying } = useQuery<NowPlaying | null>({
-        queryKey: ['device-now-playing', device?.id],
-        queryFn: () => device ? devicesApi.getNowPlaying(device.id) : Promise.resolve(null),
+    const { data: activeSchedules = [] } = useQuery<ActiveSchedule[]>({
+        queryKey: ['device-active-schedules', device?.id],
+        queryFn: () => device ? devicesApi.getActiveSchedules(device.id) : Promise.resolve([]),
         enabled: open && Boolean(device?.id) && tab === 1,
-        staleTime: 60_000,
+        staleTime: 30_000,
     });
 
     const { data: comments = [] } = useQuery<DeviceComment[]>({
@@ -548,22 +522,28 @@ function DeviceManageDialog({ device, open, onClose }: { device: Device | null; 
                     <Stack spacing={3}>
                         <Box>
                             <Typography variant="overline" color="text.secondary" fontWeight={700} display="block" mb={1}>
-                                Đang phát
+                                Lịch phát đang hoạt động
                             </Typography>
-                            {nowPlaying ? (
-                                <Card variant="outlined" sx={{ p: 2 }}>
-                                    <Stack spacing={0.5}>
-                                        <Typography variant="body1" fontWeight={600}>{nowPlaying.mediaTitle}</Typography>
-                                        <Typography variant="caption" color="text.secondary">
-                                            {nowPlaying.mediaType} · {Math.round(nowPlaying.durationPlayed / 60)} phút · {nowPlaying.completed ? '✓ Hoàn thành' : 'Bị ngắt'}
-                                        </Typography>
-                                        <Typography variant="caption" color="text.secondary">
-                                            Phát lúc: {new Date(nowPlaying.playedAt).toLocaleString('vi-VN')}
-                                        </Typography>
-                                    </Stack>
-                                </Card>
+                            {activeSchedules.length > 0 ? (
+                                <Stack spacing={1}>
+                                    {activeSchedules.map(s => (
+                                        <Card key={s.id} variant="outlined" sx={{ p: 1.5 }}>
+                                            <Stack direction="row" justifyContent="space-between" alignItems="flex-start" mb={0.5}>
+                                                <Typography variant="body2" fontWeight={600}>{s.name}</Typography>
+                                                <Chip label={`P${s.priority}`} size="small" sx={{ fontSize: '0.65rem', height: 18, ml: 1 }} />
+                                            </Stack>
+                                            <Typography variant="caption" color="text.secondary" display="block">
+                                                Playlist: {s.playlistName ?? '—'}
+                                            </Typography>
+                                            <Typography variant="caption" color="text.secondary" display="block">
+                                                {s.startTime ?? '00:00'} – {s.endTime ?? '24:00'}
+                                                {s.daysOfWeek?.length > 0 && ` · ${['CN','T2','T3','T4','T5','T6','T7'].filter((_, i) => s.daysOfWeek.includes(i)).join(', ')}`}
+                                            </Typography>
+                                        </Card>
+                                    ))}
+                                </Stack>
                             ) : (
-                                <Typography variant="body2" color="text.disabled">Chưa có dữ liệu phát</Typography>
+                                <Typography variant="body2" color="text.disabled">Không có lịch nào đang hoạt động</Typography>
                             )}
                         </Box>
                         <Divider />
@@ -646,8 +626,12 @@ function DeviceManageDialog({ device, open, onClose }: { device: Device | null; 
                         ) : (
                             <Stack spacing={0}>
                                 <Stack direction="row" alignItems="center" gap={1} py={1.5} sx={{ borderBottom: '1px solid', borderColor: 'divider' }}>
-                                    <Typography variant="body2" color="text.secondary" sx={{ width: 160, flexShrink: 0 }}>CPU</Typography>
+                                    <Typography variant="body2" color="text.secondary" sx={{ width: 160, flexShrink: 0 }}>CPU (thiết bị)</Typography>
                                     <Box flex={1}><HealthBar value={health.cpuUsage} /></Box>
+                                </Stack>
+                                <Stack direction="row" alignItems="center" gap={1} py={1.5} sx={{ borderBottom: '1px solid', borderColor: 'divider' }}>
+                                    <Typography variant="body2" color="text.secondary" sx={{ width: 160, flexShrink: 0 }}>CPU (CMS process)</Typography>
+                                    <Box flex={1}><HealthBar value={health.processCpuPercent} /></Box>
                                 </Stack>
                                 <Stack direction="row" alignItems="center" gap={1} py={1.5} sx={{ borderBottom: '1px solid', borderColor: 'divider' }}>
                                     <Typography variant="body2" color="text.secondary" sx={{ width: 160, flexShrink: 0 }}>RAM</Typography>
@@ -694,7 +678,15 @@ function DeviceManageDialog({ device, open, onClose }: { device: Device | null; 
                                     health?.networkConnected === true ? 'Đã kết nối' :
                                         health?.networkConnected === false ? 'Mất kết nối' : '—'
                                 } />
-                                <InfoRow label="IP Address" value={health?.ipAddress ?? '—'} />
+                                <InfoRow label="IP LAN" value={health?.ipAddress ?? '—'} />
+                                <InfoRow label="IP WAN" value={(() => {
+                                    const wan = health?.wanIp;
+                                    if (!wan) return '—';
+                                    // Same as LAN or private range → not a real WAN IP
+                                    if (wan === health?.ipAddress) return '— (cùng LAN)';
+                                    if (/^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)/.test(wan)) return '— (private)';
+                                    return wan;
+                                })() } />
                             </Stack>
                         )}
                     </Stack>
@@ -775,8 +767,6 @@ function DevicesTab({ onAddDevice }: { onAddDevice: () => void }) {
                             <TableRow>
                                 {show('device') && <TableCell align="center" sx={{ fontWeight: 700 }}>Tên</TableCell>}
                                 {show('status') && <TableCell align="center" sx={{ fontWeight: 700, borderLeft: '1px solid', borderColor: 'divider' }}>Status</TableCell>}
-                                {show('role') && <TableCell align="center" sx={{ fontWeight: 700, borderLeft: '1px solid', borderColor: 'divider' }}>Role</TableCell>}
-                                {show('content') && <TableCell align="center" sx={{ fontWeight: 700, borderLeft: '1px solid', borderColor: 'divider' }}>Content</TableCell>}
                                 {show('license') && <TableCell align="center" sx={{ fontWeight: 700, borderLeft: '1px solid', borderColor: 'divider' }}>License</TableCell>}
                                 {show('model') && <TableCell align="center" sx={{ fontWeight: 700, borderLeft: '1px solid', borderColor: 'divider' }}>Model</TableCell>}
                                 {show('sn') && <TableCell align="center" sx={{ fontWeight: 700, borderLeft: '1px solid', borderColor: 'divider' }}>S/N</TableCell>}
@@ -835,29 +825,6 @@ function DevicesTab({ onAddDevice }: { onAddDevice: () => void }) {
                                             </TableCell>
                                         )}
                                         {show('status') && <TableCell align="center" sx={{ borderLeft: '1px solid', borderColor: 'divider' }}><StatusChip status={device.status} /></TableCell>}
-                                        {show('role') && (
-                                            <TableCell align="center" sx={{ borderLeft: '1px solid', borderColor: 'divider' }}>
-                                                {device.role === 'MASTER' ? (
-                                                    <Chip size="small" label="Master" sx={{ fontWeight: 700, fontSize: '0.65rem', bgcolor: '#f59e0b', color: '#fff' }} />
-                                                ) : device.role === 'SLAVE' ? (
-                                                    <Chip size="small" label="Slave" sx={{ fontWeight: 700, fontSize: '0.65rem', bgcolor: '#3b82f6', color: '#fff' }} />
-                                                ) : (
-                                                    <Typography variant="body2" color="text.secondary" fontSize="0.75rem">Standalone</Typography>
-                                                )}
-                                            </TableCell>
-                                        )}
-                                        {show('content') && (
-                                            <TableCell align="center" sx={{ borderLeft: '1px solid', borderColor: 'divider' }}>
-                                                {device.contentReady
-                                                    ? <Chip size="small" label="Ready ✓" color="success" sx={{ fontWeight: 700, fontSize: '0.65rem' }} />
-                                                    : device.downloadStatus === 'DOWNLOADING'
-                                                        ? <Chip size="small" label="Downloading…" color="info" sx={{ fontWeight: 700, fontSize: '0.65rem' }} />
-                                                        : device.downloadStatus === 'ERROR'
-                                                            ? <Chip size="small" label="Error" color="error" sx={{ fontWeight: 700, fontSize: '0.65rem' }} />
-                                                            : <Typography variant="body2" color="text.disabled" fontSize="0.75rem">Server</Typography>
-                                                }
-                                            </TableCell>
-                                        )}
                                         {show('license') && <TableCell align="center" sx={{ borderLeft: '1px solid', borderColor: 'divider' }}><LicenseChip device={device} /></TableCell>}
                                         {show('model') && <TableCell align="center" sx={{ borderLeft: '1px solid', borderColor: 'divider' }}><Typography variant="body2">{device.model ?? '—'}</Typography></TableCell>}
                                         {show('sn') && (

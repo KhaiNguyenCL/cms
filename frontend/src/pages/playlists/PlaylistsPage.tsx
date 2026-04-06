@@ -423,20 +423,14 @@ function getTransition(val?: string | null) {
     return TRANSITIONS.find(t => t.value === (val ?? 'FADE')) ?? TRANSITIONS[0];
 }
 
-const DEFAULT_TRANS_MS = 800;
-
 function TransitionPicker({
-    value, transitionDuration, onChange, onDurationChange,
+    value, onChange,
 }: {
     value?: string | null;
-    transitionDuration?: number | null;
     onChange: (v: string) => void;
-    onDurationChange: (ms: number) => void;
 }) {
     const [anchor, setAnchor] = useState<HTMLElement | null>(null);
     const current = getTransition(value);
-    const durMs = transitionDuration ?? DEFAULT_TRANS_MS;
-    const hasAnimation = (value ?? 'FADE') !== 'NONE';
     return (
         <>
             <Box
@@ -456,33 +450,6 @@ function TransitionPicker({
                         sx={{ fontSize: '0.65rem', height: 20, cursor: 'pointer', borderStyle: 'dashed' }}
                     />
                 </Tooltip>
-                {hasAnimation && (
-                    <Tooltip title={`Thời gian hiệu ứng: ${durMs}ms`}>
-                        <Box
-                            component="input"
-                            type="number"
-                            min={100}
-                            max={5000}
-                            step={100}
-                            value={durMs}
-                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                                const v = Math.max(100, Math.min(5000, Number(e.target.value)));
-                                if (!isNaN(v)) onDurationChange(v);
-                            }}
-                            sx={{
-                                width: 60, fontSize: '0.65rem', textAlign: 'center',
-                                border: '1px dashed', borderColor: 'divider', borderRadius: '4px',
-                                bgcolor: 'transparent', color: 'text.secondary',
-                                p: '1px 4px', outline: 'none', cursor: 'pointer',
-                                '&::-webkit-inner-spin-button': { display: 'none' },
-                            }}
-                            onClick={(e: React.MouseEvent) => e.stopPropagation()}
-                        />
-                    </Tooltip>
-                )}
-                {hasAnimation && (
-                    <Typography variant="caption" color="text.disabled" sx={{ fontSize: '0.6rem' }}>ms</Typography>
-                )}
             </Box>
             <Menu anchorEl={anchor} open={Boolean(anchor)} onClose={() => setAnchor(null)}
                 anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
@@ -613,7 +580,67 @@ function SortableItem({
 
 // ── Playlist Preview Dialog ───────────────────────────────────────────────────
 
-const PREVIEW_MAX_SECS = 10; // cap "hiện mãi" items at 10s in preview
+const PREVIEW_CAP_SECS = 10;   // cap "hiện mãi" items at 10s in preview
+const TRANS_MS         = 400;  // crossfade duration (ms)
+
+function previewDurSecs(item: LocalItem): number {
+    const d = item.duration ?? 10;
+    return d >= 86400 ? PREVIEW_CAP_SECS : d;
+}
+
+/** CSS for the OUTGOING layer: starts visible, animates away. */
+function outStyle(type: string, active: boolean): React.CSSProperties {
+    const t = `${TRANS_MS}ms ease`;
+    if (!active || type === 'NONE') return { opacity: 1, transform: 'none', transition: 'none' };
+    switch (type) {
+        case 'SLIDE': return { opacity: 0, transform: 'translateX(-10%)', transition: `all ${t}` };
+        case 'ZOOM':  return { opacity: 0, transform: 'scale(1.08)',       transition: `all ${t}` };
+        case 'WIPE':  return { opacity: 0, transform: 'translateX(-18%)',  transition: `all ${t}` };
+        case 'FLIP':  return { opacity: 0, transform: 'scaleX(0.04)',      transition: `all ${t}` };
+        default:      return { opacity: 0,                                 transition: `opacity ${t}` };
+    }
+}
+
+/** CSS for the INCOMING layer: starts hidden, animates in. */
+function inStyle(type: string, entered: boolean): React.CSSProperties {
+    const t = `${TRANS_MS}ms ease`;
+    if (type === 'NONE') return { opacity: 1, transform: 'none', transition: 'none' };
+    if (!entered) {
+        switch (type) {
+            case 'SLIDE': return { opacity: 0, transform: 'translateX(10%)',  transition: 'none' };
+            case 'ZOOM':  return { opacity: 0, transform: 'scale(0.92)',       transition: 'none' };
+            case 'WIPE':  return { opacity: 0, transform: 'translateX(18%)',   transition: 'none' };
+            case 'FLIP':  return { opacity: 0, transform: 'scaleX(0.04)',      transition: 'none' };
+            default:      return { opacity: 0,                                 transition: 'none' };
+        }
+    }
+    switch (type) {
+        case 'SLIDE': return { opacity: 1, transform: 'translateX(0)', transition: `all ${t}` };
+        case 'ZOOM':  return { opacity: 1, transform: 'scale(1)',       transition: `all ${t}` };
+        case 'WIPE':  return { opacity: 1, transform: 'translateX(0)',  transition: `all ${t}` };
+        case 'FLIP':  return { opacity: 1, transform: 'scaleX(1)',      transition: `all ${t}` };
+        default:      return { opacity: 1,                              transition: `opacity ${t}` };
+    }
+}
+
+function MediaLayer({ item, url, onVideoEnd }: { item: LocalItem | undefined; url?: string; onVideoEnd?: () => void }) {
+    const isVideo = item?.media?.type === 'VIDEO';
+    if (!url) return (
+        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', color: 'grey.700' }}>
+            {typeIcon(item?.media?.type)}
+            <Typography variant="caption" mt={1}>Không tải được media</Typography>
+        </Box>
+    );
+    if (isVideo) return (
+        <video key={url} src={url} autoPlay muted playsInline
+            style={{ maxWidth: '100%', maxHeight: 480, display: 'block' }}
+            onEnded={onVideoEnd} />
+    );
+    return (
+        <img key={url} src={url} alt={item?.media?.title}
+            style={{ maxWidth: '100%', maxHeight: 480, objectFit: 'contain', display: 'block' }} />
+    );
+}
 
 function PlaylistPreviewDialog({ open, onClose, items }: {
     open: boolean;
@@ -621,20 +648,31 @@ function PlaylistPreviewDialog({ open, onClose, items }: {
     items: LocalItem[];
 }) {
     const [currentIdx, setCurrentIdx] = useState(0);
-    const [playing, setPlaying] = useState(true);
-    const [progress, setProgress] = useState(0);
-    const [mediaUrls, setMediaUrls] = useState<Record<string, string>>({});
-    const [fetching, setFetching] = useState(false);
-    const startRef = useRef<number>(0);
+    const [prevIdx, setPrevIdx]       = useState<number | null>(null);
+    const [transActive, setTransActive] = useState(false);
+    const [entered, setEntered]       = useState(false);
+    const [transType, setTransType]   = useState('FADE');
+    const [playing, setPlaying]       = useState(true);
+    const [progress, setProgress]     = useState(0);
+    const [mediaUrls, setMediaUrls]   = useState<Record<string, string>>({});
+    const [fetching, setFetching]     = useState(false);
+
+    const itemsRef    = useRef(items);
+    itemsRef.current  = items;
+    const currentIdxRef = useRef(0);
+    currentIdxRef.current = currentIdx;
+    const inTransRef  = useRef(false);
+    const startRef    = useRef<number>(0);
     const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     // Fetch all signed URLs when dialog opens
     useEffect(() => {
         if (!open || items.length === 0) return;
         setFetching(true);
-        setCurrentIdx(0);
-        setProgress(0);
-        setPlaying(true);
+        setCurrentIdx(0); setPrevIdx(null);
+        setTransActive(false); setEntered(false);
+        setProgress(0); setPlaying(true);
+        inTransRef.current = false;
         const ids = items.map(i => i.mediaId ?? i.media?.id ?? '').filter(Boolean);
         Promise.all(ids.map(id => mediaApi.get(id).catch(() => null))).then(results => {
             const urls: Record<string, string> = {};
@@ -644,40 +682,77 @@ function PlaylistPreviewDialog({ open, onClose, items }: {
         });
     }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    // Auto-advance timer
+    /**
+     * Two-layer crossfade transition:
+     * 1. Keep current as outgoing layer (prevIdx), switch current to nextIdx
+     * 2. Trigger outgoing OUT + incoming IN simultaneously — no black frame
+     * 3. Clean up outgoing layer after animation
+     */
+    const goTo = useCallback((nextIdx: number) => {
+        if (inTransRef.current) return;
+        const tType = itemsRef.current[nextIdx]?.transition ?? 'FADE';
+
+        if (tType === 'NONE') {
+            setCurrentIdx(nextIdx); setProgress(0); setPlaying(true);
+            return;
+        }
+
+        inTransRef.current = true;
+        const prev = currentIdxRef.current;
+
+        // Layer setup: prev = outgoing (still visible), current = incoming (hidden)
+        setPrevIdx(prev);
+        setTransType(tType);
+        setTransActive(true);   // outgoing starts animating OUT immediately
+        setEntered(false);       // incoming starts hidden
+        setCurrentIdx(nextIdx);
+        setProgress(0);
+        setPlaying(true);
+
+        // Next 2 rAFs: browser has painted both layers → trigger incoming IN
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+            setEntered(true);
+        }));
+
+        // After full animation: clean up outgoing layer
+        setTimeout(() => {
+            setPrevIdx(null);
+            setTransActive(false);
+            setEntered(false);
+            inTransRef.current = false;
+        }, TRANS_MS + 60);
+    }, []);
+
+    // Auto-advance timer — loops back to 0 when playlist ends
     useEffect(() => {
         if (!open || fetching || !playing || items.length === 0) {
             if (intervalRef.current) clearInterval(intervalRef.current);
             return;
         }
-        const item = items[currentIdx];
-        const durMs = Math.min(item.duration ?? 10, PREVIEW_MAX_SECS) * 1000;
+        const item  = items[currentIdx];
+        const durMs = previewDurSecs(item) * 1000;
         startRef.current = Date.now();
         intervalRef.current = setInterval(() => {
             const elapsed = Date.now() - startRef.current;
             setProgress(Math.min(100, (elapsed / durMs) * 100));
             if (elapsed >= durMs) {
                 clearInterval(intervalRef.current!);
-                if (currentIdx < items.length - 1) {
-                    setCurrentIdx(prev => prev + 1);
-                    setProgress(0);
-                } else {
-                    setPlaying(false);
-                    setProgress(100);
-                }
+                const next = currentIdx < items.length - 1 ? currentIdx + 1 : 0;
+                goTo(next);
             }
         }, 50);
         return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
-    }, [open, fetching, playing, currentIdx, items]);
-
-    const goTo = (idx: number) => { setCurrentIdx(idx); setProgress(0); setPlaying(true); };
+    }, [open, fetching, playing, currentIdx, items, goTo]);
 
     if (!open) return null;
-    const item = items[currentIdx];
-    const mediaId = item?.mediaId ?? item?.media?.id ?? '';
+    const item      = items[currentIdx];
+    const prevItem  = prevIdx !== null ? items[prevIdx] : null;
+    const mediaId   = item?.mediaId ?? item?.media?.id ?? '';
     const signedUrl = mediaUrls[mediaId];
-    const isVideo = item?.media?.type === 'VIDEO';
-    const dispDur = (item?.duration ?? 0) >= 86400 ? PREVIEW_MAX_SECS : (item?.duration ?? 10);
+    const prevMediaId  = prevItem?.mediaId ?? prevItem?.media?.id ?? '';
+    const prevUrl   = prevIdx !== null ? mediaUrls[prevMediaId] : undefined;
+    const durSecs   = previewDurSecs(item);
+    const isHienMai = (item?.duration ?? 0) >= 86400;
 
     return (
         <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth
@@ -695,29 +770,47 @@ function PlaylistPreviewDialog({ open, onClose, items }: {
                 </IconButton>
             </Box>
 
-            {/* Media area */}
-            <Box sx={{ bgcolor: '#000', minHeight: 420, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+            {/* Media area — two-layer crossfade, no black flash */}
+            <Box sx={{ bgcolor: '#000', height: 420, position: 'relative',
+                display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 {fetching ? (
                     <CircularProgress />
-                ) : signedUrl ? (
-                    isVideo ? (
-                        <video key={signedUrl} src={signedUrl} autoPlay muted playsInline
-                            style={{ maxWidth: '100%', maxHeight: 480, display: 'block' }} />
-                    ) : (
-                        <img key={signedUrl} src={signedUrl} alt={item?.media?.title}
-                            style={{ maxWidth: '100%', maxHeight: 480, objectFit: 'contain', display: 'block' }} />
-                    )
                 ) : (
-                    <Box textAlign="center" sx={{ color: 'grey.700' }}>
-                        {typeIcon(item?.media?.type)}
-                        <Typography variant="caption" display="block" mt={1}>Không tải được media</Typography>
-                    </Box>
+                    <>
+                        {/* Outgoing layer (behind) */}
+                        {prevIdx !== null && (
+                            <Box sx={{
+                                position: 'absolute',
+                                top: 0, right: 0, bottom: 0, left: 0,
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                ...outStyle(transType, transActive),
+                            }}>
+                                <MediaLayer item={prevItem ?? undefined} url={prevUrl} />
+                            </Box>
+                        )}
+                        {/* Incoming layer (front) */}
+                        <Box sx={{
+                            position: 'absolute',
+                            top: 0, right: 0, bottom: 0, left: 0,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            ...(!transActive ? {} : inStyle(transType, entered)),
+                        }}>
+                            <MediaLayer
+                                item={item}
+                                url={signedUrl}
+                                onVideoEnd={() => {
+                                    const next = currentIdx < items.length - 1 ? currentIdx + 1 : 0;
+                                    goTo(next);
+                                }}
+                            />
+                        </Box>
+                    </>
                 )}
             </Box>
 
             {/* Progress bar */}
             <LinearProgress variant="determinate" value={progress}
-                sx={{ height: 2, bgcolor: 'rgba(255,255,255,0.06)', '& .MuiLinearProgress-bar': { transition: 'none' } }} />
+                sx={{ height: 3, bgcolor: 'rgba(255,255,255,0.06)', '& .MuiLinearProgress-bar': { transition: 'none' } }} />
 
             {/* Controls */}
             <Box sx={{ px: 2.5, py: 1.5, bgcolor: '#111' }}>
@@ -729,22 +822,20 @@ function PlaylistPreviewDialog({ open, onClose, items }: {
                         <Chip label={item?.media?.type} size="small"
                             sx={{ fontSize: '0.62rem', bgcolor: 'rgba(255,255,255,0.06)', color: 'grey.500' }} />
                         <Typography variant="caption" color="grey.600">
-                            {(item?.duration ?? 0) >= 86400
-                                ? `∞ → preview ${PREVIEW_MAX_SECS}s`
-                                : `${dispDur}s`}
+                            {isHienMai ? `∞ → preview ${PREVIEW_CAP_SECS}s` : `${durSecs}s`}
                         </Typography>
                     </Stack>
                     <Stack direction="row" alignItems="center" gap={0.5}>
-                        <IconButton size="small" onClick={() => goTo(currentIdx - 1)}
-                            disabled={currentIdx === 0} sx={{ color: 'grey.400' }}>
+                        <IconButton size="small" onClick={() => goTo(currentIdx === 0 ? items.length - 1 : currentIdx - 1)}
+                            sx={{ color: 'grey.400' }}>
                             <SkipPrevious />
                         </IconButton>
                         <IconButton onClick={() => setPlaying(p => !p)}
                             sx={{ color: '#fff', bgcolor: 'rgba(255,255,255,0.1)', '&:hover': { bgcolor: 'rgba(255,255,255,0.18)' }, width: 36, height: 36 }}>
                             {playing ? <Pause fontSize="small" /> : <PlayArrow fontSize="small" />}
                         </IconButton>
-                        <IconButton size="small" onClick={() => goTo(currentIdx + 1)}
-                            disabled={currentIdx === items.length - 1} sx={{ color: 'grey.400' }}>
+                        <IconButton size="small" onClick={() => goTo(currentIdx === items.length - 1 ? 0 : currentIdx + 1)}
+                            sx={{ color: 'grey.400' }}>
                             <SkipNext />
                         </IconButton>
                     </Stack>
@@ -756,9 +847,10 @@ function PlaylistPreviewDialog({ open, onClose, items }: {
                         <Box key={it.id} onClick={() => goTo(idx)}
                             sx={{
                                 width: 52, height: 34, flexShrink: 0, borderRadius: 0.75, overflow: 'hidden',
-                                border: idx === currentIdx ? '2px solid' : '2px solid transparent',
+                                border: '2px solid',
                                 borderColor: idx === currentIdx ? 'primary.main' : 'transparent',
-                                cursor: 'pointer', bgcolor: 'grey.900', opacity: idx === currentIdx ? 1 : 0.5,
+                                cursor: 'pointer', bgcolor: 'grey.900',
+                                opacity: idx === currentIdx ? 1 : 0.5,
                                 transition: 'opacity 0.15s, border-color 0.15s',
                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                             }}>
@@ -834,7 +926,6 @@ function PlaylistPanelInner({ playlistId, onClose }: { playlistId: string; onClo
             if (localItems[i].id !== serverItems[i]?.id) return true;
             if (localItems[i].duration !== serverItems[i]?.duration) return true;
             if ((localItems[i].transition ?? 'FADE') !== (serverItems[i]?.transition ?? 'FADE')) return true;
-            if ((localItems[i].transitionDuration ?? 800) !== (serverItems[i]?.transitionDuration ?? 800)) return true;
         }
         return false;
     }, [localItems, serverItems]);
@@ -856,10 +947,6 @@ function PlaylistPanelInner({ playlistId, onClose }: { playlistId: string; onClo
 
     const handleTransitionChange = useCallback((itemId: string, transition: string) => {
         setLocalItems(prev => prev.map(i => i.id === itemId ? { ...i, transition } : i));
-    }, []);
-
-    const handleTransitionDurationChange = useCallback((itemId: string, transitionDuration: number) => {
-        setLocalItems(prev => prev.map(i => i.id === itemId ? { ...i, transitionDuration } : i));
     }, []);
 
     const handleStagedAdd = useCallback((items: { media: Media; duration: number }[]) => {
@@ -914,14 +1001,13 @@ function PlaylistPanelInner({ playlistId, onClose }: { playlistId: string; onClo
                 const server = serverItems.find(si => si.id === i.id);
                 if (!server) return false;
                 return server.duration !== i.duration ||
-                    (server.transition ?? 'FADE') !== (i.transition ?? 'FADE') ||
-                    (server.transitionDuration ?? 800) !== (i.transitionDuration ?? 800);
+                    (server.transition ?? 'FADE') !== (i.transition ?? 'FADE');
             });
             await Promise.all(existingChanges.map(i =>
                 playlistsApi.updateItem(playlistId, i.id, {
                     durationOverride: i.duration ?? 10,
                     transition: i.transition ?? 'FADE',
-                    transitionDuration: i.transitionDuration ?? null,
+                    transitionDuration: 200,
                 })
             ));
 
@@ -1076,9 +1162,7 @@ function PlaylistPanelInner({ playlistId, onClose }: { playlistId: string; onClo
                                     {idx > 0 && (
                                         <TransitionPicker
                                             value={item.transition}
-                                            transitionDuration={item.transitionDuration}
                                             onChange={v => handleTransitionChange(item.id, v)}
-                                            onDurationChange={ms => handleTransitionDurationChange(item.id, ms)}
                                         />
                                     )}
                                     <SortableItem

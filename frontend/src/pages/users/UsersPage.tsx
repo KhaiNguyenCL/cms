@@ -9,7 +9,7 @@ import {
 } from '@mui/material';
 import {
     Search, PersonAdd, MoreVert, Edit, Block, DeleteForever,
-    CheckCircle, Cancel, Person, Shield, Visibility,
+    CheckCircle, Cancel, Person, Shield, Visibility, Info,
 } from '@mui/icons-material';
 import { useAppDispatch, useAppSelector } from '@store/hooks';
 import { pushToast } from '@store/slices/uiSlice';
@@ -19,10 +19,22 @@ import type { User } from '@/types';
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const ROLE_CFG = {
-    SUPER_ADMIN: { label: 'Super Admin', color: '#F44336', icon: <Shield sx={{ fontSize: 12 }} /> },
-    ADMIN:       { label: 'Admin',       color: '#FF6584', icon: <Shield sx={{ fontSize: 12 }} /> },
-    MANAGER:     { label: 'Manager',     color: '#6C63FF', icon: <Person sx={{ fontSize: 12 }} /> },
-    VIEWER:      { label: 'Viewer',      color: '#29B6F6', icon: <Visibility sx={{ fontSize: 12 }} /> },
+    SUPER_ADMIN: {
+        label: 'Super Admin', color: '#F44336', icon: <Shield sx={{ fontSize: 12 }} />,
+        perms: ['Toàn quyền hệ thống', 'Quản lý tất cả tổ chức', 'Cấp phép & quota'],
+    },
+    ADMIN: {
+        label: 'Admin', color: '#FF6584', icon: <Shield sx={{ fontSize: 12 }} />,
+        perms: ['Toàn quyền trong tổ chức', 'Tạo/xóa user, device, media', 'Xóa playlist, schedule', 'OTA update, cấp phép device'],
+    },
+    MANAGER: {
+        label: 'Manager', color: '#6C63FF', icon: <Person sx={{ fontSize: 12 }} />,
+        perms: ['Tạo/sửa playlist, schedule, media', 'Gửi lệnh đến device', 'Xem device & user', 'Không thể xóa'],
+    },
+    VIEWER: {
+        label: 'Viewer', color: '#29B6F6', icon: <Visibility sx={{ fontSize: 12 }} />,
+        perms: ['Chỉ xem media, playlist, schedule', 'Không thể tạo, sửa, xóa', 'Không xem device & user'],
+    },
 } as const;
 
 const STATUS_CFG = {
@@ -34,18 +46,71 @@ const STATUS_CFG = {
 function RoleChip({ role }: { role: User['role'] }) {
     const cfg = ROLE_CFG[role] ?? ROLE_CFG.VIEWER;
     return (
-        <Chip
-            label={cfg.label}
-            size="small"
-            icon={cfg.icon as any}
-            sx={{
-                bgcolor: alpha(cfg.color, 0.15),
-                color: cfg.color,
-                fontWeight: 600,
-                fontSize: '0.65rem',
-                border: `1px solid ${alpha(cfg.color, 0.3)}`,
-            }}
-        />
+        <Tooltip
+            title={
+                <Box>
+                    <Typography variant="caption" fontWeight={700} display="block" mb={0.5}>{cfg.label}</Typography>
+                    {cfg.perms.map(p => (
+                        <Typography key={p} variant="caption" display="block" sx={{ opacity: 0.9 }}>• {p}</Typography>
+                    ))}
+                </Box>
+            }
+            arrow
+        >
+            <Chip
+                label={cfg.label}
+                size="small"
+                icon={cfg.icon as any}
+                sx={{
+                    bgcolor: alpha(cfg.color, 0.15),
+                    color: cfg.color,
+                    fontWeight: 600,
+                    fontSize: '0.65rem',
+                    border: `1px solid ${alpha(cfg.color, 0.3)}`,
+                    cursor: 'default',
+                }}
+            />
+        </Tooltip>
+    );
+}
+
+function RoleLegend() {
+    const roles = (['ADMIN', 'MANAGER', 'VIEWER'] as const);
+    return (
+        <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', alignItems: 'center' }}>
+            <Stack direction="row" alignItems="center" gap={0.5}>
+                <Info sx={{ fontSize: 14, color: 'text.disabled' }} />
+                <Typography variant="caption" color="text.secondary" fontWeight={600}>Quyền theo role:</Typography>
+            </Stack>
+            {roles.map(role => {
+                const cfg = ROLE_CFG[role];
+                return (
+                    <Tooltip
+                        key={role}
+                        arrow
+                        title={
+                            <Box>
+                                {cfg.perms.map(p => (
+                                    <Typography key={p} variant="caption" display="block" sx={{ opacity: 0.9 }}>• {p}</Typography>
+                                ))}
+                            </Box>
+                        }
+                    >
+                        <Box sx={{
+                            display: 'flex', alignItems: 'center', gap: 0.75, cursor: 'default',
+                            px: 1.25, py: 0.4, borderRadius: 1.5,
+                            bgcolor: alpha(cfg.color, 0.08),
+                            border: `1px solid ${alpha(cfg.color, 0.2)}`,
+                        }}>
+                            <Box sx={{ color: cfg.color, display: 'flex', fontSize: 12 }}>{cfg.icon}</Box>
+                            <Typography variant="caption" sx={{ color: cfg.color, fontWeight: 600, fontSize: '0.68rem' }}>
+                                {cfg.label}
+                            </Typography>
+                        </Box>
+                    </Tooltip>
+                );
+            })}
+        </Box>
     );
 }
 
@@ -390,6 +455,9 @@ export default function UsersPage() {
                 </FormControl>
             </Stack>
 
+            {/* Role legend */}
+            <Box mb={2}><RoleLegend /></Box>
+
             {/* Table */}
             <Card>
                 <Box sx={{ overflowX: 'auto' }}>
@@ -437,7 +505,7 @@ export default function UsersPage() {
                                                         {user.email[0].toUpperCase()}
                                                     </Box>
                                                     <Box>
-                                                        <Typography variant="body2" fontWeight={600}>
+                                                        <Typography variant="body2" fontWeight={600} component="div">
                                                             {user.email}
                                                             {isSelf && (
                                                                 <Chip label="Bạn" size="small" sx={{ ml: 1, height: 16, fontSize: '0.6rem' }} />

@@ -8,6 +8,7 @@ export interface JwtPayload {
     userId: string;
     organizationId: string;
     role: string;
+    isRoot?: boolean;
     type: 'user' | 'device' | 'platform_admin';
 }
 
@@ -54,7 +55,8 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
     }
 }
 
-// Middleware for platform-admin-only routes (checks type: 'platform_admin')
+// Middleware for platform-admin-only routes
+// Accepts: platform_admin tokens OR regular user tokens where isRoot === true
 export function authenticatePlatformAdmin(req: Request, _res: Response, next: NextFunction) {
     const authHeader = req.headers.authorization;
     if (!authHeader?.startsWith('Bearer ')) {
@@ -64,11 +66,15 @@ export function authenticatePlatformAdmin(req: Request, _res: Response, next: Ne
     const token = authHeader.split(' ')[1];
     try {
         const payload = jwt.verify(token, config.jwt.secret) as JwtPayload;
-        if (payload.type !== 'platform_admin') {
-            return next(new AppError(403, 'Platform admin token required'));
+        if (payload.type === 'platform_admin') {
+            req.user = payload;
+            return next();
         }
-        req.user = payload;
-        next();
+        if (payload.type === 'user' && payload.isRoot === true) {
+            req.user = payload;
+            return next();
+        }
+        return next(new AppError(403, 'Insufficient privileges'));
     } catch {
         return next(new AppError(401, 'Invalid or expired token'));
     }

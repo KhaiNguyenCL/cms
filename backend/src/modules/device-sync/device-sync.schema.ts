@@ -20,6 +20,7 @@ export const heartbeatSchema = z.object({
         networkConnected: z.boolean().optional(),
         processCpuPercent: z.number().min(0).max(100).optional(), // CPU% của riêng process player
         isScreenOn: z.boolean().optional(),  // false khi màn hình tắt (SLEEP)
+        wanIp: z.string().max(50).optional(),  // WAN IP tự fetch từ ipify.org trên device
         // Sprint 2: local content cache
         downloadStatus:   z.enum(['PENDING','DOWNLOADING','READY','ERROR']).optional(),
         downloadProgress: z.number().int().min(0).max(100).optional(),

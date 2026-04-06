@@ -81,6 +81,14 @@ const config = {
     log: {
         level: process.env.LOG_LEVEL || 'info',
     },
+
+    smtp: process.env.SMTP_HOST ? {
+        host: process.env.SMTP_HOST,
+        port: parseInt(process.env.SMTP_PORT || '587', 10),
+        user: process.env.SMTP_USER || '',
+        pass: process.env.SMTP_PASS || '',
+        from: process.env.SMTP_FROM || process.env.SMTP_USER || 'noreply@cms.local',
+    } : null,
 } as const;
 
 // Validate required env vars
