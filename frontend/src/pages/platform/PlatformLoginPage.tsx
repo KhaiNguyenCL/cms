@@ -155,7 +155,7 @@ export default function PlatformLoginPage() {
 
                             <Button
                                 type="submit"
-                                variant="contained"
+                               
                                 fullWidth size="large"
                                 disabled={loading}
                                 sx={{

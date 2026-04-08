@@ -1,10 +1,10 @@
-import { useState } from 'react';
-import { useNavigate, Link as RouterLink } from 'react-router-dom';
+import { useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
-    Box, Card, CardContent, Typography, TextField, Button,
+    Box, Typography, TextField, Button,
     IconButton, InputAdornment, Alert, CircularProgress, Stack,
 } from '@mui/material';
-import { Visibility, VisibilityOff, LockOutlined } from '@mui/icons-material';
+import { Visibility, VisibilityOff } from '@mui/icons-material';
 import { useAppDispatch } from '@store/hooks';
 import { setCredentials } from '@store/slices/authSlice';
 import { authApi } from '@api/auth.api';
@@ -12,15 +12,15 @@ import { authApi } from '@api/auth.api';
 export default function LoginPage() {
     const dispatch = useAppDispatch();
     const navigate = useNavigate();
-    // Always navigate to /dashboard after login — prevents stale "from" state
-    // carrying over from a previous session's last-visited page after logout.
     const from = '/dashboard';
 
-    const [email, setEmail] = useState('');
+    const [email, setEmail]       = useState('');
     const [password, setPassword] = useState('');
-    const [showPw, setShowPw] = useState(false);
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState('');
+    const [showPw, setShowPw]     = useState(false);
+    const [loading, setLoading]   = useState(false);
+    const [error, setError]       = useState('');
+
+    const passwordRef = useRef<HTMLInputElement>(null);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -29,10 +29,7 @@ export default function LoginPage() {
         setError('');
         try {
             const data = await authApi.login(email, password);
-            dispatch(setCredentials({
-                user: data.user,
-                accessToken: data.accessToken,
-            }));
+            dispatch(setCredentials({ user: data.user, accessToken: data.accessToken }));
             navigate(from, { replace: true });
         } catch (err: unknown) {
             const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
@@ -42,132 +39,130 @@ export default function LoginPage() {
         }
     };
 
-    return (
-        <Box
-            sx={{
-                minHeight: '100vh',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                background: 'linear-gradient(135deg, #0F1117 0%, #1A1D2E 50%, #12152a 100%)',
-                p: 2,
-            }}
-        >
-            {/* Decorative blobs */}
-            <Box sx={{
-                position: 'absolute', top: '15%', left: '10%', width: 300, height: 300,
-                borderRadius: '50%', background: 'rgba(108,99,255,0.12)', filter: 'blur(80px)', pointerEvents: 'none',
-            }} />
-            <Box sx={{
-                position: 'absolute', bottom: '15%', right: '10%', width: 250, height: 250,
-                borderRadius: '50%', background: 'rgba(255,101,132,0.1)', filter: 'blur(80px)', pointerEvents: 'none',
-            }} />
+    // Enter ở Email → focus Password
+    const handleEmailKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            passwordRef.current?.focus();
+        }
+    };
 
-            <Card
-                sx={{
-                    width: '100%', maxWidth: 420, position: 'relative',
-                    background: 'rgba(26,29,46,0.9)',
-                    backdropFilter: 'blur(20px)',
-                    border: '1px solid rgba(108,99,255,0.2)',
-                }}
-            >
-                <CardContent sx={{ p: 4 }}>
-                    {/* Logo */}
-                    <Stack alignItems="center" mb={4} spacing={1.5}>
-                        <Box
+    return (
+        <Box sx={{
+            minHeight: '100vh',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'linear-gradient(135deg, #1D4ED8 0%, #2563EB 40%, #3B82F6 70%, #60A5FA 100%)',
+            p: 2,
+        }}>
+            {/* Form card */}
+            <Box sx={{
+                width: '100%',
+                maxWidth: 400,
+                bgcolor: '#fff',
+                borderRadius: 3,
+                border: '1.5px solid #e2e8f0',
+                boxShadow: '0 20px 60px rgba(0,0,0,0.18)',
+                p: { xs: 3, sm: 4 },
+            }}>
+                {/* Logo + title */}
+                <Stack alignItems="center" mb={3.5} spacing={1}>
+                    <img src="/logo-icon.png" alt="DMS Signage"
+                        style={{ height: 64, width: 'auto', objectFit: 'contain' }} />
+                    <Typography variant="h5" fontWeight={700} color="common.black">
+                        DMS Signage
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                        Đăng nhập để tiếp tục
+                    </Typography>
+                </Stack>
+
+                {error && (
+                    <Alert severity="error" sx={{ mb: 2 }}>
+                        {error}
+                    </Alert>
+                )}
+
+                <form onSubmit={handleSubmit}>
+                    <Stack spacing={2}>
+                        <TextField
+                            label="Email"
+                            type="email"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            onKeyDown={handleEmailKeyDown}
+                            fullWidth
+                            required
+                            autoComplete="email"
+                            autoFocus
                             sx={{
-                                width: 56, height: 56, borderRadius: 3,
-                                background: 'linear-gradient(135deg, #6C63FF, #FF6584)',
-                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                '& .MuiOutlinedInput-root': {
+                                    '& fieldset': { borderColor: '#000', borderWidth: 1.5 },
+                                    '&:hover fieldset': { borderColor: '#2563EB' },
+                                    '&.Mui-focused fieldset': { borderColor: '#2563EB', borderWidth: 2 },
+                                },
+                                '& .MuiInputBase-input': { color: '#000' },
+                                '& .MuiInputLabel-root': { color: '#555' },
+                                '& .MuiInputLabel-root.Mui-focused': { color: '#2563EB' },
+                            }}
+                        />
+
+                        <TextField
+                            label="Mật khẩu"
+                            type={showPw ? 'text' : 'password'}
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            fullWidth
+                            required
+                            autoComplete="current-password"
+                            inputRef={passwordRef}
+                            InputProps={{
+                                endAdornment: (
+                                    <InputAdornment position="end">
+                                        <IconButton size="small" onClick={() => setShowPw(!showPw)} edge="end">
+                                            {showPw ? <VisibilityOff fontSize="small" /> : <Visibility fontSize="small" />}
+                                        </IconButton>
+                                    </InputAdornment>
+                                ),
+                            }}
+                            sx={{
+                                '& .MuiOutlinedInput-root': {
+                                    '& fieldset': { borderColor: '#000', borderWidth: 1.5 },
+                                    '&:hover fieldset': { borderColor: '#2563EB' },
+                                    '&.Mui-focused fieldset': { borderColor: '#2563EB', borderWidth: 2 },
+                                },
+                                '& .MuiInputBase-input': { color: '#000' },
+                                '& .MuiInputLabel-root': { color: '#555' },
+                                '& .MuiInputLabel-root.Mui-focused': { color: '#2563EB' },
+                            }}
+                        />
+
+                        <Button
+                            type="submit"
+                            variant="contained"
+                            fullWidth
+                            size="large"
+                            disabled={loading}
+                            sx={{
+                                mt: 0.5, py: 1.25,
+                                bgcolor: '#2563EB',
+                                '&:hover': { bgcolor: '#1D4ED8' },
+                                fontWeight: 600,
+                                borderRadius: 2,
+                                boxShadow: 'none',
+                                fontSize: '0.9375rem',
                             }}
                         >
-                            <LockOutlined sx={{ color: '#fff', fontSize: 28 }} />
-                        </Box>
-                        <Typography variant="h5" fontWeight={700} color="white">
-                            SignageCMS
-                        </Typography>
-                        <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.5)' }}>
-                            Đăng nhập để tiếp tục
-                        </Typography>
+                            {loading ? <CircularProgress size={22} color="inherit" /> : 'Đăng nhập'}
+                        </Button>
                     </Stack>
+                </form>
 
-                    {error && (
-                        <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>
-                            {error}
-                        </Alert>
-                    )}
-
-                    <form onSubmit={handleSubmit}>
-                        <Stack spacing={2.5}>
-                            <TextField
-                                label="Email"
-                                type="email"
-                                value={email}
-                                onChange={(e) => setEmail(e.target.value)}
-                                fullWidth
-                                required
-                                autoComplete="email"
-                                autoFocus
-                                sx={{
-                                    '& .MuiOutlinedInput-root': {
-                                        color: 'white',
-                                        '& fieldset': { borderColor: 'rgba(255,255,255,0.15)' },
-                                        '&:hover fieldset': { borderColor: 'rgba(108,99,255,0.5)' },
-                                        '&.Mui-focused fieldset': { borderColor: '#6C63FF' },
-                                    },
-                                    '& .MuiInputLabel-root': { color: 'rgba(255,255,255,0.5)' },
-                                    '& .MuiInputLabel-root.Mui-focused': { color: '#6C63FF' },
-                                }}
-                            />
-
-                            <TextField
-                                label="Password"
-                                type={showPw ? 'text' : 'password'}
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                                fullWidth
-                                required
-                                autoComplete="current-password"
-                                InputProps={{
-                                    endAdornment: (
-                                        <InputAdornment position="end">
-                                            <IconButton
-                                                onClick={() => setShowPw(!showPw)}
-                                                edge="end"
-                                                sx={{ color: 'rgba(255,255,255,0.4)' }}
-                                            >
-                                                {showPw ? <VisibilityOff /> : <Visibility />}
-                                            </IconButton>
-                                        </InputAdornment>
-                                    ),
-                                }}
-                                sx={{
-                                    '& .MuiOutlinedInput-root': {
-                                        color: 'white',
-                                        '& fieldset': { borderColor: 'rgba(255,255,255,0.15)' },
-                                        '&:hover fieldset': { borderColor: 'rgba(108,99,255,0.5)' },
-                                        '&.Mui-focused fieldset': { borderColor: '#6C63FF' },
-                                    },
-                                    '& .MuiInputLabel-root': { color: 'rgba(255,255,255,0.5)' },
-                                    '& .MuiInputLabel-root.Mui-focused': { color: '#6C63FF' },
-                                }}
-                            />
-
-                            <Button
-                                type="submit"
-                                variant="contained"
-                                fullWidth
-                                size="large"
-                                disabled={loading}
-                                sx={{ mt: 1, py: 1.5, fontSize: '1rem' }}
-                            >
-                                {loading ? <CircularProgress size={22} color="inherit" /> : 'Đăng nhập'}
-                            </Button>
-                        </Stack>
-                    </form>
-
-                </CardContent>
-            </Card>
+                <Typography variant="caption" color="text.disabled" display="block" textAlign="center" mt={3}>
+                    DMS Signage © {new Date().getFullYear()}
+                </Typography>
+            </Box>
         </Box>
     );
 }

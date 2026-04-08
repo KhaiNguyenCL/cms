@@ -414,3 +414,34 @@ CREATE UNIQUE INDEX IF NOT EXISTS "stores_org_name_unique" ON stores("organizati
 -- ─── Site timezone (2026-03-17) ───────────────────────────────────────────────
 -- Run on existing DB:
 -- ALTER TABLE stores ADD COLUMN IF NOT EXISTS timezone TEXT DEFAULT NULL;
+
+-- =============================================================================
+--  Seed: Super Admin account (chạy 1 lần khi khởi tạo DB)
+--  Email:    admin@dms.saigontech.net
+--  Password: Admin@123456  ← ĐỔI NGAY sau lần đăng nhập đầu tiên
+-- =============================================================================
+
+-- Tạo organization mặc định cho Super Admin
+INSERT INTO organizations (id, name, slug, "isActive", "maxDevices", "maxUsers", "storageQuotaBytes")
+VALUES (
+    'org-system-default',
+    'DMS Signage',
+    'dms-signage',
+    true,
+    9999,
+    9999,
+    107374182400  -- 100GB
+) ON CONFLICT DO NOTHING;
+
+-- Tạo Super Admin account
+INSERT INTO users (id, "organizationId", email, "passwordHash", role, status, "createdAt", "updatedAt")
+VALUES (
+    'user-super-admin-default',
+    'org-system-default',
+    'admin@dms.saigontech.net',
+    '$2b$12$iRJDzXiY25C5NKB.gVRXyuSB4d8Y2f56tB0/RrzJSHQWoT2d2kINy',
+    'SUPER_ADMIN',
+    'ACTIVE',
+    NOW(),
+    NOW()
+) ON CONFLICT DO NOTHING;

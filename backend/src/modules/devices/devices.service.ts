@@ -174,8 +174,7 @@ export async function updateDevice(
     if (data.timezone !== undefined)         { fields.push(`timezone = $${idx++}`);          values.push(data.timezone); }
     if (data.status !== undefined)           { fields.push(`status = $${idx++}`);            values.push(data.status); }
     if (data.settings !== undefined)         { fields.push(`settings = $${idx++}`);          values.push(JSON.stringify(data.settings)); }
-    if (data.licenseStartDate !== undefined) { fields.push(`"licenseStartDate" = $${idx++}`); values.push(data.licenseStartDate); }
-    if (data.licenseEndDate !== undefined)   { fields.push(`"licenseEndDate" = $${idx++}`);   values.push(data.licenseEndDate); }
+    // licenseStartDate / licenseEndDate are managed by the license system, not editable here
 
     if (fields.length === 0) throw new AppError(400, 'Không có dữ liệu để cập nhật');
 

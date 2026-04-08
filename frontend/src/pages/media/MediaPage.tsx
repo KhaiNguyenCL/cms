@@ -56,11 +56,13 @@ function DeleteConfirmDialog({ target, onClose, onConfirm, loading, errorMsg }: 
 }) {
     return (
         <Dialog open={!!target} onClose={loading ? undefined : onClose} maxWidth="xs" fullWidth>
-            <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <WarningAmber color="error" />
-                Xoá media
+            <DialogTitle fontWeight={700}>
+                <Stack direction="row" alignItems="center" gap={1}>
+                    <WarningAmber color="error" />
+                    Xoá media
+                </Stack>
             </DialogTitle>
-            <DialogContent>
+            <DialogContent dividers>
                 <Typography variant="body2" mb={errorMsg ? 2 : 0}>
                     Bạn có chắc muốn xoá{' '}
                     <strong>&ldquo;{target?.title}&rdquo;</strong>?
@@ -76,14 +78,9 @@ function DeleteConfirmDialog({ target, onClose, onConfirm, loading, errorMsg }: 
                     </Box>
                 )}
             </DialogContent>
-            <DialogActions>
-                <Button onClick={onClose} disabled={loading}>Huỷ</Button>
-                <Button
-                    variant="contained" color="error"
-                    disabled={loading}
-                    startIcon={loading ? <CircularProgress size={14} color="inherit" /> : <Delete />}
-                    onClick={() => target && onConfirm(target.id)}
-                >
+            <DialogActions sx={{ px: 3, pb: 2 }}>
+                <Button size="small" onClick={onClose} disabled={loading}>Huỷ</Button>
+                <Button color="error" size="small" disabled={loading} startIcon={loading ? <CircularProgress size={14} color="inherit" /> : <Delete />} onClick={() => target && onConfirm(target.id)}>
                     {loading ? 'Đang xoá…' : 'Xoá'}
                 </Button>
             </DialogActions>
@@ -265,12 +262,12 @@ function MediaPreviewDialog({ media, open, onClose, onDelete }: {
                 )}
             </Box>
 
-            <DialogActions sx={{ px: 2.5, py: 1.5, justifyContent: 'space-between' }}>
-                <Button variant="outlined" color="error" startIcon={<Delete />}
+            <DialogActions sx={{ px: 3, pb: 2, justifyContent: 'space-between' }}>
+                <Button size="small" variant="outlined" color="error" startIcon={<Delete />}
                     onClick={() => { onDelete(media.id, media.title); onClose(); }}>
                     Delete
                 </Button>
-                <Button onClick={onClose} variant="outlined">Close</Button>
+                <Button size="small" onClick={onClose} variant="outlined">Close</Button>
             </DialogActions>
         </Dialog>
     );
@@ -395,15 +392,17 @@ function UploadDialog({ open, onClose }: { open: boolean; onClose: () => void })
 
     return (
         <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
-            <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                Upload Media
-                {items.length > 0 && (
-                    <Typography variant="caption" color="text.secondary">
-                        {doneCount}/{items.length} done
-                    </Typography>
-                )}
+            <DialogTitle fontWeight={700}>
+                <Stack direction="row" alignItems="center" justifyContent="space-between">
+                    Upload Media
+                    {items.length > 0 && (
+                        <Typography variant="caption" color="text.secondary">
+                            {doneCount}/{items.length} done
+                        </Typography>
+                    )}
+                </Stack>
             </DialogTitle>
-            <DialogContent sx={{ pb: 1 }}>
+            <DialogContent dividers>
                 <Stack spacing={2} sx={{ mt: 0.5 }}>
                     {/* Drop zone */}
                     <Box
@@ -516,20 +515,13 @@ function UploadDialog({ open, onClose }: { open: boolean; onClose: () => void })
                     )}
                 </Stack>
             </DialogContent>
-            <DialogActions sx={{ p: 2 }}>
-                <Button onClick={handleClose} disabled={uploading}>
+            <DialogActions sx={{ px: 3, pb: 2 }}>
+                <Button size="small" onClick={handleClose} disabled={uploading}>
                     {allFinished ? 'Close' : 'Cancel'}
                 </Button>
                 {!allFinished && (
-                    <Button
-                        variant="contained"
-                        disabled={pendingCount === 0 || uploading}
-                        onClick={handleUpload}
-                        startIcon={<CloudUpload />}
-                    >
-                        {uploading
-                            ? 'Uploading...'
-                            : `Upload ${pendingCount} file${pendingCount !== 1 ? 's' : ''}`}
+                    <Button size="small" disabled={pendingCount === 0 || uploading} onClick={handleUpload} startIcon={<CloudUpload />}>
+                        {uploading ? 'Uploading...' : `Upload ${pendingCount} file${pendingCount !== 1 ? 's' : ''}`}
                     </Button>
                 )}
             </DialogActions>
@@ -620,8 +612,7 @@ export default function MediaPage() {
             align={center ? 'center' : 'left'}
             onClick={() => toggleSort(field)}
             sx={{ cursor: 'pointer', userSelect: 'none', fontWeight: 700, whiteSpace: 'nowrap',
-                borderLeft: '1px solid', borderColor: 'divider',
-                '&:hover': { bgcolor: 'action.selected' } }}
+                '&:hover': { bgcolor: 'action.hover' } }}
         >
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: center ? 'center' : 'flex-start' }}>
                 {label}
@@ -642,7 +633,7 @@ export default function MediaPage() {
                     <Typography variant="h4" fontWeight={700}>Media Library</Typography>
                     <Typography variant="body2" color="text.secondary">{data?.total ?? 0} files</Typography>
                 </Box>
-                <Button variant="contained" startIcon={<CloudUpload />} onClick={() => setUploadOpen(true)}>
+                <Button startIcon={<CloudUpload />} onClick={() => setUploadOpen(true)}>
                     Upload
                 </Button>
             </Stack>
@@ -676,15 +667,15 @@ export default function MediaPage() {
                     <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 2 }}>
                         <Table size="small">
                             <TableHead>
-                                <TableRow sx={{ '& th': { bgcolor: 'action.hover' } }}>
+                                <TableRow>
                                     <TableCell align="center" sx={{ fontWeight: 700, width: 40 }}></TableCell>
                                     <SortHeader field="title"     label="Name" center />
                                     <SortHeader field="type"      label="Type"     center />
                                     <SortHeader field="fileSize"  label="Size"     center />
-                                    <TableCell align="center" sx={{ fontWeight: 700, borderLeft: '1px solid', borderColor: 'divider' }}>Resolution</TableCell>
-                                    <TableCell align="center" sx={{ fontWeight: 700, borderLeft: '1px solid', borderColor: 'divider' }}>Status</TableCell>
+                                    <TableCell align="center" sx={{ fontWeight: 700 }}>Resolution</TableCell>
+                                    <TableCell align="center" sx={{ fontWeight: 700 }}>Status</TableCell>
                                     <SortHeader field="createdAt" label="Uploaded" center />
-                                    <TableCell align="center" sx={{ fontWeight: 700, borderLeft: '1px solid', borderColor: 'divider' }}>Actions</TableCell>
+                                    <TableCell align="center" sx={{ fontWeight: 700 }}>Actions</TableCell>
                                 </TableRow>
                             </TableHead>
                             <TableBody>
@@ -731,14 +722,14 @@ export default function MediaPage() {
                                             </TableCell>
 
                                             {/* Name */}
-                                            <TableCell sx={{ borderLeft: '1px solid', borderColor: 'divider' }}>
+                                            <TableCell>
                                                 <Typography variant="body2" fontWeight={600} noWrap sx={{ maxWidth: 220 }}>
                                                     {media.title}
                                                 </Typography>
                                             </TableCell>
 
                                             {/* Type */}
-                                            <TableCell align="center" sx={{ borderLeft: '1px solid', borderColor: 'divider' }}>
+                                            <TableCell align="center">
                                                 <Chip
                                                     label={media.type}
                                                     size="small"
@@ -752,31 +743,31 @@ export default function MediaPage() {
                                             </TableCell>
 
                                             {/* Size */}
-                                            <TableCell align="center" sx={{ borderLeft: '1px solid', borderColor: 'divider' }}>
+                                            <TableCell align="center">
                                                 <Typography variant="caption" color="text.secondary">
                                                     {formatSize(media.fileSize)}
                                                 </Typography>
                                             </TableCell>
 
                                             {/* Resolution */}
-                                            <TableCell align="center" sx={{ borderLeft: '1px solid', borderColor: 'divider' }}>
+                                            <TableCell align="center">
                                                 <Typography variant="caption" color="text.secondary">
                                                     {media.width && media.height ? `${media.width}×${media.height}` : '—'}
                                                 </Typography>
                                             </TableCell>
 
                                             {/* Status */}
-                                            <TableCell align="center" sx={{ borderLeft: '1px solid', borderColor: 'divider' }}><StatusChip status={media.status} /></TableCell>
+                                            <TableCell align="center"><StatusChip status={media.status} /></TableCell>
 
                                             {/* Uploaded */}
-                                            <TableCell align="center" sx={{ borderLeft: '1px solid', borderColor: 'divider' }}>
+                                            <TableCell align="center">
                                                 <Typography variant="caption" color="text.secondary">
                                                     {new Date(media.createdAt).toLocaleDateString()}
                                                 </Typography>
                                             </TableCell>
 
                                             {/* Actions */}
-                                            <TableCell align="center" sx={{ borderLeft: '1px solid', borderColor: 'divider' }} onClick={(e) => e.stopPropagation()}>
+                                            <TableCell align="center" onClick={(e) => e.stopPropagation()}>
                                                 <Tooltip title="Delete">
                                                     <IconButton
                                                         size="small"
@@ -815,7 +806,7 @@ export default function MediaPage() {
                             <Typography variant="body2" color="text.secondary" mb={2}>
                                 Upload your first video or image to get started.
                             </Typography>
-                            <Button variant="contained" onClick={() => setUploadOpen(true)}>Upload Now</Button>
+                            <Button onClick={() => setUploadOpen(true)}>Upload Now</Button>
                         </Box>
                     )}
                 </Box>

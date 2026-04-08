@@ -160,20 +160,20 @@ function CreateUserDialog({ open, onClose }: { open: boolean; onClose: () => voi
 
     return (
         <Dialog open={open} onClose={handleClose} maxWidth="xs" fullWidth>
-            <DialogTitle>Tạo user mới</DialogTitle>
-            <DialogContent>
-                <Stack spacing={2.5} sx={{ mt: 1 }}>
+            <DialogTitle fontWeight={700}>Tạo user mới</DialogTitle>
+            <DialogContent dividers>
+                <Stack spacing={2.5} pt={0.5}>
                     {error && <Alert severity="error" sx={{ borderRadius: 2 }}>{error}</Alert>}
 
                     <TextField
-                        label="Email" type="email" fullWidth required
+                        label="Email" type="email" fullWidth required size="small"
                         value={form.email}
                         onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
                         autoFocus
                     />
 
                     <TextField
-                        label="Mật khẩu" fullWidth required
+                        label="Mật khẩu" fullWidth required size="small"
                         type={showPw ? 'text' : 'password'}
                         value={form.password}
                         onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
@@ -189,7 +189,7 @@ function CreateUserDialog({ open, onClose }: { open: boolean; onClose: () => voi
                         }}
                     />
 
-                    <FormControl fullWidth>
+                    <FormControl fullWidth size="small">
                         <InputLabel>Role</InputLabel>
                         <Select
                             value={form.role}
@@ -203,10 +203,10 @@ function CreateUserDialog({ open, onClose }: { open: boolean; onClose: () => voi
                     </FormControl>
                 </Stack>
             </DialogContent>
-            <DialogActions sx={{ p: 2.5 }}>
-                <Button onClick={handleClose}>Huỷ</Button>
+            <DialogActions sx={{ px: 3, pb: 2 }}>
+                <Button size="small" onClick={handleClose}>Huỷ</Button>
                 <Button
-                    variant="contained"
+                    size="small"
                     disabled={!valid || mutation.isPending}
                     onClick={() => mutation.mutate()}
                 >
@@ -254,17 +254,17 @@ function EditUserDialog({
 
     return (
         <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
-            <DialogTitle>Chỉnh sửa user</DialogTitle>
-            <DialogContent>
-                <Stack spacing={2.5} sx={{ mt: 1 }}>
+            <DialogTitle fontWeight={700}>Chỉnh sửa user</DialogTitle>
+            <DialogContent dividers>
+                <Stack spacing={2.5} pt={0.5}>
                     {error && <Alert severity="error" sx={{ borderRadius: 2 }}>{error}</Alert>}
 
                     <TextField
-                        label="Email" value={user.email} fullWidth disabled
+                        label="Email" value={user.email} fullWidth disabled size="small"
                         helperText="Email không thể thay đổi"
                     />
 
-                    <FormControl fullWidth>
+                    <FormControl fullWidth size="small">
                         <InputLabel>Role</InputLabel>
                         <Select
                             value={role}
@@ -277,7 +277,7 @@ function EditUserDialog({
                         </Select>
                     </FormControl>
 
-                    <FormControl fullWidth>
+                    <FormControl fullWidth size="small">
                         <InputLabel>Trạng thái</InputLabel>
                         <Select
                             value={status}
@@ -296,10 +296,10 @@ function EditUserDialog({
                     </FormControl>
                 </Stack>
             </DialogContent>
-            <DialogActions sx={{ p: 2.5 }}>
-                <Button onClick={onClose}>Huỷ</Button>
+            <DialogActions sx={{ px: 3, pb: 2 }}>
+                <Button size="small" onClick={onClose}>Huỷ</Button>
                 <Button
-                    variant="contained"
+                    size="small"
                     disabled={!hasChange || mutation.isPending}
                     onClick={() => mutation.mutate(payload)}
                 >
@@ -414,7 +414,7 @@ export default function UsersPage() {
                     </Typography>
                 </Box>
                 {isAdmin && (
-                    <Button variant="contained" startIcon={<PersonAdd />} onClick={() => setCreateOpen(true)}>
+                    <Button startIcon={<PersonAdd />} onClick={() => setCreateOpen(true)}>
                         Tạo user
                     </Button>
                 )}

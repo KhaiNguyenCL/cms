@@ -66,7 +66,7 @@ const navStructure: NavEntry[] = [
     },
     {
         kind: 'group', id: 'history', label: 'History', icon: <History />,
-        roles: ['SUPER_ADMIN'],
+        roles: ['ADMIN', 'MANAGER', 'SUPER_ADMIN'],
         children: [
             { kind: 'item', label: 'Status Alarm', icon: <NotificationsActive />, path: '/history/alarm', roles: null },
             { kind: 'item', label: 'Content History', icon: <PlayCircleOutline />, path: '/history/content', roles: null },
@@ -74,9 +74,9 @@ const navStructure: NavEntry[] = [
             { kind: 'item', label: 'Action History', icon: <Assignment />, path: '/history/action', roles: null },
         ],
     },
-    { kind: 'item', label: 'Users', icon: <People />, path: '/users', roles: ['SUPER_ADMIN'] },
+    { kind: 'item', label: 'Users', icon: <People />, path: '/users', roles: ['ADMIN', 'MANAGER', 'SUPER_ADMIN'] },
     { kind: 'item', label: 'License', icon: <WorkspacePremium />, path: '/license', roles: ['ADMIN', 'MANAGER', 'SUPER_ADMIN'] },
-    { kind: 'item', label: 'Settings', icon: <Settings />, path: '/settings', roles: ['SUPER_ADMIN'] },
+    { kind: 'item', label: 'Settings', icon: <Settings />, path: '/settings', roles: ['ADMIN', 'MANAGER', 'SUPER_ADMIN'] },
 ];
 
 const superAdminItems: NavLeaf[] = [
@@ -486,7 +486,7 @@ export default function DashboardLayout() {
             {isSwitched && (
                 <>
                     <Divider />
-                    <DialogActions sx={{ px: 2.5, py: 1.5 }}>
+                    <DialogActions sx={{ px: 3, pb: 2 }}>
                         <Button
                             size="small"
                             color="warning"
@@ -511,13 +511,16 @@ export default function DashboardLayout() {
             <Toolbar sx={{ px: 2, minHeight: '64px !important' }}>
                 {sidebarOpen ? (
                     <>
-                        <Box sx={{
-                            width: 32, height: 32, borderRadius: 2,
-                            background: 'linear-gradient(135deg, #6C63FF, #FF6584)',
-                            mr: 1.5, flexShrink: 0,
-                        }} />
+                        <Box sx={{ mr: 1.5, flexShrink: 0, display: 'flex', alignItems: 'center', height: 32 }}>
+                            <img
+                                src="/logo-icon.png"
+                                alt="DMS Signage"
+                                style={{ height: 32, width: 'auto', maxWidth: 120, objectFit: 'contain', display: 'block' }}
+                                onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                            />
+                        </Box>
                         <Typography variant="h6" fontWeight={700} noWrap sx={{ flex: 1 }}>
-                            SignageCMS
+                            DMS Signage
                         </Typography>
                         <IconButton size="small" onClick={() => dispatch(setSidebarOpen(false))}>
                             <ChevronLeft fontSize="small" />
@@ -525,14 +528,28 @@ export default function DashboardLayout() {
                     </>
                 ) : (
                     <Box
-                        sx={{
-                            width: 32, height: 32, minWidth: 32, borderRadius: 2, mx: 'auto',
-                            flexShrink: 0,
-                            background: 'linear-gradient(135deg, #6C63FF, #FF6584)',
-                            cursor: 'pointer',
-                        }}
+                        sx={{ mx: 'auto', flexShrink: 0, display: 'flex', alignItems: 'center', cursor: 'pointer' }}
                         onClick={() => dispatch(setSidebarOpen(true))}
-                    />
+                    >
+                        <img
+                            src="/logo-icon.png"
+                            alt="DMS"
+                            style={{ height: 32, width: 32, objectFit: 'contain', display: 'block' }}
+                            onError={(e) => {
+                                const el = e.currentTarget as HTMLImageElement;
+                                el.style.display = 'none';
+                                const fallback = el.nextElementSibling as HTMLElement | null;
+                                if (fallback) fallback.style.display = 'flex';
+                            }}
+                        />
+                        <Box sx={{
+                            display: 'none', width: 32, height: 32, borderRadius: 2,
+                            background: 'linear-gradient(135deg, #2563EB, #60A5FA)',
+                            alignItems: 'center', justifyContent: 'center',
+                        }}>
+                            <Typography sx={{ color: '#fff', fontSize: 11, fontWeight: 700 }}>DMS</Typography>
+                        </Box>
+                    </Box>
                 )}
             </Toolbar>
             <Divider />
@@ -798,8 +815,8 @@ export default function DashboardLayout() {
                     </Box>
                 )}
             </DialogContent>
-            <DialogActions sx={{ p: 2 }}>
-                <Button onClick={() => setScreenshot(null)}>Close</Button>
+            <DialogActions sx={{ px: 3, pb: 2 }}>
+                <Button size="small" onClick={() => setScreenshot(null)}>Close</Button>
             </DialogActions>
         </Dialog>
         </>

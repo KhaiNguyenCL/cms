@@ -7,7 +7,7 @@ import {
     Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
     Paper, Tooltip, Switch, FormControlLabel, Select, MenuItem as MuiMenuItem,
     FormControl, InputLabel, InputAdornment, Skeleton, ToggleButton, ToggleButtonGroup,
-    Pagination, FormHelperText,
+    Pagination, FormHelperText, CircularProgress,
 } from '@mui/material';
 import {
     Add, Delete, EventNote, Search, CalendarMonth, AccessTime,
@@ -194,13 +194,16 @@ function ScheduleFormDialog({
     open,
     onClose,
     editing,
+    onDeleted,
 }: {
     open: boolean;
     onClose: () => void;
     editing: Schedule | null;
+    onDeleted?: () => void;
 }) {
     const dispatch = useAppDispatch();
     const qc = useQueryClient();
+    const [confirmDel, setConfirmDel] = useState(false);
 
     const [form, setForm] = useState<CreateSchedulePayload>(
         editing
@@ -261,6 +264,17 @@ function ScheduleFormDialog({
         onError: (err) => dispatch(pushToast({ severity: 'error', message: getApiError(err, 'Failed to save schedule') })),
     });
 
+    const deleteMutation = useMutation({
+        mutationFn: () => schedulesApi.delete(editing!.id),
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ['schedules'] });
+            dispatch(pushToast({ severity: 'success', message: 'Đã xoá schedule' }));
+            onDeleted?.();
+            onClose();
+        },
+        onError: (err) => dispatch(pushToast({ severity: 'error', message: getApiError(err, 'Delete failed') })),
+    });
+
     const toggleDay = (day: number) => {
         setForm(prev => ({
             ...prev,
@@ -281,7 +295,22 @@ function ScheduleFormDialog({
 
     return (
         <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth TransitionProps={{ onEnter: handleOpen }}>
-            <DialogTitle fontWeight={700}>{editing ? 'Edit Schedule' : 'New Schedule'}</DialogTitle>
+            <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pb: 1 }}>
+                <Typography fontWeight={700}>{editing ? 'Edit Schedule' : 'New Schedule'}</Typography>
+                <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                    <Button size="small" onClick={onClose} disabled={mutation.isPending || deleteMutation.isPending}>
+                        Hủy
+                    </Button>
+                    <Button
+                        size="small"
+                        variant="contained"
+                        disabled={!isValid || mutation.isPending || deleteMutation.isPending}
+                        onClick={() => mutation.mutate()}
+                    >
+                        {mutation.isPending ? 'Saving...' : editing ? 'Lưu' : 'Tạo mới'}
+                    </Button>
+                </Box>
+            </DialogTitle>
             <DialogContent dividers>
                 <Stack spacing={2.5} sx={{ mt: 0.5 }}>
                     {/* Name */}
@@ -385,16 +414,21 @@ function ScheduleFormDialog({
                     />
                 </Stack>
             </DialogContent>
-            <DialogActions sx={{ p: 2.5 }}>
-                <Button onClick={onClose} disabled={mutation.isPending}>Cancel</Button>
-                <Button
-                    variant="contained"
-                    disabled={!isValid || mutation.isPending}
-                    onClick={() => mutation.mutate()}
-                >
-                    {mutation.isPending ? 'Saving...' : editing ? 'Save Changes' : 'Create Schedule'}
-                </Button>
-            </DialogActions>
+            {editing && (
+                <DialogActions sx={{ px: 3, pb: 2, justifyContent: 'flex-start' }}>
+                    {confirmDel ? (
+                        <Stack direction="row" spacing={1} alignItems="center">
+                            <Typography variant="body2" color="error">Xoá schedule này?</Typography>
+                            <Button size="small" color="error" disabled={deleteMutation.isPending}
+                                startIcon={deleteMutation.isPending ? <CircularProgress size={14} color="inherit" /> : undefined}
+                                onClick={() => deleteMutation.mutate()}>Xoá</Button>
+                            <Button size="small" onClick={() => setConfirmDel(false)} disabled={deleteMutation.isPending}>Không</Button>
+                        </Stack>
+                    ) : (
+                        <Button size="small" color="error" startIcon={<Delete />} onClick={() => setConfirmDel(true)}>Xoá</Button>
+                    )}
+                </DialogActions>
+            )}
         </Dialog>
     );
 }
@@ -440,18 +474,6 @@ export default function SchedulesPage() {
         onSettled: () => qc.invalidateQueries({ queryKey: ['schedules'] }),
     });
 
-    const deleteMutation = useMutation({
-        mutationFn: (id: string) => schedulesApi.delete(id),
-        onSuccess: () => {
-            qc.invalidateQueries({ queryKey: ['schedules'] });
-            dispatch(pushToast({ severity: 'success', message: 'Schedule deleted' }));
-        },
-        onError: (err) => dispatch(pushToast({ severity: 'error', message: getApiError(err, 'Delete failed') })),
-    });
-
-    const handleDelete = (s: Schedule) => {
-        if (window.confirm(`Delete schedule "${s.name}"?`)) deleteMutation.mutate(s.id);
-    };
 
     return (
         <Box>
@@ -463,7 +485,7 @@ export default function SchedulesPage() {
                         {data?.total ?? 0} schedules
                     </Typography>
                 </Box>
-                <Button variant="contained" startIcon={<Add />} onClick={() => setCreateOpen(true)}>
+                <Button startIcon={<Add />} onClick={() => setCreateOpen(true)}>
                     New Schedule
                 </Button>
             </Stack>
@@ -609,11 +631,6 @@ export default function SchedulesPage() {
                                                     <Edit fontSize="small" />
                                                 </IconButton>
                                             </Tooltip>
-                                            <Tooltip title="Delete">
-                                                <IconButton size="small" color="error" onClick={() => handleDelete(s)}>
-                                                    <Delete fontSize="small" />
-                                                </IconButton>
-                                            </Tooltip>
                                         </Stack>
                                     </TableCell>
                                 </TableRow>
@@ -643,7 +660,7 @@ export default function SchedulesPage() {
                             <Typography variant="body2" color="text.secondary" mb={2}>
                                 Tạo schedule để tự động đẩy playlist đến thiết bị.
                             </Typography>
-                            <Button variant="contained" startIcon={<Add />} onClick={() => setCreateOpen(true)}>
+                            <Button startIcon={<Add />} onClick={() => setCreateOpen(true)}>
                                 Tạo Schedule đầu tiên
                             </Button>
                         </>
@@ -671,6 +688,7 @@ export default function SchedulesPage() {
                     open={Boolean(editingSchedule)}
                     onClose={() => setEditingSchedule(null)}
                     editing={editingSchedule}
+                    onDeleted={() => setEditingSchedule(null)}
                 />
             )}
         </Box>

@@ -2,11 +2,11 @@ import { useState, useMemo } from 'react';
 import {
     Box, Typography, Chip, Button, Stack, TextField,
     Table, TableBody, TableCell, TableHead, TableRow,
-    CircularProgress, Tooltip, InputAdornment,
+    CircularProgress, Tooltip, InputAdornment, IconButton,
 } from '@mui/material';
 import {
     PlayCircleOutline, Search, CheckCircle, Cancel,
-    Videocam, Image as ImageIcon, AccessTime,
+    Videocam, Image as ImageIcon, AccessTime, Visibility, VisibilityOff,
 } from '@mui/icons-material';
 import { useQuery } from '@tanstack/react-query';
 import contentHistoryApi from '@api/content-history.api';
@@ -305,7 +305,7 @@ export default function ContentHistoryPage() {
                                     <TableRow>
                                         <TableCell sx={{ fontSize: '0.7rem', fontWeight: 700, py: 0.75 }}>Tên</TableCell>
                                         <TableCell sx={{ fontSize: '0.7rem', fontWeight: 700, py: 0.75 }}>Playlist</TableCell>
-                                        <TableCell sx={{ fontSize: '0.7rem', fontWeight: 700, py: 0.75, width: 60 }}>Detail</TableCell>
+                                        <TableCell sx={{ fontSize: '0.7rem', fontWeight: 700, py: 0.75, width: 60 }}>Chi tiết</TableCell>
                                     </TableRow>
                                 </TableHead>
                                 <TableBody>
@@ -344,13 +344,15 @@ export default function ContentHistoryPage() {
                                                     )}
                                                 </TableCell>
                                                 <TableCell sx={{ py: 0.75, textAlign: 'center' }}>
-                                                    <Button size="small"
-                                                        variant={isSelected ? 'contained' : 'outlined'}
-                                                        disableElevation
-                                                        sx={{ fontSize: '0.6rem', py: 0.25, px: 1, minWidth: 0 }}
-                                                        onClick={() => setSelectedDevice(isSelected ? null : d)}>
-                                                        {isSelected ? 'Ẩn' : 'Xem'}
-                                                    </Button>
+                                                    <Tooltip title={isSelected ? 'Ẩn' : 'Xem chi tiết'}>
+                                                        <IconButton
+                                                            size="small"
+                                                            color={isSelected ? 'primary' : 'default'}
+                                                            onClick={() => setSelectedDevice(isSelected ? null : d)}
+                                                        >
+                                                            {isSelected ? <VisibilityOff fontSize="small" /> : <Visibility fontSize="small" />}
+                                                        </IconButton>
+                                                    </Tooltip>
                                                 </TableCell>
                                             </TableRow>
                                         );
@@ -369,7 +371,7 @@ export default function ContentHistoryPage() {
                         <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'text.disabled' }}>
                             <PlayCircleOutline sx={{ fontSize: 56, mb: 2, opacity: 0.15 }} />
                             <Typography variant="body1" fontWeight={500}>Chọn thiết bị để xem lịch sử phát</Typography>
-                            <Typography variant="body2" mt={0.5}>Nhấn nút <strong>Xem</strong> ở cột Detail bên trái</Typography>
+                            <Typography variant="body2" mt={0.5}>Nhấn icon <strong>con mắt</strong> ở cột Detail bên trái</Typography>
                         </Box>
                     )}
                 </Box>

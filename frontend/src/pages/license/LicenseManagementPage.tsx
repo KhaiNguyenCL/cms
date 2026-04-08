@@ -66,12 +66,12 @@ function EditPoolDialog({ org, onClose }: { org: OrgPoolRow; onClose: () => void
 
     return (
         <Dialog open onClose={onClose} maxWidth="xs" fullWidth>
-            <DialogTitle>Sửa kho license — {org.name}</DialogTitle>
-            <DialogContent>
+            <DialogTitle fontWeight={700}>Sửa kho license — {org.name}</DialogTitle>
+            <DialogContent dividers>
                 <Typography variant="body2" color="text.secondary" mb={2}>
                     Nhập số dương để cộng thêm, số âm để trừ bớt.
                 </Typography>
-                <Stack gap={2} mt={1}>
+                <Stack gap={2} pt={0.5}>
                     {(['12M', '24M', '36M'] as PackageType[]).map((t, i) => {
                         const cur  = [org.pkg12m, org.pkg24m, org.pkg36m][i];
                         const vals = [d12, d24, d36];
@@ -95,7 +95,7 @@ function EditPoolDialog({ org, onClose }: { org: OrgPoolRow; onClose: () => void
             </DialogContent>
             <DialogActions>
                 <Button onClick={onClose}>Hủy</Button>
-                <Button variant="contained" disabled={mut.isPending} onClick={() => mut.mutate()}>Lưu</Button>
+                <Button disabled={mut.isPending} onClick={() => mut.mutate()}>Lưu</Button>
             </DialogActions>
         </Dialog>
     );
@@ -183,7 +183,7 @@ function OrgDetailDialog({ org, onClose }: { org: OrgPoolRow; onClose: () => voi
     return (
         <>
         <Dialog open onClose={onClose} maxWidth="lg" fullWidth PaperProps={{ sx: { minHeight: '75vh' } }}>
-            <DialogTitle>
+            <DialogTitle fontWeight={700}>
                 <Stack direction="row" alignItems="center" gap={1}>
                     <InfoOutlined color="primary" />
                     Chi tiết license — <strong>{org.name}</strong>
@@ -517,15 +517,15 @@ function OrgDetailDialog({ org, onClose }: { org: OrgPoolRow; onClose: () => voi
                     </Box>
                 )}
             </DialogContent>
-            <DialogActions>
-                <Button onClick={onClose}>Đóng</Button>
+            <DialogActions sx={{ px: 3, pb: 2 }}>
+                <Button size="small" onClick={onClose}>Đóng</Button>
             </DialogActions>
         </Dialog>
 
         {/* ── Transfer Dialog ─────────────────────────────────────────────── */}
         <Dialog open={!!transferDevice} onClose={() => { setTransferDevice(null); setMutError(''); }} maxWidth="xs" fullWidth>
-            <DialogTitle>Chuyển license — {transferDevice?.deviceName}</DialogTitle>
-            <DialogContent>
+            <DialogTitle fontWeight={700}>Chuyển license — {transferDevice?.deviceName}</DialogTitle>
+            <DialogContent dividers>
                 <Typography variant="body2" color="text.secondary" mb={2}>
                     Gói {transferDevice?.packageType && PKG_LABELS[transferDevice.packageType as PackageType]},
                     hết hạn {fmtDate(transferDevice?.expiresAt ?? null)}
@@ -552,9 +552,9 @@ function OrgDetailDialog({ org, onClose }: { org: OrgPoolRow; onClose: () => voi
                 </TextField>
                 {mutError && <Alert severity="error" sx={{ mt: 1.5 }}>{mutError}</Alert>}
             </DialogContent>
-            <DialogActions>
-                <Button onClick={() => { setTransferDevice(null); setMutError(''); }}>Hủy</Button>
-                <Button variant="contained" color="info" disabled={!toDeviceId || transferMut.isPending}
+            <DialogActions sx={{ px: 3, pb: 2 }}>
+                <Button size="small" onClick={() => { setTransferDevice(null); setMutError(''); }}>Hủy</Button>
+                <Button size="small" color="info" disabled={!toDeviceId || transferMut.isPending}
                     onClick={() => transferMut.mutate()}>
                     Chuyển
                 </Button>
@@ -563,16 +563,16 @@ function OrgDetailDialog({ org, onClose }: { org: OrgPoolRow; onClose: () => voi
 
         {/* ── Revoke confirmation ─────────────────────────────────────────── */}
         <Dialog open={!!revokeDevice} onClose={() => setRevokeDevice(null)} maxWidth="xs" fullWidth>
-            <DialogTitle>Thu hồi license</DialogTitle>
-            <DialogContent>
+            <DialogTitle fontWeight={700}>Thu hồi license</DialogTitle>
+            <DialogContent dividers>
                 <Typography variant="body2">
                     Thu hồi license của <strong>{revokeDevice?.deviceName}</strong>?
                     {revokeDevice?.isLicensed && ' Gói còn hiệu lực sẽ được hoàn về kho.'}
                 </Typography>
             </DialogContent>
-            <DialogActions>
-                <Button onClick={() => setRevokeDevice(null)}>Hủy</Button>
-                <Button variant="contained" color="error" disabled={revokeMut.isPending}
+            <DialogActions sx={{ px: 3, pb: 2 }}>
+                <Button size="small" onClick={() => setRevokeDevice(null)}>Hủy</Button>
+                <Button size="small" color="error" disabled={revokeMut.isPending}
                     onClick={() => revokeMut.mutate()}>
                     Thu hồi
                 </Button>
@@ -581,17 +581,17 @@ function OrgDetailDialog({ org, onClose }: { org: OrgPoolRow; onClose: () => voi
 
         {/* ── Adjust expiry ───────────────────────────────────────────────── */}
         <Dialog open={!!adjustDevice} onClose={() => setAdjustDevice(null)} maxWidth="xs" fullWidth>
-            <DialogTitle>Sửa ngày hết hạn — {adjustDevice?.deviceName}</DialogTitle>
-            <DialogContent>
-                <TextField fullWidth type="date" label="Ngày hết hạn mới"
+            <DialogTitle fontWeight={700}>Sửa ngày hết hạn — {adjustDevice?.deviceName}</DialogTitle>
+            <DialogContent dividers>
+                <TextField fullWidth size="small" type="date" label="Ngày hết hạn mới"
                     InputLabelProps={{ shrink: true }}
                     value={newExpiry} onChange={e => setNewExpiry(e.target.value)}
-                    sx={{ mt: 2 }}
+                    sx={{ mt: 0.5 }}
                     inputProps={{ min: new Date().toISOString().slice(0, 10) }} />
             </DialogContent>
-            <DialogActions>
-                <Button onClick={() => setAdjustDevice(null)}>Hủy</Button>
-                <Button variant="contained" disabled={!newExpiry || adjustMut.isPending}
+            <DialogActions sx={{ px: 3, pb: 2 }}>
+                <Button size="small" onClick={() => setAdjustDevice(null)}>Hủy</Button>
+                <Button size="small" disabled={!newExpiry || adjustMut.isPending}
                     onClick={() => adjustMut.mutate()}>
                     Lưu
                 </Button>
@@ -820,10 +820,10 @@ function RequestsTab() {
 
             {/* Approve/Reject dialog */}
             <Dialog open={!!actionRow} onClose={() => { setActionRow(null); setActionError(''); }} maxWidth="xs" fullWidth>
-                <DialogTitle>
+                <DialogTitle fontWeight={700}>
                     {actionType === 'approve' ? 'Duyệt yêu cầu' : 'Từ chối yêu cầu'}
                 </DialogTitle>
-                <DialogContent>
+                <DialogContent dividers>
                     {actionRow && (
                         <Typography variant="body2" mb={2}>
                             <strong>{actionRow.orgName}</strong> — {actionRow.quantity}×{' '}
@@ -835,9 +835,9 @@ function RequestsTab() {
                         value={adminNote} onChange={e => setAdminNote(e.target.value)} />
                     {actionError && <Alert severity="error" sx={{ mt: 1.5 }}>{actionError}</Alert>}
                 </DialogContent>
-                <DialogActions>
-                    <Button onClick={() => { setActionRow(null); setActionError(''); }}>Hủy</Button>
-                    <Button variant="contained"
+                <DialogActions sx={{ px: 3, pb: 2 }}>
+                    <Button size="small" onClick={() => { setActionRow(null); setActionError(''); }}>Hủy</Button>
+                    <Button size="small"
                         color={actionType === 'approve' ? 'success' : 'error'}
                         disabled={actionMut.isPending}
                         onClick={() => actionMut.mutate()}>

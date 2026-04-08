@@ -5,7 +5,7 @@ import {
     Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
     Paper, IconButton, Tooltip, Collapse, Skeleton, alpha, Divider,
     Dialog, DialogTitle, DialogContent, DialogActions, TextField,
-    InputAdornment, LinearProgress,
+    InputAdornment, LinearProgress, CircularProgress,
 } from '@mui/material';
 import {
     Business, Tv, People, PermMedia, QueueMusic, CalendarMonth,
@@ -13,7 +13,9 @@ import {
     Storage, PowerSettingsNew, ManageAccounts, AddCircle, WorkspacePremium,
     Visibility, VisibilityOff, Add, DeleteForever, AdminPanelSettings,
     Edit, Block, CheckCircleOutline, Lock, Shield,
+    Star, StarBorder, Delete, Send, SystemUpdate,
 } from '@mui/icons-material';
+import softwareHistoryApi, { type AppVersion } from '@api/software-history.api';
 import { useNavigate } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from '@store/hooks';
 import { pushToast } from '@store/slices/uiSlice';
@@ -238,7 +240,7 @@ function CreateOrgDialog({ onClose }: { onClose: () => void }) {
             <DialogActions sx={{ px: 3, pb: 2 }}>
                 <Button onClick={onClose} size="small">Hủy</Button>
                 <Button
-                    variant="contained" size="small"
+                    size="small"
                     disabled={!canSubmit}
                     onClick={() => mutation.mutate()}
                     startIcon={<Add />}
@@ -276,7 +278,7 @@ function ConfirmDialog({ org, onConfirm, onClose }: {
             <DialogActions sx={{ px: 3, pb: 2 }}>
                 <Button onClick={onClose} size="small">Hủy</Button>
                 <Button
-                    variant="contained"
+                   
                     color={color}
                     size="small"
                     onClick={onConfirm}
@@ -338,7 +340,7 @@ function DeleteOrgDialog({ org, onClose }: { org: OrgWithStats; onClose: () => v
             <DialogActions sx={{ px: 3, pb: 2 }}>
                 <Button onClick={onClose} size="small">Hủy</Button>
                 <Button
-                    variant="contained"
+                   
                     color="error"
                     size="small"
                     disabled={!canDelete}
@@ -537,7 +539,7 @@ function CreatePlatformAdminDialog({ onClose }: { onClose: () => void }) {
             </DialogContent>
             <DialogActions sx={{ px: 3, pb: 2 }}>
                 <Button onClick={onClose} size="small">Hủy</Button>
-                <Button variant="contained" color="error" size="small" disabled={!canSubmit} onClick={() => mutation.mutate()} startIcon={<Add />}>
+                <Button color="error" size="small" disabled={!canSubmit} onClick={() => mutation.mutate()} startIcon={<Add />}>
                     {mutation.isPending ? 'Đang tạo…' : 'Tạo'}
                 </Button>
             </DialogActions>
@@ -599,7 +601,7 @@ function ChangePasswordDialog({ admin, onClose }: { admin: PlatformAdmin; onClos
             </DialogContent>
             <DialogActions sx={{ px: 3, pb: 2 }}>
                 <Button onClick={onClose} size="small">Hủy</Button>
-                <Button variant="contained" color="warning" size="small"
+                <Button color="warning" size="small"
                     disabled={!valid || mutation.isPending}
                     onClick={() => mutation.mutate()}>
                     {mutation.isPending ? 'Đang lưu…' : 'Đổi mật khẩu'}
@@ -815,6 +817,182 @@ function PlatformAdminsSection({ currentAdminId }: { currentAdminId?: string }) 
     );
 }
 
+// ── Version Manager ───────────────────────────────────────────────────────────
+
+function VersionManagerDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+    const qc = useQueryClient();
+    const [form, setForm] = useState({ versionName: '', versionCode: '', downloadUrl: '', releaseNotes: '', isLatest: false });
+    const [adding, setAdding] = useState(false);
+    const [otaMsg, setOtaMsg] = useState('');
+
+    const { data: versions = [], isLoading } = useQuery<AppVersion[]>({
+        queryKey: ['sw-versions'],
+        queryFn: softwareHistoryApi.listVersions,
+        enabled: open,
+    });
+
+    const createMut = useMutation({
+        mutationFn: softwareHistoryApi.createVersion,
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ['sw-versions'] });
+            qc.invalidateQueries({ queryKey: ['sw-devices'] });
+            setForm({ versionName: '', versionCode: '', downloadUrl: '', releaseNotes: '', isLatest: false });
+            setAdding(false);
+        },
+    });
+
+    const setLatestMut = useMutation({
+        mutationFn: softwareHistoryApi.setLatest,
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ['sw-versions'] });
+            qc.invalidateQueries({ queryKey: ['sw-devices'] });
+        },
+    });
+
+    const deleteMut = useMutation({
+        mutationFn: softwareHistoryApi.deleteVersion,
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ['sw-versions'] });
+            qc.invalidateQueries({ queryKey: ['sw-devices'] });
+        },
+    });
+
+    const pushAllMut = useMutation({
+        mutationFn: (versionId: string) => softwareHistoryApi.pushOtaAll(versionId),
+        onSuccess: (data) => setOtaMsg(`Đã gửi OTA đến ${data.pushed} thiết bị`),
+    });
+
+    const latest = versions.find(v => v.isLatest);
+
+    return (
+        <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
+            <DialogTitle fontWeight={700}>Quản lý phiên bản ứng dụng</DialogTitle>
+            <DialogContent dividers>
+                {otaMsg && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setOtaMsg('')}>{otaMsg}</Alert>}
+
+                {latest && (
+                    <Box sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Typography variant="body2" color="text.secondary">
+                            Phiên bản mới nhất: <strong>{latest.versionName}</strong>
+                        </Typography>
+                        <Button
+                            size="small" startIcon={<Send />}
+                            disabled={pushAllMut.isPending}
+                            onClick={() => pushAllMut.mutate(latest.id)}
+                        >
+                            Cập nhật tất cả thiết bị lỗi thời
+                        </Button>
+                    </Box>
+                )}
+
+                {isLoading ? <CircularProgress size={24} /> : (
+                    <Table size="small">
+                        <TableHead>
+                            <TableRow>
+                                <TableCell>Phiên bản</TableCell>
+                                <TableCell>Code</TableCell>
+                                <TableCell>Ghi chú</TableCell>
+                                <TableCell>Ngày tạo</TableCell>
+                                <TableCell align="center">Latest</TableCell>
+                                <TableCell align="center">OTA All</TableCell>
+                                <TableCell align="center">Xóa</TableCell>
+                            </TableRow>
+                        </TableHead>
+                        <TableBody>
+                            {versions.map(v => (
+                                <TableRow key={v.id} selected={v.isLatest}>
+                                    <TableCell>
+                                        <Stack direction="row" alignItems="center" gap={0.5}>
+                                            {v.versionName}
+                                            {v.isLatest && <Chip label="Latest" size="small" color="success" />}
+                                        </Stack>
+                                    </TableCell>
+                                    <TableCell>{v.versionCode}</TableCell>
+                                    <TableCell sx={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                        <Tooltip title={v.releaseNotes ?? ''}><span>{v.releaseNotes ?? '—'}</span></Tooltip>
+                                    </TableCell>
+                                    <TableCell>{v.createdAt ? new Date(v.createdAt).toLocaleString('vi-VN', { hour12: false }) : '—'}</TableCell>
+                                    <TableCell align="center">
+                                        <Tooltip title={v.isLatest ? 'Đang là latest' : 'Đặt làm latest'}>
+                                            <span>
+                                                <IconButton size="small" disabled={v.isLatest || setLatestMut.isPending}
+                                                    onClick={() => setLatestMut.mutate(v.id)}>
+                                                    {v.isLatest ? <Star color="warning" /> : <StarBorder />}
+                                                </IconButton>
+                                            </span>
+                                        </Tooltip>
+                                    </TableCell>
+                                    <TableCell align="center">
+                                        <Tooltip title="Push OTA tất cả thiết bị lỗi thời">
+                                            <IconButton size="small" disabled={pushAllMut.isPending} onClick={() => pushAllMut.mutate(v.id)}>
+                                                <Send fontSize="small" />
+                                            </IconButton>
+                                        </Tooltip>
+                                    </TableCell>
+                                    <TableCell align="center">
+                                        <Tooltip title={v.organizationId === null ? 'Phiên bản global — không thể xóa' : 'Xóa'}>
+                                            <span>
+                                                <IconButton size="small" color="error"
+                                                    disabled={v.organizationId === null || deleteMut.isPending}
+                                                    onClick={() => deleteMut.mutate(v.id)}>
+                                                    <Delete fontSize="small" />
+                                                </IconButton>
+                                            </span>
+                                        </Tooltip>
+                                    </TableCell>
+                                </TableRow>
+                            ))}
+                        </TableBody>
+                    </Table>
+                )}
+
+                <Divider sx={{ my: 2 }} />
+
+                {adding ? (
+                    <Stack gap={1.5}>
+                        <Typography variant="subtitle2">Thêm phiên bản mới</Typography>
+                        <Stack direction="row" gap={1}>
+                            <TextField label="Tên phiên bản" size="small" required
+                                value={form.versionName}
+                                onChange={e => setForm(f => ({ ...f, versionName: e.target.value }))} />
+                            <TextField label="Version code" size="small" type="number" required
+                                value={form.versionCode}
+                                onChange={e => setForm(f => ({ ...f, versionCode: e.target.value }))} />
+                        </Stack>
+                        <TextField label="Download URL" size="small" required fullWidth
+                            value={form.downloadUrl}
+                            onChange={e => setForm(f => ({ ...f, downloadUrl: e.target.value }))} />
+                        <TextField label="Release notes" size="small" multiline rows={2} fullWidth
+                            value={form.releaseNotes}
+                            onChange={e => setForm(f => ({ ...f, releaseNotes: e.target.value }))} />
+                        <Stack direction="row" gap={1}>
+                            <Button size="small"
+                                disabled={!form.versionName || !form.versionCode || !form.downloadUrl || createMut.isPending}
+                                onClick={() => createMut.mutate({
+                                    versionName: form.versionName,
+                                    versionCode: Number(form.versionCode),
+                                    downloadUrl: form.downloadUrl,
+                                    releaseNotes: form.releaseNotes || undefined,
+                                    isLatest: form.isLatest,
+                                })}>
+                                Lưu
+                            </Button>
+                            <Button size="small" onClick={() => setAdding(false)}>Hủy</Button>
+                        </Stack>
+                    </Stack>
+                ) : (
+                    <Button startIcon={<Add />} size="small" onClick={() => setAdding(true)}>
+                        Thêm phiên bản
+                    </Button>
+                )}
+            </DialogContent>
+            <DialogActions sx={{ px: 3, pb: 2 }}>
+                <Button size="small" onClick={onClose}>Đóng</Button>
+            </DialogActions>
+        </Dialog>
+    );
+}
+
 // ── Summary cards ─────────────────────────────────────────────────────────────
 
 function SummaryCards({ orgs }: { orgs: OrgWithStats[] }) {
@@ -869,9 +1047,9 @@ export default function SuperAdminPage() {
     const isPlatformAdmin = useAppSelector(s => s.auth.isPlatformAdmin);
     const platformAdmin = useAppSelector(s => s.auth.platformAdmin);
     const [confirmOrg, setConfirmOrg] = useState<OrgWithStats | null>(null);
-
     const [deleteOrg, setDeleteOrg] = useState<OrgWithStats | null>(null);
     const [createOrgOpen, setCreateOrgOpen] = useState(false);
+    const [versionMgrOpen, setVersionMgrOpen] = useState(false);
 
     const handleManage = (org: OrgWithStats) => {
         dispatch(setManagingOrg({ orgId: org.id, orgName: org.name }));
@@ -922,9 +1100,14 @@ export default function SuperAdminPage() {
                             Quản lý tất cả tổ chức trên hệ thống
                         </Typography>
                     </Box>
-                    <Button variant="contained" startIcon={<Add />} onClick={() => setCreateOrgOpen(true)}>
-                        Tạo tổ chức
-                    </Button>
+                    <Stack direction="row" gap={1}>
+                        <Button variant="outlined" startIcon={<SystemUpdate />} onClick={() => setVersionMgrOpen(true)}>
+                            Phiên bản app
+                        </Button>
+                        <Button startIcon={<Add />} onClick={() => setCreateOrgOpen(true)}>
+                            Tạo tổ chức
+                        </Button>
+                    </Stack>
                 </Stack>
             </Box>
 
@@ -1006,6 +1189,9 @@ export default function SuperAdminPage() {
                     onClose={() => setDeleteOrg(null)}
                 />
             )}
+
+            {/* Version manager dialog */}
+            <VersionManagerDialog open={versionMgrOpen} onClose={() => setVersionMgrOpen(false)} />
 
             {/* Platform Admins section — visible to root account only */}
             {currentUser?.isRoot && (

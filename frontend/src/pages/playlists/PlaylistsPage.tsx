@@ -146,7 +146,7 @@ function AddMediaDialog({
 
     return (
         <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth>
-            <DialogTitle>
+            <DialogTitle fontWeight={700}>
                 <Stack direction="row" justifyContent="space-between" alignItems="center">
                     <Box>
                         <Typography variant="h6" fontWeight={700}>Thêm Media vào Playlist</Typography>
@@ -271,14 +271,9 @@ function AddMediaDialog({
                 )}
             </DialogContent>
 
-            <DialogActions sx={{ px: 2.5, py: 1.5 }}>
-                <Button onClick={handleClose}>Huỷ</Button>
-                <Button
-                    variant="contained"
-                    disabled={selected.size === 0}
-                    startIcon={<Add />}
-                    onClick={handleConfirm}
-                >
+            <DialogActions sx={{ px: 3, pb: 2 }}>
+                <Button size="small" onClick={handleClose}>Huỷ</Button>
+                <Button size="small" disabled={selected.size === 0} startIcon={<Add />} onClick={handleConfirm}>
                     Thêm {selected.size > 0 ? selected.size : ''} vào danh sách
                 </Button>
             </DialogActions>
@@ -561,17 +556,17 @@ function SortableItem({
                 </Box>
             </Box>
 
-            <Dialog open={loopDialog} onClose={() => setLoopDialog(false)} maxWidth="xs">
-                <DialogTitle>Không thể bật Hiện mãi</DialogTitle>
-                <DialogContent>
+            <Dialog open={loopDialog} onClose={() => setLoopDialog(false)} maxWidth="xs" fullWidth>
+                <DialogTitle fontWeight={700}>Không thể bật Hiện mãi</DialogTitle>
+                <DialogContent dividers>
                     <Typography variant="body2">
                         Chế độ <strong>Hiện mãi</strong> chỉ có thể bật khi playlist chỉ có <strong>1 media</strong>.
                         <br /><br />
                         Hiện tại playlist có <strong>{totalItems} media</strong>.
                     </Typography>
                 </DialogContent>
-                <DialogActions>
-                    <Button onClick={() => setLoopDialog(false)}>Đã hiểu</Button>
+                <DialogActions sx={{ px: 3, pb: 2 }}>
+                    <Button size="small" onClick={() => setLoopDialog(false)}>Đã hiểu</Button>
                 </DialogActions>
             </Dialog>
         </>
@@ -633,12 +628,12 @@ function MediaLayer({ item, url, onVideoEnd }: { item: LocalItem | undefined; ur
     );
     if (isVideo) return (
         <video key={url} src={url} autoPlay muted playsInline
-            style={{ maxWidth: '100%', maxHeight: 480, display: 'block' }}
+            style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
             onEnded={onVideoEnd} />
     );
     return (
         <img key={url} src={url} alt={item?.media?.title}
-            style={{ maxWidth: '100%', maxHeight: 480, objectFit: 'contain', display: 'block' }} />
+            style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />
     );
 }
 
@@ -782,6 +777,7 @@ function PlaylistPreviewDialog({ open, onClose, items }: {
                             <Box sx={{
                                 position: 'absolute',
                                 top: 0, right: 0, bottom: 0, left: 0,
+                                overflow: 'hidden',
                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                                 ...outStyle(transType, transActive),
                             }}>
@@ -792,6 +788,7 @@ function PlaylistPreviewDialog({ open, onClose, items }: {
                         <Box sx={{
                             position: 'absolute',
                             top: 0, right: 0, bottom: 0, left: 0,
+                            overflow: 'hidden',
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
                             ...(!transActive ? {} : inStyle(transType, entered)),
                         }}>
@@ -1072,7 +1069,7 @@ function PlaylistPanelInner({ playlistId, onClose }: { playlistId: string; onClo
             border: '1px solid', borderColor: isDirty ? 'warning.main' : 'divider',
             borderRadius: 2, overflow: 'hidden',
             position: 'sticky', top: 80, alignSelf: 'flex-start',
-            maxHeight: 'calc(100vh - 100px)',
+            height: 'calc(100vh - 100px)',
             display: 'flex', flexDirection: 'column',
             transition: 'border-color 0.2s',
         }}>
@@ -1134,7 +1131,7 @@ function PlaylistPanelInner({ playlistId, onClose }: { playlistId: string; onClo
             )}
 
             {/* Item list */}
-            <Box sx={{ flex: 1, overflowY: 'auto' }}>
+            <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
                 {isLoading ? (
                     <Box sx={{ p: 2 }}>
                         {[1, 2, 3].map(i => <Skeleton key={i} height={48} sx={{ mb: 0.5 }} />)}
@@ -1224,16 +1221,16 @@ function CreatePlaylistDialog({ open, onClose }: { open: boolean; onClose: () =>
 
     return (
         <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-            <DialogTitle>Tạo Playlist mới</DialogTitle>
-            <DialogContent>
-                <Stack spacing={2.5} sx={{ mt: 1 }}>
-                    <TextField label="Tên" value={name} onChange={(e) => setName(e.target.value)} fullWidth required />
-                    <TextField label="Mô tả" value={description} onChange={(e) => setDescription(e.target.value)} fullWidth multiline rows={2} />
+            <DialogTitle fontWeight={700}>Tạo Playlist mới</DialogTitle>
+            <DialogContent dividers>
+                <Stack spacing={2.5} pt={0.5}>
+                    <TextField label="Tên" value={name} onChange={(e) => setName(e.target.value)} fullWidth required size="small" />
+                    <TextField label="Mô tả" value={description} onChange={(e) => setDescription(e.target.value)} fullWidth multiline rows={2} size="small" />
                 </Stack>
             </DialogContent>
-            <DialogActions sx={{ p: 2.5 }}>
-                <Button onClick={onClose}>Huỷ</Button>
-                <Button variant="contained" disabled={!name || mutation.isPending} onClick={() => mutation.mutate()}>Tạo</Button>
+            <DialogActions sx={{ px: 3, pb: 2 }}>
+                <Button size="small" onClick={onClose}>Huỷ</Button>
+                <Button size="small" disabled={!name || mutation.isPending} onClick={() => mutation.mutate()}>Tạo</Button>
             </DialogActions>
         </Dialog>
     );
@@ -1241,15 +1238,20 @@ function CreatePlaylistDialog({ open, onClose }: { open: boolean; onClose: () =>
 
 // ── Edit Playlist Dialog ──────────────────────────────────────────────────────
 
-function EditPlaylistDialog({ playlist, open, onClose }: {
-    playlist: Playlist; open: boolean; onClose: () => void;
+function EditPlaylistDialog({ playlist, open, onClose, onDeleted }: {
+    playlist: Playlist; open: boolean; onClose: () => void; onDeleted?: () => void;
 }) {
     const dispatch = useAppDispatch();
     const qc = useQueryClient();
     const [name, setName] = useState(playlist.name);
     const [description, setDescription] = useState(playlist.description ?? '');
+    const [confirmDel, setConfirmDel] = useState(false);
 
-    const handleEnter = () => { setName(playlist.name); setDescription(playlist.description ?? ''); };
+    const handleEnter = () => {
+        setName(playlist.name);
+        setDescription(playlist.description ?? '');
+        setConfirmDel(false);
+    };
 
     const mutation = useMutation({
         mutationFn: () => playlistsApi.update(playlist.id, { name, description: description || undefined }),
@@ -1261,8 +1263,21 @@ function EditPlaylistDialog({ playlist, open, onClose }: {
         onError: (err) => dispatch(pushToast({ severity: 'error', message: getApiError(err, 'Cập nhật thất bại') })),
     });
 
+    const deleteMutation = useMutation({
+        mutationFn: () => playlistsApi.delete(playlist.id),
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ['playlists'] });
+            dispatch(pushToast({ severity: 'success', message: 'Đã xoá playlist' }));
+            onDeleted?.();
+            onClose();
+        },
+        onError: (err) => dispatch(pushToast({ severity: 'error', message: getApiError(err, 'Xoá thất bại') })),
+    });
+
+    const isPending = mutation.isPending || deleteMutation.isPending;
+
     return (
-        <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth TransitionProps={{ onEnter: handleEnter }}>
+        <Dialog open={open} onClose={isPending ? undefined : onClose} maxWidth="xs" fullWidth TransitionProps={{ onEnter: handleEnter }}>
             <DialogTitle fontWeight={700}>Chỉnh sửa Playlist</DialogTitle>
             <DialogContent dividers>
                 <Stack spacing={2.5} sx={{ mt: 0.5 }}>
@@ -1270,11 +1285,28 @@ function EditPlaylistDialog({ playlist, open, onClose }: {
                     <TextField label="Mô tả (tuỳ chọn)" value={description} onChange={(e) => setDescription(e.target.value)} fullWidth multiline rows={3} />
                 </Stack>
             </DialogContent>
-            <DialogActions sx={{ p: 2 }}>
-                <Button onClick={onClose} disabled={mutation.isPending}>Huỷ</Button>
-                <Button variant="contained" disabled={!name.trim() || mutation.isPending} onClick={() => mutation.mutate()}>
-                    {mutation.isPending ? 'Đang lưu...' : 'Lưu'}
-                </Button>
+            <DialogActions sx={{ px: 3, pb: 2, justifyContent: 'space-between' }}>
+                <Box>
+                    {confirmDel ? (
+                        <Stack direction="row" spacing={1} alignItems="center">
+                            <Typography variant="body2" color="error">Xoá playlist này?</Typography>
+                            <Button size="small" color="error" disabled={deleteMutation.isPending}
+                                startIcon={deleteMutation.isPending ? <CircularProgress size={14} color="inherit" /> : undefined}
+                                onClick={() => deleteMutation.mutate()}>Xoá</Button>
+                            <Button size="small" onClick={() => setConfirmDel(false)} disabled={deleteMutation.isPending}>Không</Button>
+                        </Stack>
+                    ) : (
+                        <Button size="small" color="error" startIcon={<Delete />} onClick={() => setConfirmDel(true)}>
+                            Xoá
+                        </Button>
+                    )}
+                </Box>
+                <Box sx={{ display: 'flex', gap: 1 }}>
+                    <Button size="small" onClick={onClose} disabled={isPending}>Huỷ</Button>
+                    <Button size="small" disabled={!name.trim() || isPending} onClick={() => mutation.mutate()}>
+                        {mutation.isPending ? 'Đang lưu...' : 'Lưu'}
+                    </Button>
+                </Box>
             </DialogActions>
         </Dialog>
     );
@@ -1289,10 +1321,12 @@ function DeleteConfirmDialog({ target, onClose, onConfirm, loading, errorMsg }: 
 }) {
     return (
         <Dialog open={!!target} onClose={loading ? undefined : onClose} maxWidth="xs" fullWidth>
-            <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <WarningAmber color="error" />Xoá playlist
+            <DialogTitle fontWeight={700}>
+                <Stack direction="row" alignItems="center" gap={1}>
+                    <WarningAmber color="error" /> Xoá playlist
+                </Stack>
             </DialogTitle>
-            <DialogContent>
+            <DialogContent dividers>
                 <Typography variant="body2" mb={errorMsg ? 2 : 0}>
                     Bạn có chắc muốn xoá playlist <strong>&ldquo;{target?.name}&rdquo;</strong>? Hành động này không thể hoàn tác.
                 </Typography>
@@ -1302,11 +1336,9 @@ function DeleteConfirmDialog({ target, onClose, onConfirm, loading, errorMsg }: 
                     </Box>
                 )}
             </DialogContent>
-            <DialogActions>
-                <Button onClick={onClose} disabled={loading}>Huỷ</Button>
-                <Button variant="contained" color="error" disabled={loading}
-                    startIcon={loading ? <CircularProgress size={14} color="inherit" /> : <Delete />}
-                    onClick={() => target && onConfirm(target.id)}>
+            <DialogActions sx={{ px: 3, pb: 2 }}>
+                <Button size="small" onClick={onClose} disabled={loading}>Huỷ</Button>
+                <Button color="error" size="small" disabled={loading} startIcon={loading ? <CircularProgress size={14} color="inherit" /> : <Delete />} onClick={() => target && onConfirm(target.id)}>
                     {loading ? 'Đang xoá…' : 'Xoá'}
                 </Button>
             </DialogActions>
@@ -1316,9 +1348,9 @@ function DeleteConfirmDialog({ target, onClose, onConfirm, loading, errorMsg }: 
 
 // ── Playlist table row ────────────────────────────────────────────────────────
 
-function PlaylistRow({ playlist, selected, onSelect, onDelete }: {
+function PlaylistRow({ playlist, selected, onSelect, onDeleted }: {
     playlist: Playlist; selected: boolean;
-    onSelect: (id: string) => void; onDelete: (id: string, name: string) => void;
+    onSelect: (id: string) => void; onDeleted: (id: string) => void;
 }) {
     const [editOpen, setEditOpen] = useState(false);
 
@@ -1329,46 +1361,37 @@ function PlaylistRow({ playlist, selected, onSelect, onDelete }: {
                 bgcolor: selected ? 'primary.main' + '12' : undefined,
                 '& td': { borderBottom: '1px solid', borderColor: 'divider' },
             }}>
-                <TableCell sx={{ width: 40, pl: 1, pr: 0 }} onClick={() => onSelect(playlist.id)}>
-                    <Box sx={{
-                        width: 28, height: 28, borderRadius: 1,
-                        background: selected ? 'linear-gradient(135deg, #6C63FF44, #FF658444)' : 'linear-gradient(135deg, #6C63FF22, #FF658422)',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    }}>
-                        <QueueMusic sx={{ color: 'primary.main', fontSize: 14 }} />
-                    </Box>
-                </TableCell>
-                <TableCell onClick={() => onSelect(playlist.id)} sx={{ borderLeft: '1px solid', borderColor: 'divider' }}>
+                <TableCell onClick={() => onSelect(playlist.id)}>
                     <Typography variant="body2" fontWeight={600} noWrap sx={{ maxWidth: 160 }}>{playlist.name}</Typography>
                 </TableCell>
-                <TableCell onClick={() => onSelect(playlist.id)} sx={{ borderLeft: '1px solid', borderColor: 'divider', maxWidth: 0 }}>
+                <TableCell onClick={() => onSelect(playlist.id)} sx={{ maxWidth: 0 }}>
                     <Tooltip title={playlist.description ?? ''} disableHoverListener={!playlist.description}>
-                        <Typography variant="caption" color="text.secondary" noWrap display="block">
+                        <Typography variant="body2" color="text.secondary" noWrap display="block">
                             {playlist.description ?? '—'}
                         </Typography>
                     </Tooltip>
                 </TableCell>
-                <TableCell align="center" onClick={() => onSelect(playlist.id)} sx={{ whiteSpace: 'nowrap', borderLeft: '1px solid', borderColor: 'divider' }}>
-                    <Typography variant="caption" color="text.secondary">{playlist.itemCount ?? 0} items</Typography>
+                <TableCell align="center" onClick={() => onSelect(playlist.id)}>
+                    <Typography variant="body2" color="text.secondary">{playlist.itemCount ?? 0} items</Typography>
                 </TableCell>
-                <TableCell align="center" onClick={() => onSelect(playlist.id)} sx={{ borderLeft: '1px solid', borderColor: 'divider' }}>
-                    <Typography variant="caption" color="text.secondary" noWrap>{new Date(playlist.createdAt).toLocaleDateString('vi-VN')}</Typography>
+                <TableCell align="center" onClick={() => onSelect(playlist.id)}>
+                    <Typography variant="body2" color="text.secondary" noWrap>{new Date(playlist.createdAt).toLocaleDateString('vi-VN')}</Typography>
                 </TableCell>
-                <TableCell align="center" onClick={() => onSelect(playlist.id)} sx={{ borderLeft: '1px solid', borderColor: 'divider' }}>
-                    <Typography variant="caption" color="text.secondary" noWrap>{new Date(playlist.updatedAt).toLocaleDateString('vi-VN')}</Typography>
+                <TableCell align="center" onClick={() => onSelect(playlist.id)}>
+                    <Typography variant="body2" color="text.secondary" noWrap>{new Date(playlist.updatedAt).toLocaleDateString('vi-VN')}</Typography>
                 </TableCell>
-                <TableCell align="center" onClick={(e) => e.stopPropagation()} sx={{ whiteSpace: 'nowrap', borderLeft: '1px solid', borderColor: 'divider' }}>
-                    <Box sx={{ display: 'inline-flex', gap: 0.5, alignItems: 'center' }}>
-                        <Tooltip title="Chỉnh sửa">
-                            <IconButton size="small" onClick={() => setEditOpen(true)}><Edit sx={{ fontSize: 14 }} /></IconButton>
-                        </Tooltip>
-                        <Tooltip title="Xoá">
-                            <IconButton size="small" color="error" onClick={() => onDelete(playlist.id, playlist.name)}><Delete sx={{ fontSize: 16 }} /></IconButton>
-                        </Tooltip>
-                    </Box>
+                <TableCell align="center" onClick={(e) => e.stopPropagation()}>
+                    <Tooltip title="Chỉnh sửa">
+                        <IconButton size="small" onClick={() => setEditOpen(true)}><Edit sx={{ fontSize: 14 }} /></IconButton>
+                    </Tooltip>
                 </TableCell>
             </TableRow>
-            <EditPlaylistDialog playlist={playlist} open={editOpen} onClose={() => setEditOpen(false)} />
+            <EditPlaylistDialog
+                playlist={playlist}
+                open={editOpen}
+                onClose={() => setEditOpen(false)}
+                onDeleted={() => { onDeleted(playlist.id); setEditOpen(false); }}
+            />
         </>
     );
 }
@@ -1405,21 +1428,10 @@ export default function PlaylistsPage() {
         else { setSortField(field); setSortDir('desc'); }
     };
 
-    const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
-    const [deleteError, setDeleteError] = useState<string | null>(null);
-
-    const deleteMutation = useMutation({
-        mutationFn: (id: string) => playlistsApi.delete(id),
-        onSuccess: (_, id) => {
-            qc.invalidateQueries({ queryKey: ['playlists'] });
-            if (selectedId === id) setSelectedId(null);
-            setDeleteTarget(null); setDeleteError(null);
-            dispatch(pushToast({ severity: 'success', message: 'Xoá playlist thành công' }));
-        },
-        onError: (err) => {
-            setDeleteError(getApiError(err, 'Xoá thất bại'));
-        },
-    });
+    const handleDeleted = (id: string) => {
+        if (selectedId === id) setSelectedId(null);
+        qc.invalidateQueries({ queryKey: ['playlists'] });
+    };
 
     return (
         <Box>
@@ -1428,7 +1440,7 @@ export default function PlaylistsPage() {
                     <Typography variant="h4" fontWeight={700}>Playlists</Typography>
                     <Typography variant="body2" color="text.secondary">{data?.total ?? 0} playlists</Typography>
                 </Box>
-                <Button variant="contained" startIcon={<Add />} onClick={() => setCreateOpen(true)}>New Playlist</Button>
+                <Button startIcon={<Add />} onClick={() => setCreateOpen(true)}>New Playlist</Button>
             </Stack>
 
             <Box mb={2}>
@@ -1447,13 +1459,12 @@ export default function PlaylistsPage() {
                         <Table size="small">
                             <TableHead>
                                 <TableRow sx={{ '& th': { fontWeight: 700, bgcolor: 'action.hover' } }}>
-                                    <TableCell align="center" sx={{ width: 40, pl: 1 }} />
-                                    <TableCell align="center" sx={{ borderLeft: '1px solid', borderColor: 'divider' }}>Tên</TableCell>
-                                    <TableCell align="center" sx={{ borderLeft: '1px solid', borderColor: 'divider' }}>Mô tả</TableCell>
-                                    <TableCell align="center" sx={{ width: 60, borderLeft: '1px solid', borderColor: 'divider' }}>Items</TableCell>
+                                    <TableCell align="center">Tên</TableCell>
+                                    <TableCell align="center">Mô tả</TableCell>
+                                    <TableCell align="center" sx={{ width: 60 }}>Items</TableCell>
                                     <TableCell
                                         align="center"
-                                        sx={{ width: 100, cursor: 'pointer', userSelect: 'none', borderLeft: '1px solid', borderColor: 'divider', '&:hover': { bgcolor: 'action.selected' } }}
+                                        sx={{ width: 100, cursor: 'pointer', userSelect: 'none', '&:hover': { bgcolor: 'action.selected' } }}
                                         onClick={() => toggleSort('createdAt')}
                                     >
                                         <Stack direction="row" alignItems="center" justifyContent="center" gap={0.5}>
@@ -1463,7 +1474,7 @@ export default function PlaylistsPage() {
                                     </TableCell>
                                     <TableCell
                                         align="center"
-                                        sx={{ width: 100, cursor: 'pointer', userSelect: 'none', borderLeft: '1px solid', borderColor: 'divider', '&:hover': { bgcolor: 'action.selected' } }}
+                                        sx={{ width: 100, cursor: 'pointer', userSelect: 'none', '&:hover': { bgcolor: 'action.selected' } }}
                                         onClick={() => toggleSort('updatedAt')}
                                     >
                                         <Stack direction="row" alignItems="center" justifyContent="center" gap={0.5}>
@@ -1471,14 +1482,14 @@ export default function PlaylistsPage() {
                                             {sortField === 'updatedAt' && (sortDir === 'asc' ? <ArrowUpward sx={{ fontSize: 12 }} /> : <ArrowDownward sx={{ fontSize: 12 }} />)}
                                         </Stack>
                                     </TableCell>
-                                    <TableCell align="center" sx={{ width: 80, borderLeft: '1px solid', borderColor: 'divider' }}>Thao tác</TableCell>
+                                    <TableCell align="center" sx={{ width: 80 }}>Thao tác</TableCell>
                                 </TableRow>
                             </TableHead>
                             <TableBody>
                                 {isLoading
                                     ? [1, 2, 3, 4, 5].map(i => (
                                         <TableRow key={i}>
-                                            {[1, 2, 3, 4, 5, 6, 7].map(j => (
+                                            {[1, 2, 3, 4, 5, 6].map(j => (
                                                 <TableCell key={j}><Skeleton height={24} /></TableCell>
                                             ))}
                                         </TableRow>
@@ -1486,7 +1497,7 @@ export default function PlaylistsPage() {
                                     : sorted.length === 0
                                         ? (
                                             <TableRow>
-                                                <TableCell colSpan={7} sx={{ textAlign: 'center', py: 6 }}>
+                                                <TableCell colSpan={6} sx={{ textAlign: 'center', py: 6 }}>
                                                     <QueueMusic sx={{ fontSize: 40, color: 'text.secondary', mb: 1, display: 'block', mx: 'auto' }} />
                                                     <Typography variant="body2" color="text.secondary">
                                                         {search ? 'Không tìm thấy playlist' : 'Chưa có playlist nào'}
@@ -1500,7 +1511,7 @@ export default function PlaylistsPage() {
                                                 playlist={pl}
                                                 selected={selectedId === pl.id}
                                                 onSelect={setSelectedId}
-                                                onDelete={(id, name) => { setDeleteTarget({ id, name }); setDeleteError(null); }}
+                                                onDeleted={handleDeleted}
                                             />
                                         ))
                                 }
@@ -1529,13 +1540,6 @@ export default function PlaylistsPage() {
             </Box>
 
             <CreatePlaylistDialog open={createOpen} onClose={() => setCreateOpen(false)} />
-            <DeleteConfirmDialog
-                target={deleteTarget}
-                onClose={() => { if (!deleteMutation.isPending) { setDeleteTarget(null); setDeleteError(null); } }}
-                onConfirm={(id) => deleteMutation.mutate(id)}
-                loading={deleteMutation.isPending}
-                errorMsg={deleteError}
-            />
         </Box>
     );
 }

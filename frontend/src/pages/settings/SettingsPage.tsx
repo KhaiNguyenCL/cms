@@ -177,7 +177,7 @@ export default function SettingsPage() {
 
                                     {isAdmin && (
                                         <Button
-                                            variant="contained"
+                                           
                                             startIcon={<Save />}
                                             disabled={!nameChanged || !nameValid || saveMutation.isPending}
                                             onClick={() => saveMutation.mutate()}
@@ -255,7 +255,7 @@ export default function SettingsPage() {
                                             {showPin ? 'Ẩn' : 'Hiện'}
                                         </Button>
                                         <Button
-                                            variant="contained"
+                                           
                                             disabled={!pinValid || pinMutation.isPending}
                                             onClick={() => pinMutation.mutate()}
                                             sx={{ mt: 0.5 }}
@@ -326,7 +326,7 @@ export default function SettingsPage() {
                                 <Stack spacing={0.75}>
                                     {[
                                         { label: 'Org ID', value: org?.id?.slice(0, 16) + '…' },
-                                        { label: 'Version', value: 'SignageCMS v1.0' },
+                                        { label: 'Version', value: 'DMS Signage v1.0' },
                                         { label: 'Backend', value: 'Node.js + PostgreSQL' },
                                         { label: 'Môi trường', value: import.meta.env.MODE },
                                     ].map(({ label, value }) => (

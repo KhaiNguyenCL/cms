@@ -178,10 +178,8 @@ function LicenseRequiredScreen({ status }: { status: 'LICENSE_EXPIRED' | 'LICENS
             display: 'flex', flexDirection: 'column', alignItems: 'center',
             justifyContent: 'center', height: '100vh', bgcolor: '#0D0D0D', gap: 2,
         }}>
-            <LockIcon sx={{ fontSize: 80, color: '#555' }} />
-            <Typography variant="h5" sx={{ color: '#888', fontWeight: 600 }}>
-                License Required
-            </Typography>
+            <img src="/logo-icon.png" alt="DMS Signage" style={{ height: 64, width: 'auto', objectFit: 'contain', opacity: 0.5 }} />
+            <LockIcon sx={{ fontSize: 48, color: '#444' }} />
             <Typography variant="body2" sx={{ color: '#666', textAlign: 'center', maxWidth: 320 }}>
                 {status === 'LICENSE_EXPIRED'
                     ? 'Giấy phép của tổ chức đã hết hạn.'
@@ -200,16 +198,7 @@ function StandbyScreen({ deviceName }: { deviceName?: string }) {
             display: 'flex', flexDirection: 'column', alignItems: 'center',
             justifyContent: 'center', height: '100vh', bgcolor: '#1A1A2E', gap: 2,
         }}>
-            <Box sx={{
-                width: 80, height: 80, borderRadius: 2,
-                background: 'linear-gradient(135deg, #6C63FF, #FF6584)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>
-                <Box component="span" sx={{ fontSize: 36, color: '#fff' }}>▶</Box>
-            </Box>
-            <Typography variant="h5" sx={{ color: '#6C63FF', fontWeight: 600 }}>
-                SignageCMS
-            </Typography>
+            <img src="/logo-icon.png" alt="DMS Signage" style={{ height: 72, width: 'auto', objectFit: 'contain' }} />
             {deviceName && (
                 <Typography sx={{ color: 'grey.500', fontSize: 14 }}>{deviceName}</Typography>
             )}
@@ -1147,7 +1136,7 @@ export default function PlayerPage() {
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 height: '100vh', bgcolor: '#0D0D0D',
             }}>
-                <CircularProgress sx={{ color: '#6C63FF' }} />
+                <img src="/logo-icon.png" alt="DMS Signage" style={{ height: 48, width: 'auto', objectFit: 'contain', opacity: 0.7 }} />
             </Box>
         );
     }

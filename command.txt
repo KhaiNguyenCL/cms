@@ -1,0 +1,1 @@
+0 3 * * * certbot renew --webroot -w /home/khainq/cms/docker/certbot --quiet && cp /etc/letsencrypt/live/dms.saigontech.net/fullchain.pem /home/khainq/cms/docker/ssl/certs/cert.pem && cp /etc/letsencrypt/live/dms.saigontech.net/privkey.pem /home/khainq/cms/docker/ssl/private/key.pem && docker exec signage-nginx nginx -s reload

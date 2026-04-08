@@ -104,7 +104,7 @@ function AddScheduleDialog({
 
     return (
         <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-            <DialogTitle>Thêm Schedule</DialogTitle>
+            <DialogTitle fontWeight={700}>Thêm Schedule</DialogTitle>
             <DialogContent sx={{ p: 0 }}>
                 <Box sx={{ px: 2, pt: 1, pb: 1 }}>
                     <TextField
@@ -207,8 +207,8 @@ function AddScheduleDialog({
                     })}
                 </List>
             </DialogContent>
-            <DialogActions>
-                <Button onClick={onClose}>Đóng</Button>
+            <DialogActions sx={{ px: 3, pb: 2 }}>
+                <Button size="small" onClick={onClose}>Đóng</Button>
             </DialogActions>
         </Dialog>
     );
@@ -547,6 +547,17 @@ function ScheduleListPanel({
                     color={isSite ? 'secondary' : 'primary'}
                     variant="outlined"
                 />
+                {isDirty && (
+                    <>
+                        <Button size="small" startIcon={<Undo />} onClick={handleDiscard} disabled={saving}>
+                            Huỷ
+                        </Button>
+                        <Button size="small" variant="contained" startIcon={<Save />}
+                            onClick={handleSave} disabled={saving}>
+                            {saving ? 'Đang lưu…' : 'Lưu'}
+                        </Button>
+                    </>
+                )}
                 <Button
                     variant="outlined" size="small" startIcon={<Add />}
                     onClick={() => setAddOpen(true)}
@@ -819,25 +830,6 @@ function ScheduleListPanel({
                 )}
             </Box>
 
-            {/* Save / Discard bar */}
-            {isDirty && (
-                <Box sx={{
-                    px: 2, py: 1, borderTop: '1px solid', borderColor: 'warning.main',
-                    bgcolor: 'warning.lighter', flexShrink: 0,
-                    display: 'flex', alignItems: 'center', gap: 1,
-                }}>
-                    <Typography variant="caption" color="warning.dark" sx={{ flex: 1 }}>
-                        Có thay đổi chưa được lưu
-                    </Typography>
-                    <Button size="small" startIcon={<Undo />} onClick={handleDiscard} disabled={saving}>
-                        Huỷ
-                    </Button>
-                    <Button size="small" variant="contained" startIcon={<Save />}
-                        onClick={handleSave} disabled={saving}>
-                        {saving ? 'Đang lưu…' : 'Lưu'}
-                    </Button>
-                </Box>
-            )}
 
             <AddScheduleDialog
                 open={addOpen}

@@ -10,7 +10,7 @@ export default function NotFoundPage() {
                 <SentimentDissatisfied sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
                 <Typography variant="h3" fontWeight={700} gutterBottom>404</Typography>
                 <Typography color="text.secondary" mb={3}>Trang không tồn tại</Typography>
-                <Button variant="contained" onClick={() => navigate('/')}>Về trang chủ</Button>
+                <Button onClick={() => navigate('/')}>Về trang chủ</Button>
             </Paper>
         </Box>
     );

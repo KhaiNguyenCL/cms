@@ -109,8 +109,6 @@ export const updateDeviceSchema = z.object({
         timezone:         z.string().max(50).optional(),
         status:           z.enum(DEVICE_STATUSES).optional(),
         settings:         z.record(z.unknown()).optional(),
-        licenseStartDate: z.string().optional().nullable(),   // ISO date YYYY-MM-DD
-        licenseEndDate:   z.string().optional().nullable(),   // ISO date YYYY-MM-DD
     }).refine(d => Object.keys(d).length > 0, { message: 'Phải cung cấp ít nhất một trường' }),
 });
 

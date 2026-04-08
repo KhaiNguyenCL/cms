@@ -18,7 +18,7 @@ import {
 import { devicesApi } from '@api/devices.api';
 import { sitesApi } from '@api/sites.api';
 import { getApiError } from '@api/client';
-import { useAppDispatch } from '@store/hooks';
+import { useAppDispatch, useAppSelector } from '@store/hooks';
 import { pushToast } from '@store/slices/uiSlice';
 import type { Device, DeviceHealth, DeviceComment, Site, ActiveSchedule } from '@/types';
 
@@ -170,16 +170,16 @@ function CreateDeviceDialog({ open, onClose }: { open: boolean; onClose: () => v
 
     return (
         <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-            <DialogTitle>Thêm Device</DialogTitle>
-            <DialogContent sx={{ pt: 2 }}>
-                <Stack spacing={2.5} sx={{ mt: 0.5 }}>
-                    <TextField label="Tên thiết bị *" value={name} onChange={(e) => setName(e.target.value)} fullWidth required autoFocus />
-                    <TextField label="Vị trí (tuỳ chọn)" value={location} onChange={(e) => setLocation(e.target.value)} fullWidth />
+            <DialogTitle fontWeight={700}>Thêm Device</DialogTitle>
+            <DialogContent dividers>
+                <Stack spacing={2.5} pt={0.5}>
+                    <TextField label="Tên thiết bị *" value={name} onChange={(e) => setName(e.target.value)} fullWidth required autoFocus size="small" />
+                    <TextField label="Vị trí (tuỳ chọn)" value={location} onChange={(e) => setLocation(e.target.value)} fullWidth size="small" />
                 </Stack>
             </DialogContent>
-            <DialogActions sx={{ p: 2.5 }}>
-                <Button onClick={onClose}>Huỷ</Button>
-                <Button variant="contained" disabled={!name || mutation.isPending} onClick={() => mutation.mutate()}>
+            <DialogActions sx={{ px: 3, pb: 2 }}>
+                <Button size="small" onClick={onClose}>Huỷ</Button>
+                <Button size="small" disabled={!name || mutation.isPending} onClick={() => mutation.mutate()}>
                     Tạo
                 </Button>
             </DialogActions>
@@ -227,6 +227,12 @@ function DeviceManageDialog({ device, open, onClose }: { device: Device | null; 
     const [tab, setTab] = React.useState(0);
     const dispatch = useAppDispatch();
     const qc = useQueryClient();
+    const currentUser = useAppSelector(s => s.auth.user);
+    const isViewer = currentUser?.role === 'VIEWER';
+    const [confirmAction, setConfirmAction] = React.useState<'release' | 'delete' | null>(null);
+
+    // For VIEWER the "Điều khiển" tab is hidden, so tab index 0 = "Nội dung" (actualTab 1), etc.
+    const actualTab = isViewer ? tab + 1 : tab;
 
     React.useEffect(() => { if (open) setTab(0); }, [open]);
 
@@ -249,21 +255,21 @@ function DeviceManageDialog({ device, open, onClose }: { device: Device | null; 
     const { data: health, isLoading: healthLoading } = useQuery<DeviceHealth | null>({
         queryKey: ['device-health', device?.id],
         queryFn: () => device ? devicesApi.getHealth(device.id) : Promise.resolve(null),
-        enabled: open && Boolean(device?.id) && (tab === 2 || tab === 3 || tab === 4),
+        enabled: open && Boolean(device?.id) && actualTab >= 2,
         staleTime: 30_000,
     });
 
     const { data: activeSchedules = [] } = useQuery<ActiveSchedule[]>({
         queryKey: ['device-active-schedules', device?.id],
         queryFn: () => device ? devicesApi.getActiveSchedules(device.id) : Promise.resolve([]),
-        enabled: open && Boolean(device?.id) && tab === 1,
+        enabled: open && Boolean(device?.id) && actualTab === 1,
         staleTime: 30_000,
     });
 
     const { data: comments = [] } = useQuery<DeviceComment[]>({
         queryKey: ['device-comments', device?.id],
         queryFn: () => device ? devicesApi.getComments(device.id) : Promise.resolve([]),
-        enabled: open && Boolean(device?.id) && tab === 1,
+        enabled: open && Boolean(device?.id) && actualTab === 1,
     });
 
     const [volume, setVolume] = React.useState(50);
@@ -273,14 +279,10 @@ function DeviceManageDialog({ device, open, onClose }: { device: Device | null; 
     // Info form (tab 0)
     const [infoName, setInfoName] = React.useState('');
     const [infoLocation, setInfoLocation] = React.useState('');
-    const [licenseStartDate, setLicenseStartDate] = React.useState('');
-    const [licenseEndDate, setLicenseEndDate] = React.useState('');
     React.useEffect(() => {
         if (device) {
             setInfoName(device.name);
             setInfoLocation(device.location ?? '');
-            setLicenseStartDate(device.licenseStartDate ? device.licenseStartDate.slice(0, 10) : '');
-            setLicenseEndDate(device.licenseEndDate ? device.licenseEndDate.slice(0, 10) : '');
         }
     }, [device]);
 
@@ -294,8 +296,6 @@ function DeviceManageDialog({ device, open, onClose }: { device: Device | null; 
             await devicesApi.update(device.id, {
                 name: infoName,
                 location: infoLocation || null,
-                licenseStartDate: licenseStartDate || null,
-                licenseEndDate: licenseEndDate || null,
             });
 
             // 2. Site (only if changed)
@@ -346,10 +346,8 @@ function DeviceManageDialog({ device, open, onClose }: { device: Device | null; 
     if (!device) return null;
 
     const isDirty =
-        infoName          !== device.name ||
-        infoLocation      !== (device.location ?? '') ||
-        licenseStartDate  !== (device.licenseStartDate ? device.licenseStartDate.slice(0, 10) : '') ||
-        licenseEndDate    !== (device.licenseEndDate   ? device.licenseEndDate.slice(0, 10)   : '') ||
+        infoName     !== device.name ||
+        infoLocation !== (device.location ?? '') ||
         (selectedSite?.id ?? null) !== (device.siteId ?? null) ||
         volumeDirty;
 
@@ -379,7 +377,7 @@ function DeviceManageDialog({ device, open, onClose }: { device: Device | null; 
                     </Stack>
                 </Stack>
                 <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mt: 1 }} variant="scrollable" scrollButtons="auto">
-                    <Tab label="Điều khiển" />
+                    {!isViewer && <Tab label="Điều khiển" />}
                     <Tab label="Nội dung" />
                     <Tab label="Phần cứng" />
                     <Tab label="Hiệu năng" />
@@ -390,7 +388,7 @@ function DeviceManageDialog({ device, open, onClose }: { device: Device | null; 
             <DialogContent dividers sx={{ flex: 1, overflowY: 'auto', p: 2.5 }}>
 
                 {/* ── Tab 0: Điều khiển ── */}
-                {tab === 0 && (
+                {actualTab === 0 && (
                     <Stack spacing={2}>
 
                         {/* Lệnh nhanh */}
@@ -460,20 +458,9 @@ function DeviceManageDialog({ device, open, onClose }: { device: Device | null; 
                             <Typography variant="caption" color="text.secondary" fontWeight={700} display="block" mb={0.75} sx={{ textTransform: 'uppercase', letterSpacing: 1 }}>
                                 Thông tin thiết bị
                             </Typography>
-                            <Stack spacing={1}>
-                                <Stack direction="row" spacing={1}>
-                                    <TextField label="Tên thiết bị" value={infoName} onChange={e => setInfoName(e.target.value)} size="small" sx={{ flex: 1 }} />
-                                    <TextField label="Vị trí" value={infoLocation} onChange={e => setInfoLocation(e.target.value)} size="small" sx={{ flex: 1 }} />
-                                </Stack>
-                                <Divider />
-                                <Stack direction="row" spacing={1}>
-                                    <TextField label="Ngày đăng ký" type="date" value={licenseStartDate}
-                                        onChange={e => setLicenseStartDate(e.target.value)}
-                                        size="small" sx={{ flex: 1 }} InputLabelProps={{ shrink: true }} />
-                                    <TextField label="Ngày hết hạn" type="date" value={licenseEndDate}
-                                        onChange={e => setLicenseEndDate(e.target.value)}
-                                        size="small" sx={{ flex: 1 }} InputLabelProps={{ shrink: true }} />
-                                </Stack>
+                            <Stack direction="row" spacing={1}>
+                                <TextField label="Tên thiết bị" value={infoName} onChange={e => setInfoName(e.target.value)} size="small" sx={{ flex: 1 }} />
+                                <TextField label="Vị trí" value={infoLocation} onChange={e => setInfoLocation(e.target.value)} size="small" sx={{ flex: 1 }} />
                             </Stack>
                         </Box>
                         <Divider />
@@ -482,43 +469,59 @@ function DeviceManageDialog({ device, open, onClose }: { device: Device | null; 
                             <Typography variant="caption" color="error" fontWeight={700} sx={{ textTransform: 'uppercase', letterSpacing: 1, mr: 0.5 }}>
                                 Nguy hiểm:
                             </Typography>
-                            <Button variant="outlined" color="warning" size="small" startIcon={<LinkOff />}
-                                sx={{ fontSize: '0.75rem', py: 0.5 }}
-                                onClick={() => {
-                                    if (!window.confirm(`⚠️ RELEASE "${device.name}"\n\nThiết bị sẽ bị ngắt kết nối và cần ghép cặp lại.\nBạn có chắc chắn?`)) return;
-                                    devicesApi.reset(device.id)
-                                        .then(r => {
-                                            qc.invalidateQueries({ queryKey: ['devices'] });
-                                            if (device.siteId) qc.invalidateQueries({ queryKey: ['sites'] });
-                                            window.alert(`✅ Release thành công!\n\nMã ghép cặp mới: ${r.pairingCode}\n\nNhập mã này trên TV để ghép cặp lại.`);
-                                            onClose();
-                                        })
-                                        .catch(() => dispatch(pushToast({ severity: 'error', message: 'Release thất bại' })));
-                                }}>
-                                Release
-                            </Button>
-                            <Button variant="outlined" color="error" size="small" startIcon={<Delete />}
-                                sx={{ fontSize: '0.75rem', py: 0.5 }}
-                                onClick={() => {
-                                    if (!window.confirm(`Xóa device "${device.name}"?\nHành động này không thể hoàn tác.`)) return;
-                                    devicesApi.delete(device.id)
-                                        .then(() => {
-                                            qc.invalidateQueries({ queryKey: ['devices'] });
-                                            if (device.siteId) qc.invalidateQueries({ queryKey: ['sites'] });
-                                            dispatch(pushToast({ severity: 'success', message: `Device "${device.name}" đã được xóa` }));
-                                            onClose();
-                                        })
-                                        .catch(() => dispatch(pushToast({ severity: 'error', message: 'Xóa device thất bại' })));
-                                }}>
-                                Xóa device
-                            </Button>
+                            {confirmAction === 'release' ? (
+                                <Stack direction="row" alignItems="center" spacing={1}>
+                                    <Typography variant="caption" color="warning.main">Xác nhận release?</Typography>
+                                    <Button size="small" color="warning" onClick={() => {
+                                        setConfirmAction(null);
+                                        devicesApi.reset(device.id)
+                                            .then(r => {
+                                                qc.invalidateQueries({ queryKey: ['devices'] });
+                                                if (device.siteId) qc.invalidateQueries({ queryKey: ['sites'] });
+                                                dispatch(pushToast({ severity: 'success', message: `Release OK — mã ghép cặp mới: ${r.pairingCode}` }));
+                                                onClose();
+                                            })
+                                            .catch(() => dispatch(pushToast({ severity: 'error', message: 'Release thất bại' })));
+                                    }}>Có</Button>
+                                    <Button size="small" onClick={() => setConfirmAction(null)}>Không</Button>
+                                </Stack>
+                            ) : confirmAction === 'delete' ? (
+                                <Stack direction="row" alignItems="center" spacing={1}>
+                                    <Typography variant="caption" color="error">Xác nhận xóa?</Typography>
+                                    <Button size="small" color="error" onClick={() => {
+                                        setConfirmAction(null);
+                                        devicesApi.delete(device.id)
+                                            .then(() => {
+                                                qc.invalidateQueries({ queryKey: ['devices'] });
+                                                if (device.siteId) qc.invalidateQueries({ queryKey: ['sites'] });
+                                                dispatch(pushToast({ severity: 'success', message: `Device "${device.name}" đã được xóa` }));
+                                                onClose();
+                                            })
+                                            .catch(() => dispatch(pushToast({ severity: 'error', message: 'Xóa device thất bại' })));
+                                    }}>Có</Button>
+                                    <Button size="small" onClick={() => setConfirmAction(null)}>Không</Button>
+                                </Stack>
+                            ) : (
+                                <>
+                                    <Button variant="outlined" color="warning" size="small" startIcon={<LinkOff />}
+                                        sx={{ fontSize: '0.75rem', py: 0.5 }}
+                                        onClick={() => setConfirmAction('release')}>
+                                        Release
+                                    </Button>
+                                    <Button variant="outlined" color="error" size="small" startIcon={<Delete />}
+                                        sx={{ fontSize: '0.75rem', py: 0.5 }}
+                                        onClick={() => setConfirmAction('delete')}>
+                                        Xóa device
+                                    </Button>
+                                </>
+                            )}
                         </Stack>
 
                     </Stack>
                 )}
 
                 {/* ── Tab 1: Nội dung ── */}
-                {tab === 1 && (
+                {actualTab === 1 && (
                     <Stack spacing={3}>
                         <Box>
                             <Typography variant="overline" color="text.secondary" fontWeight={700} display="block" mb={1}>
@@ -551,19 +554,21 @@ function DeviceManageDialog({ device, open, onClose }: { device: Device | null; 
                             <Typography variant="overline" color="text.secondary" fontWeight={700} display="block" mb={1}>
                                 Ghi chú
                             </Typography>
-                            <Stack direction="row" gap={1} mt={2} alignItems="flex-end">
-                                <TextField
-                                    placeholder="Nhập ghi chú..."
-                                    value={commentText}
-                                    onChange={e => setCommentText(e.target.value)}
-                                    size="small" fullWidth multiline maxRows={3}
-                                />
-                                <Button variant="contained" size="medium"
-                                    disabled={!commentText.trim() || addCommentMutation.isPending}
-                                    onClick={() => addCommentMutation.mutate()}>
-                                    Gửi
-                                </Button>
-                            </Stack>
+                            {!isViewer && (
+                                <Stack direction="row" gap={1} mt={2} alignItems="flex-end">
+                                    <TextField
+                                        placeholder="Nhập ghi chú..."
+                                        value={commentText}
+                                        onChange={e => setCommentText(e.target.value)}
+                                        size="small" fullWidth multiline maxRows={3}
+                                    />
+                                    <Button size="medium"
+                                        disabled={!commentText.trim() || addCommentMutation.isPending}
+                                        onClick={() => addCommentMutation.mutate()}>
+                                        Gửi
+                                    </Button>
+                                </Stack>
+                            )}
                             <Divider sx={{ my: 2 }} />
                             <Stack spacing={1}>
                                 {comments.map(c => (
@@ -587,7 +592,7 @@ function DeviceManageDialog({ device, open, onClose }: { device: Device | null; 
                 )}
 
                 {/* ── Tab 2: Phần cứng ── */}
-                {tab === 2 && (
+                {actualTab === 2 && (
                     <Stack spacing={0}>
                         <InfoRow label="Model" value={device.model ?? '—'} />
                         <InfoRow label="S/N (Android ID)" value={
@@ -600,8 +605,8 @@ function DeviceManageDialog({ device, open, onClose }: { device: Device | null; 
                         <InfoRow label="IP Address" value={health?.ipAddress ?? '—'} />
                         <InfoRow label="MAC Address" value={health?.macAddress ?? '—'} />
                         <InfoRow label="Múi giờ" value={device.timezone} />
-                        <InfoRow label="Ngày đăng ký" value={fmtDate(device.licenseStartDate)} />
-                        <InfoRow label="Ngày hết hạn" value={fmtDate(device.licenseEndDate)} />
+                        <InfoRow label="Ngày kích hoạt license" value={fmtDate(device.licenseStartDate)} />
+                        <InfoRow label="Ngày hết hạn license" value={fmtDate(device.licenseEndDate)} />
                         <InfoRow label="Online từ" value={device.lastOnlineAt ? new Date(device.lastOnlineAt).toLocaleString('vi-VN') : '—'} />
                         <InfoRow label="Tắt lần cuối" value={device.lastOfflineAt ? new Date(device.lastOfflineAt).toLocaleString('vi-VN') : '—'} />
                         <InfoRow label="Pairing Code" value={
@@ -615,7 +620,7 @@ function DeviceManageDialog({ device, open, onClose }: { device: Device | null; 
                 )}
 
                 {/* ── Tab 3: Hiệu năng ── */}
-                {tab === 3 && (
+                {actualTab === 3 && (
                     <Box>
                         {healthLoading ? (
                             <Box>{[1, 2, 3, 4].map(i => <Skeleton key={i} height={48} sx={{ mb: 0.5 }} />)}</Box>
@@ -667,7 +672,7 @@ function DeviceManageDialog({ device, open, onClose }: { device: Device | null; 
                 )}
 
                 {/* ── Tab 4: Mạng ── */}
-                {tab === 4 && (
+                {actualTab === 4 && (
                     <Stack spacing={3}>
                         {healthLoading ? (
                             <Box>{[1, 2, 3].map(i => <Skeleton key={i} height={40} sx={{ mb: 0.5 }} />)}</Box>
@@ -693,13 +698,13 @@ function DeviceManageDialog({ device, open, onClose }: { device: Device | null; 
                 )}
             </DialogContent>
 
-            <DialogActions sx={{ p: 2, flexShrink: 0 }}>
-                {tab === 0 && (
-                    <Button variant="contained" onClick={handleSave} disabled={saving || !isDirty}>
+            <DialogActions sx={{ px: 3, pb: 2, flexShrink: 0 }}>
+                {!isViewer && actualTab === 0 && (
+                    <Button size="small" onClick={handleSave} disabled={saving || !isDirty}>
                         {saving ? 'Đang lưu…' : 'Lưu'}
                     </Button>
                 )}
-                <Button onClick={onClose}>Đóng</Button>
+                <Button size="small" onClick={onClose}>Đóng</Button>
             </DialogActions>
         </Dialog>
     );
@@ -766,31 +771,31 @@ function DevicesTab({ onAddDevice }: { onAddDevice: () => void }) {
                         <TableHead>
                             <TableRow>
                                 {show('device') && <TableCell align="center" sx={{ fontWeight: 700 }}>Tên</TableCell>}
-                                {show('status') && <TableCell align="center" sx={{ fontWeight: 700, borderLeft: '1px solid', borderColor: 'divider' }}>Status</TableCell>}
-                                {show('license') && <TableCell align="center" sx={{ fontWeight: 700, borderLeft: '1px solid', borderColor: 'divider' }}>License</TableCell>}
-                                {show('model') && <TableCell align="center" sx={{ fontWeight: 700, borderLeft: '1px solid', borderColor: 'divider' }}>Model</TableCell>}
-                                {show('sn') && <TableCell align="center" sx={{ fontWeight: 700, borderLeft: '1px solid', borderColor: 'divider' }}>S/N</TableCell>}
-                                {show('osVersion') && <TableCell align="center" sx={{ fontWeight: 700, borderLeft: '1px solid', borderColor: 'divider' }}>
+                                {show('status') && <TableCell align="center" sx={{ fontWeight: 700 }}>Status</TableCell>}
+                                {show('license') && <TableCell align="center" sx={{ fontWeight: 700 }}>License</TableCell>}
+                                {show('model') && <TableCell align="center" sx={{ fontWeight: 700 }}>Model</TableCell>}
+                                {show('sn') && <TableCell align="center" sx={{ fontWeight: 700 }}>S/N</TableCell>}
+                                {show('osVersion') && <TableCell align="center" sx={{ fontWeight: 700 }}>
                                     <TableSortLabel active={sortBy === 'osVersion'} direction={sortBy === 'osVersion' ? sortDir : 'asc'} onClick={() => handleSort('osVersion')}>OS Version</TableSortLabel>
                                 </TableCell>}
-                                {show('lastSeen') && <TableCell align="center" sx={{ fontWeight: 700, borderLeft: '1px solid', borderColor: 'divider' }}>
+                                {show('lastSeen') && <TableCell align="center" sx={{ fontWeight: 700 }}>
                                     <TableSortLabel active={sortBy === 'lastSeen'} direction={sortBy === 'lastSeen' ? sortDir : 'asc'} onClick={() => handleSort('lastSeen')}>Last Seen</TableSortLabel>
                                 </TableCell>}
-                                {show('uptime') && <TableCell align="center" sx={{ fontWeight: 700, borderLeft: '1px solid', borderColor: 'divider' }}>
+                                {show('uptime') && <TableCell align="center" sx={{ fontWeight: 700 }}>
                                     <TableSortLabel active={sortBy === 'uptime'} direction={sortBy === 'uptime' ? sortDir : 'asc'} onClick={() => handleSort('uptime')}>Uptime</TableSortLabel>
                                 </TableCell>}
-                                {show('site') && <TableCell align="center" sx={{ fontWeight: 700, borderLeft: '1px solid', borderColor: 'divider' }}>
+                                {show('site') && <TableCell align="center" sx={{ fontWeight: 700 }}>
                                     <TableSortLabel active={sortBy === 'site'} direction={sortBy === 'site' ? sortDir : 'asc'} onClick={() => handleSort('site')}>Site</TableSortLabel>
                                 </TableCell>}
-                                {show('location') && <TableCell align="center" sx={{ fontWeight: 700, borderLeft: '1px solid', borderColor: 'divider' }}>Vị trí</TableCell>}
-                                {show('licenseStartDate') && <TableCell align="center" sx={{ fontWeight: 700, borderLeft: '1px solid', borderColor: 'divider' }}>
+                                {show('location') && <TableCell align="center" sx={{ fontWeight: 700 }}>Vị trí</TableCell>}
+                                {show('licenseStartDate') && <TableCell align="center" sx={{ fontWeight: 700 }}>
                                     <TableSortLabel active={sortBy === 'licenseStartDate'} direction={sortBy === 'licenseStartDate' ? sortDir : 'asc'} onClick={() => handleSort('licenseStartDate')}>Ngày đăng ký</TableSortLabel>
                                 </TableCell>}
-                                {show('licenseEndDate') && <TableCell align="center" sx={{ fontWeight: 700, borderLeft: '1px solid', borderColor: 'divider' }}>
+                                {show('licenseEndDate') && <TableCell align="center" sx={{ fontWeight: 700 }}>
                                     <TableSortLabel active={sortBy === 'licenseEndDate'} direction={sortBy === 'licenseEndDate' ? sortDir : 'asc'} onClick={() => handleSort('licenseEndDate')}>Ngày hết hạn</TableSortLabel>
                                 </TableCell>}
-                                {show('pairingCode') && <TableCell align="center" sx={{ fontWeight: 700, borderLeft: '1px solid', borderColor: 'divider' }}>Pairing Code</TableCell>}
-                                {show('actions') && <TableCell align="center" sx={{ fontWeight: 700, borderLeft: '1px solid', borderColor: 'divider' }}>Thao tác</TableCell>}
+                                {show('pairingCode') && <TableCell align="center" sx={{ fontWeight: 700 }}>Pairing Code</TableCell>}
+                                {show('actions') && <TableCell align="center" sx={{ fontWeight: 700 }}>Thao tác</TableCell>}
                             </TableRow>
                         </TableHead>
                         <TableBody>
@@ -824,42 +829,42 @@ function DevicesTab({ onAddDevice }: { onAddDevice: () => void }) {
                                                 </Stack>
                                             </TableCell>
                                         )}
-                                        {show('status') && <TableCell align="center" sx={{ borderLeft: '1px solid', borderColor: 'divider' }}><StatusChip status={device.status} /></TableCell>}
-                                        {show('license') && <TableCell align="center" sx={{ borderLeft: '1px solid', borderColor: 'divider' }}><LicenseChip device={device} /></TableCell>}
-                                        {show('model') && <TableCell align="center" sx={{ borderLeft: '1px solid', borderColor: 'divider' }}><Typography variant="body2">{device.model ?? '—'}</Typography></TableCell>}
+                                        {show('status') && <TableCell align="center"><StatusChip status={device.status} /></TableCell>}
+                                        {show('license') && <TableCell align="center"><LicenseChip device={device} /></TableCell>}
+                                        {show('model') && <TableCell align="center"><Typography variant="body2">{device.model ?? '—'}</Typography></TableCell>}
                                         {show('sn') && (
-                                            <TableCell align="center" sx={{ borderLeft: '1px solid', borderColor: 'divider' }}>
+                                            <TableCell align="center">
                                                 <Typography variant="body2" fontFamily="monospace" fontSize="0.75rem" color="text.secondary">
                                                     {device.androidId ? device.androidId.slice(0, 12) : '—'}
                                                 </Typography>
                                             </TableCell>
                                         )}
-                                        {show('osVersion') && <TableCell align="center" sx={{ borderLeft: '1px solid', borderColor: 'divider' }}><Typography variant="body2">{device.osVersion ?? '—'}</Typography></TableCell>}
+                                        {show('osVersion') && <TableCell align="center"><Typography variant="body2">{device.osVersion ?? '—'}</Typography></TableCell>}
                                         {show('lastSeen') && (
-                                            <TableCell align="center" sx={{ borderLeft: '1px solid', borderColor: 'divider' }}>
+                                            <TableCell align="center">
                                                 <Typography variant="caption" color="text.secondary">
                                                     {device.lastSeen ? new Date(device.lastSeen).toLocaleString('vi-VN') : '—'}
                                                 </Typography>
                                             </TableCell>
                                         )}
                                         {show('uptime') && (
-                                            <TableCell align="center" sx={{ borderLeft: '1px solid', borderColor: 'divider' }}>
+                                            <TableCell align="center">
                                                 <Typography variant="body2" fontWeight={device.lastOnlineAt ? 500 : 400} color={device.lastOnlineAt && (device.status === 'ONLINE' || device.status === 'SLEEP') ? 'success.main' : 'text.secondary'}>
                                                     {formatUptime(device.lastOnlineAt, device.status)}
                                                 </Typography>
                                             </TableCell>
                                         )}
-                                        {show('site') && <TableCell align="center" sx={{ borderLeft: '1px solid', borderColor: 'divider' }}><Typography variant="body2">{device.siteName ?? '—'}</Typography></TableCell>}
-                                        {show('location') && <TableCell align="center" sx={{ borderLeft: '1px solid', borderColor: 'divider' }}><Typography variant="body2">{device.location ?? '—'}</Typography></TableCell>}
-                                        {show('licenseStartDate') && <TableCell align="center" sx={{ borderLeft: '1px solid', borderColor: 'divider' }}><Typography variant="body2">{fmtDate(device.licenseStartDate)}</Typography></TableCell>}
-                                        {show('licenseEndDate') && <TableCell align="center" sx={{ borderLeft: '1px solid', borderColor: 'divider' }}><Typography variant="body2">{fmtDate(device.licenseEndDate)}</Typography></TableCell>}
+                                        {show('site') && <TableCell align="center"><Typography variant="body2">{device.siteName ?? '—'}</Typography></TableCell>}
+                                        {show('location') && <TableCell align="center"><Typography variant="body2">{device.location ?? '—'}</Typography></TableCell>}
+                                        {show('licenseStartDate') && <TableCell align="center"><Typography variant="body2">{fmtDate(device.licenseStartDate)}</Typography></TableCell>}
+                                        {show('licenseEndDate') && <TableCell align="center"><Typography variant="body2">{fmtDate(device.licenseEndDate)}</Typography></TableCell>}
                                         {show('pairingCode') && (
-                                            <TableCell align="center" sx={{ borderLeft: '1px solid', borderColor: 'divider' }}>
+                                            <TableCell align="center">
                                                 <Chip label={device.pairingCode ?? '—'} size="small" sx={{ fontFamily: 'monospace', fontWeight: 700, letterSpacing: 2 }} />
                                             </TableCell>
                                         )}
                                         {show('actions') && (
-                                            <TableCell align="center" sx={{ borderLeft: '1px solid', borderColor: 'divider' }}>
+                                            <TableCell align="center">
                                                 <Tooltip title="Quản lý">
                                                     <IconButton size="small" onClick={() => setDetailDevice(device)}>
                                                         <Settings fontSize="small" />
@@ -907,6 +912,8 @@ function DevicesTab({ onAddDevice }: { onAddDevice: () => void }) {
 
 export default function DevicesPage() {
     const [createOpen, setCreateOpen] = useState(false);
+    const currentUser = useAppSelector(s => s.auth.user);
+    const isViewer = currentUser?.role === 'VIEWER';
 
     return (
         <Box>
@@ -915,14 +922,16 @@ export default function DevicesPage() {
                     <Typography variant="h4" fontWeight={700}>Device Management</Typography>
                     <Typography variant="body2" color="text.secondary">Manage your display network</Typography>
                 </Box>
-                <Button variant="contained" startIcon={<Add />} onClick={() => setCreateOpen(true)}>
-                    Add Device
-                </Button>
+                {!isViewer && (
+                    <Button startIcon={<Add />} onClick={() => setCreateOpen(true)}>
+                        Add Device
+                    </Button>
+                )}
             </Stack>
 
             <DevicesTab onAddDevice={() => setCreateOpen(true)} />
 
-            <CreateDeviceDialog open={createOpen} onClose={() => setCreateOpen(false)} />
+            {!isViewer && <CreateDeviceDialog open={createOpen} onClose={() => setCreateOpen(false)} />}
         </Box>
     );
 }

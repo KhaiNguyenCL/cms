@@ -107,7 +107,7 @@ router.use(authenticate);
  * @desc    Danh sách devices (phân trang, filter status/search)
  * @access  Private (ADMIN, MANAGER)
  */
-router.get('/', authorize('ADMIN', 'MANAGER'), validate(listDevicesSchema), devController.listDevices);
+router.get('/', authorize('ADMIN', 'MANAGER', 'VIEWER'), validate(listDevicesSchema), devController.listDevices);
 
 /**
  * @route   POST /api/devices
@@ -121,7 +121,7 @@ router.post('/', authorize('ADMIN'), validate(createDeviceSchema), devController
  * @desc    Chi tiết device
  * @access  Private (ADMIN, MANAGER)
  */
-router.get('/:id', authorize('ADMIN', 'MANAGER'), devController.getDeviceById);
+router.get('/:id', authorize('ADMIN', 'MANAGER', 'VIEWER'), devController.getDeviceById);
 
 /**
  * @route   PUT/PATCH /api/devices/:id
@@ -164,14 +164,14 @@ router.get('/:id/screenshot', authorize('ADMIN', 'MANAGER'), devController.getSc
  * @desc    Xem logs của device
  * @access  Private (ADMIN, MANAGER)
  */
-router.get('/:id/logs', authorize('ADMIN', 'MANAGER'), devController.getDeviceLogs);
+router.get('/:id/logs', authorize('ADMIN', 'MANAGER', 'VIEWER'), devController.getDeviceLogs);
 
 /**
  * @route   GET /api/devices/:id/health
  * @desc    Lấy thông tin sức khỏe thiết bị mới nhất (CPU, RAM, Storage, Network)
  * @access  Private (ADMIN, MANAGER)
  */
-router.get('/:id/health', authorize('ADMIN', 'MANAGER'), devController.getDeviceHealth);
+router.get('/:id/health', authorize('ADMIN', 'MANAGER', 'VIEWER'), devController.getDeviceHealth);
 
 
 /**
@@ -186,15 +186,15 @@ router.patch('/:id/license', authorize('ADMIN'), devController.setDeviceLicense)
  * @desc    Lấy media đang phát gần nhất từ playback_logs
  * @access  Private (ADMIN, MANAGER)
  */
-router.get('/:id/now-playing', authorize('ADMIN', 'MANAGER'), devController.getNowPlaying);
-router.get('/:id/active-schedules', authorize('ADMIN', 'MANAGER'), devController.getActiveSchedules);
+router.get('/:id/now-playing', authorize('ADMIN', 'MANAGER', 'VIEWER'), devController.getNowPlaying);
+router.get('/:id/active-schedules', authorize('ADMIN', 'MANAGER', 'VIEWER'), devController.getActiveSchedules);
 
 /**
  * @route   GET /api/devices/:id/comments
  * @desc    Danh sách ghi chú của device
  * @access  Private (ADMIN, MANAGER)
  */
-router.get('/:id/comments', authorize('ADMIN', 'MANAGER'), devController.getDeviceComments);
+router.get('/:id/comments', authorize('ADMIN', 'MANAGER', 'VIEWER'), devController.getDeviceComments);
 
 /**
  * @route   POST /api/devices/:id/comments
@@ -210,7 +210,7 @@ router.post('/:id/comments', authorize('ADMIN'), devController.addDeviceComment)
  * @desc    Danh sách device groups
  * @access  Private (ADMIN, MANAGER)
  */
-router.get('/groups/list', authorize('ADMIN', 'MANAGER'), devController.listGroups);
+router.get('/groups/list', authorize('ADMIN', 'MANAGER', 'VIEWER'), devController.listGroups);
 
 /**
  * @route   POST /api/device-groups

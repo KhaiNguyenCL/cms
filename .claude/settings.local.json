@@ -60,7 +60,14 @@
       "Bash(cmd:*)",
       "Bash(findstr \":3000 \")",
       "Bash(findstr LISTENING)",
-      "Bash(echo \"exit: $?\")"
+      "Bash(echo \"exit: $?\")",
+      "Bash(xargs -I {} basename {})",
+      "Bash(xargs sed:*)",
+      "Bash(sed -n '1,15p' \"E:/cms/frontend/src/pages/history/StatusAlarmPage.tsx\")",
+      "Bash(sed -n '1,12p' \"E:/cms/frontend/src/pages/history/ContentHistoryPage.tsx\")",
+      "Bash(openssl rand:*)",
+      "Bash(npx --yes bcrypt-cli hash 'Admin@123456' 12)",
+      "Read(//tmp/**)"
     ],
     "additionalDirectories": [
       "E:\\player"

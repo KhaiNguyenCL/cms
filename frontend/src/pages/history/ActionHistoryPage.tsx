@@ -81,11 +81,6 @@ function LogRow({ log }: { log: ActionLog }) {
                         {fmtDateTime(log.occurredAt)}
                     </Typography>
                 </TableCell>
-                <TableCell sx={{ width: 48 }}>
-                    <Tooltip title={log.action}>
-                        {actionIcon(log.action)}
-                    </Tooltip>
-                </TableCell>
                 <TableCell sx={{ width: 110 }}>
                     {actionChip(log.action)}
                 </TableCell>
@@ -274,7 +269,7 @@ export default function ActionHistoryPage() {
                     <TableHead>
                         <TableRow>
                             <TableCell>Thời gian</TableCell>
-                            <TableCell colSpan={2}>Hành động</TableCell>
+                            <TableCell>Hành động</TableCell>
                             <TableCell>Loại</TableCell>
                             <TableCell>Tài nguyên</TableCell>
                             <TableCell>Người thực hiện</TableCell>

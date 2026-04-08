@@ -101,11 +101,11 @@ function GroupDialog({ open, editing, onClose }: GroupDialogProps) {
 
     return (
         <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-            <DialogTitle>{editing ? 'Chỉnh sửa Sync Group' : 'Tạo Sync Group mới'}</DialogTitle>
-            <DialogContent>
-                <Stack spacing={2.5} mt={1}>
-                    <TextField label="Tên nhóm *" value={name} onChange={e => setName(e.target.value)} fullWidth />
-                    <TextField label="Mô tả" value={description} onChange={e => setDescription(e.target.value)} fullWidth multiline rows={2} />
+            <DialogTitle fontWeight={700}>{editing ? 'Chỉnh sửa Sync Group' : 'Tạo Sync Group mới'}</DialogTitle>
+            <DialogContent dividers>
+                <Stack spacing={2.5} pt={0.5}>
+                    <TextField label="Tên nhóm *" value={name} onChange={e => setName(e.target.value)} fullWidth size="small" />
+                    <TextField label="Mô tả" value={description} onChange={e => setDescription(e.target.value)} fullWidth multiline rows={2} size="small" />
                     <Autocomplete
                         options={playlistOptions}
                         getOptionLabel={o => o.name}
@@ -113,13 +113,13 @@ function GroupDialog({ open, editing, onClose }: GroupDialogProps) {
                         inputValue={playlistInput}
                         onInputChange={(_, v) => setPlaylistInput(v)}
                         onChange={(_, v) => setPlaylistId(v?.id ?? null)}
-                        renderInput={params => <TextField {...params} label="Playlist (có thể gán sau)" />}
+                        renderInput={params => <TextField {...params} label="Playlist (có thể gán sau)" size="small" />}
                     />
                 </Stack>
             </DialogContent>
-            <DialogActions sx={{ p: 2 }}>
-                <Button onClick={onClose}>Hủy</Button>
-                <Button variant="contained" disabled={!name.trim() || mutation.isPending}
+            <DialogActions sx={{ px: 3, pb: 2 }}>
+                <Button size="small" onClick={onClose}>Hủy</Button>
+                <Button size="small" disabled={!name.trim() || mutation.isPending}
                     onClick={() => mutation.mutate()}>
                     {mutation.isPending ? <CircularProgress size={18} /> : (editing ? 'Lưu' : 'Tạo')}
                 </Button>
@@ -162,8 +162,8 @@ function DeviceDialog({ group, onClose }: { group: SyncGroup; onClose: () => voi
 
     return (
         <Dialog open onClose={onClose} maxWidth="sm" fullWidth>
-            <DialogTitle>Thiết bị trong nhóm: {group.name}</DialogTitle>
-            <DialogContent>
+            <DialogTitle fontWeight={700}>Thiết bị trong nhóm: {group.name}</DialogTitle>
+            <DialogContent dividers>
                 <Alert severity="info" sx={{ mb: 2 }}>
                     Chỉ hiển thị thiết bị chưa thuộc nhóm sync khác.
                 </Alert>
@@ -192,8 +192,8 @@ function DeviceDialog({ group, onClose }: { group: SyncGroup; onClose: () => voi
                     )}
                 </List>
             </DialogContent>
-            <DialogActions sx={{ p: 2 }}>
-                <Button variant="contained" onClick={onClose}>Đóng</Button>
+            <DialogActions sx={{ px: 3, pb: 2 }}>
+                <Button size="small" onClick={onClose}>Đóng</Button>
             </DialogActions>
         </Dialog>
     );
@@ -285,7 +285,7 @@ function GroupCard({ group, onEdit }: { group: SyncGroup; onEdit: (g: SyncGroup)
 
                 <CardActions sx={{ px: 2, py: 1, justifyContent: 'flex-end', gap: 1 }}>
                     {!isPlaying ? (
-                        <Button size="small" variant="contained" color="success" startIcon={<PlayArrow />}
+                        <Button size="small" color="success" startIcon={<PlayArrow />}
                             disabled={!group.playlistId || start.isPending}
                             onClick={() => start.mutate()}>
                             {start.isPending ? <CircularProgress size={16} /> : 'Start'}
@@ -336,7 +336,7 @@ export default function SyncGroupsPage() {
                         Đồng bộ phát nội dung trên nhiều màn hình cùng lúc
                     </Typography>
                 </Box>
-                <Button variant="contained" startIcon={<Add />} onClick={openCreate}>
+                <Button startIcon={<Add />} onClick={openCreate}>
                     Tạo nhóm mới
                 </Button>
             </Stack>
@@ -352,7 +352,7 @@ export default function SyncGroupsPage() {
                     <Typography variant="body2" color="text.disabled" mb={3}>
                         Tạo nhóm để đồng bộ phát nội dung trên nhiều màn hình
                     </Typography>
-                    <Button variant="contained" startIcon={<Add />} onClick={openCreate}>
+                    <Button startIcon={<Add />} onClick={openCreate}>
                         Tạo nhóm đầu tiên
                     </Button>
                 </Box>

@@ -7,7 +7,10 @@ import {
     Popover, FormControlLabel, Checkbox, Divider,
     Card, CardContent, Skeleton, Pagination, Select, MenuItem, TableSortLabel,
 } from '@mui/material';
-import { Add, Edit, Delete, Search, Close, PersonAdd, ViewColumn, SwapHoriz } from '@mui/icons-material';
+import {
+    Add, Edit, Delete, Search, Close, PersonAdd, ViewColumn, SwapHoriz,
+    StoreMallDirectory,
+} from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { sitesApi } from '@/api/sites.api';
 import { devicesApi } from '@/api/devices.api';
@@ -97,13 +100,25 @@ function fmtDate(d: string | null) {
 
 function fmtTime(t: string | null) {
     if (!t) return '—';
-    // Return only HH:MM even if stored as HH:MM:SS
     return t.slice(0, 5);
 }
 
 function shortId(id: string) {
     return id.slice(0, 8).toUpperCase();
 }
+
+// ─── Shared table header cell style ──────────────────────────────────────────
+
+const TH_SX = {
+    fontWeight: 600,
+    fontSize: '0.72rem',
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.05em',
+    color: 'text.secondary',
+    bgcolor: 'grey.50',
+    whiteSpace: 'nowrap' as const,
+    py: 1.25,
+};
 
 // ─── Column visibility picker ─────────────────────────────────────────────────
 
@@ -116,7 +131,6 @@ function ColumnPicker({ visible, onChange }: ColumnPickerProps) {
     const [anchor, setAnchor] = useState<HTMLElement | null>(null);
 
     const toggle = (id: ColId) => {
-        // name and actions are always visible
         if (id === 'name' || id === 'actions') return;
         const next = new Set(visible);
         if (next.has(id)) next.delete(id); else next.add(id);
@@ -178,7 +192,6 @@ function AddSiteDialog({ open, onClose }: AddSiteDialogProps) {
     const qc = useQueryClient();
     const emptyForm = { name: '', address: '', contact: '', timezone: 'Asia/Bangkok', timeOn: '', timeOff: '', deployDate: '', endDate: '' };
     const [form, setForm] = useState(emptyForm);
-
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
     const createMutation = useMutation({
@@ -210,86 +223,27 @@ function AddSiteDialog({ open, onClose }: AddSiteDialogProps) {
 
     return (
         <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
-            <DialogTitle>Thêm Site</DialogTitle>
-            <DialogContent>
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
-                    <TextField
-                        label="Tên Site *"
-                        value={form.name}
-                        onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                        fullWidth
-                        autoFocus
-                    />
-                    <TextField
-                        label="Địa chỉ"
-                        value={form.address}
-                        onChange={e => setForm(f => ({ ...f, address: e.target.value }))}
-                        fullWidth
-                    />
-                    <TextField
-                        label="Liên hệ"
-                        value={form.contact}
-                        onChange={e => setForm(f => ({ ...f, contact: e.target.value }))}
-                        fullWidth
-                    />
-                    <TimezoneAutocomplete
-                        value={form.timezone}
-                        onChange={tz => setForm(f => ({ ...f, timezone: tz }))}
-                        helperText="Múi giờ — devices trong site kế thừa nếu chưa set"
-                    />
+            <DialogTitle fontWeight={700}>Thêm Site</DialogTitle>
+            <DialogContent dividers>
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 0.5 }}>
+                    <TextField label="Tên Site *" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} fullWidth autoFocus size="small" />
+                    <TextField label="Địa chỉ" value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} fullWidth size="small" />
+                    <TextField label="Liên hệ" value={form.contact} onChange={e => setForm(f => ({ ...f, contact: e.target.value }))} fullWidth size="small" />
+                    <TimezoneAutocomplete value={form.timezone} onChange={tz => setForm(f => ({ ...f, timezone: tz }))} helperText="Múi giờ — devices trong site kế thừa nếu chưa set" />
                     <Box sx={{ display: 'flex', gap: 2 }}>
-                        <TextField
-                            label="Time ON"
-                            type="time"
-                            value={form.timeOn}
-                            onChange={e => setForm(f => ({ ...f, timeOn: e.target.value }))}
-                            fullWidth
-                            InputLabelProps={{ shrink: true }}
-                            helperText="Giờ bật màn hình"
-                        />
-                        <TextField
-                            label="Time OFF"
-                            type="time"
-                            value={form.timeOff}
-                            onChange={e => setForm(f => ({ ...f, timeOff: e.target.value }))}
-                            fullWidth
-                            InputLabelProps={{ shrink: true }}
-                            helperText="Giờ tắt màn hình"
-                        />
+                        <TextField label="Time ON" type="time" value={form.timeOn} onChange={e => setForm(f => ({ ...f, timeOn: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} helperText="Giờ bật màn hình" size="small" />
+                        <TextField label="Time OFF" type="time" value={form.timeOff} onChange={e => setForm(f => ({ ...f, timeOff: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} helperText="Giờ tắt màn hình" size="small" />
                     </Box>
                     <Box sx={{ display: 'flex', gap: 2 }}>
-                        <TextField
-                            label="Thời gian triển khai"
-                            type="date"
-                            value={form.deployDate}
-                            onChange={e => setForm(f => ({ ...f, deployDate: e.target.value }))}
-                            fullWidth
-                            InputLabelProps={{ shrink: true }}
-                            helperText="Ngày bắt đầu triển khai"
-                        />
-                        <TextField
-                            label="Thời gian kết thúc"
-                            type="date"
-                            value={form.endDate}
-                            onChange={e => setForm(f => ({ ...f, endDate: e.target.value }))}
-                            fullWidth
-                            InputLabelProps={{ shrink: true }}
-                            helperText="Ngày kết thúc"
-                        />
+                        <TextField label="Thời gian triển khai" type="date" value={form.deployDate} onChange={e => setForm(f => ({ ...f, deployDate: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} helperText="Ngày bắt đầu triển khai" size="small" />
+                        <TextField label="Thời gian kết thúc" type="date" value={form.endDate} onChange={e => setForm(f => ({ ...f, endDate: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} helperText="Ngày kết thúc" size="small" />
                     </Box>
-                    {errorMsg && (
-                        <Alert severity="error">{errorMsg}</Alert>
-                    )}
+                    {errorMsg && <Alert severity="error">{errorMsg}</Alert>}
                 </Box>
             </DialogContent>
-            <DialogActions>
-                <Button onClick={handleClose}>Huỷ</Button>
-                <Button
-                    variant="contained"
-                    onClick={() => createMutation.mutate()}
-                    disabled={!form.name.trim() || createMutation.isPending}
-                    startIcon={createMutation.isPending ? <CircularProgress size={16} /> : undefined}
-                >
+            <DialogActions sx={{ px: 3, pb: 2 }}>
+                <Button size="small" onClick={handleClose}>Huỷ</Button>
+                <Button size="small" onClick={() => createMutation.mutate()} disabled={!form.name.trim() || createMutation.isPending} startIcon={createMutation.isPending ? <CircularProgress size={16} /> : undefined}>
                     Tạo
                 </Button>
             </DialogActions>
@@ -333,9 +287,9 @@ function TransferDeviceDialog({ device, currentSiteId, open, onClose }: Transfer
 
     return (
         <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
-            <DialogTitle>Chuyển thiết bị sang Site khác</DialogTitle>
-            <DialogContent>
-                <Box sx={{ pt: 1, display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <DialogTitle fontWeight={700}>Chuyển thiết bị sang Site khác</DialogTitle>
+            <DialogContent dividers>
+                <Box sx={{ pt: 0.5, display: 'flex', flexDirection: 'column', gap: 2 }}>
                     <Typography variant="body2">
                         Thiết bị: <strong>{device.name}</strong>
                     </Typography>
@@ -351,14 +305,9 @@ function TransferDeviceDialog({ device, currentSiteId, open, onClose }: Transfer
                     {errorMsg && <Alert severity="error" sx={{ py: 0.5 }}>{errorMsg}</Alert>}
                 </Box>
             </DialogContent>
-            <DialogActions>
-                <Button onClick={onClose}>Huỷ</Button>
-                <Button
-                    variant="contained"
-                    disabled={!targetSiteId || transferMutation.isPending}
-                    startIcon={transferMutation.isPending ? <CircularProgress size={16} /> : <SwapHoriz />}
-                    onClick={() => transferMutation.mutate()}
-                >
+            <DialogActions sx={{ px: 3, pb: 2 }}>
+                <Button size="small" onClick={onClose}>Huỷ</Button>
+                <Button size="small" disabled={!targetSiteId || transferMutation.isPending} startIcon={transferMutation.isPending ? <CircularProgress size={16} /> : <SwapHoriz />} onClick={() => transferMutation.mutate()}>
                     Chuyển
                 </Button>
             </DialogActions>
@@ -422,8 +371,8 @@ function EditSiteDialog({ site, open, onClose }: EditSiteDialogProps) {
         }),
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: ['sites'] });
-            qc.invalidateQueries({ queryKey: ['devices'] });             // devices show site name
-            qc.invalidateQueries({ queryKey: ['sites-list-for-assign'] }); // dropdown in DevicesPage
+            qc.invalidateQueries({ queryKey: ['devices'] });
+            qc.invalidateQueries({ queryKey: ['sites-list-for-assign'] });
             onClose();
         },
         onError: (err) => setErrorMsg(getApiError(err, 'Cập nhật site thất bại. Vui lòng thử lại.')),
@@ -446,7 +395,7 @@ function EditSiteDialog({ site, open, onClose }: EditSiteDialogProps) {
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: ['sites', site.id] });
             qc.invalidateQueries({ queryKey: ['sites'] });
-            qc.invalidateQueries({ queryKey: ['devices'] }); // device loses siteId
+            qc.invalidateQueries({ queryKey: ['devices'] });
         },
     });
 
@@ -454,8 +403,8 @@ function EditSiteDialog({ site, open, onClose }: EditSiteDialogProps) {
         mutationFn: () => sitesApi.delete(site.id),
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: ['sites'] });
-            qc.invalidateQueries({ queryKey: ['devices'] });             // devices lose storeId on delete
-            qc.invalidateQueries({ queryKey: ['sites-list-for-assign'] }); // dropdown in DevicesPage
+            qc.invalidateQueries({ queryKey: ['devices'] });
+            qc.invalidateQueries({ queryKey: ['sites-list-for-assign'] });
             onClose();
         },
     });
@@ -464,217 +413,128 @@ function EditSiteDialog({ site, open, onClose }: EditSiteDialogProps) {
 
     return (
         <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
-            <DialogTitle>Chỉnh sửa Site — {site.name}</DialogTitle>
-            <DialogContent>
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
+            <DialogTitle fontWeight={700}>Chỉnh sửa Site — {site.name}</DialogTitle>
+            <DialogContent dividers>
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 0.5 }}>
 
                     {/* ── General info ── */}
-                    <Typography variant="subtitle2" color="text.secondary">Thông tin chung</Typography>
-                    <TextField
-                        label="Tên Site *"
-                        value={form.name}
-                        onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                        fullWidth
-                    />
-                    <TextField
-                        label="Địa chỉ"
-                        value={form.address}
-                        onChange={e => setForm(f => ({ ...f, address: e.target.value }))}
-                        fullWidth
-                    />
-                    <TextField
-                        label="Liên hệ"
-                        value={form.contact}
-                        onChange={e => setForm(f => ({ ...f, contact: e.target.value }))}
-                        fullWidth
-                    />
-                    <TimezoneAutocomplete
-                        value={form.timezone}
-                        onChange={tz => setForm(f => ({ ...f, timezone: tz }))}
-                        helperText="Múi giờ — devices trong site kế thừa nếu chưa set"
-                    />
+                    <Typography variant="overline" color="text.secondary" sx={{ lineHeight: 1 }}>
+                        Thông tin chung
+                    </Typography>
+                    <TextField label="Tên Site *" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} fullWidth size="small" />
+                    <TextField label="Địa chỉ" value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} fullWidth size="small" />
+                    <TextField label="Liên hệ" value={form.contact} onChange={e => setForm(f => ({ ...f, contact: e.target.value }))} fullWidth size="small" />
+                    <TimezoneAutocomplete value={form.timezone} onChange={tz => setForm(f => ({ ...f, timezone: tz }))} helperText="Múi giờ — devices trong site kế thừa nếu chưa set" />
                     <Box sx={{ display: 'flex', gap: 2 }}>
-                        <TextField
-                            label="Time ON"
-                            type="time"
-                            value={form.timeOn}
-                            onChange={e => setForm(f => ({ ...f, timeOn: e.target.value }))}
-                            fullWidth
-                            InputLabelProps={{ shrink: true }}
-                            helperText="Giờ bật màn hình"
-                        />
-                        <TextField
-                            label="Time OFF"
-                            type="time"
-                            value={form.timeOff}
-                            onChange={e => setForm(f => ({ ...f, timeOff: e.target.value }))}
-                            fullWidth
-                            InputLabelProps={{ shrink: true }}
-                            helperText="Giờ tắt màn hình"
-                        />
+                        <TextField label="Time ON" type="time" value={form.timeOn} onChange={e => setForm(f => ({ ...f, timeOn: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} helperText="Giờ bật màn hình" size="small" />
+                        <TextField label="Time OFF" type="time" value={form.timeOff} onChange={e => setForm(f => ({ ...f, timeOff: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} helperText="Giờ tắt màn hình" size="small" />
                     </Box>
                     <Box sx={{ display: 'flex', gap: 2 }}>
-                        <TextField
-                            label="Thời gian triển khai"
-                            type="date"
-                            value={form.deployDate}
-                            onChange={e => setForm(f => ({ ...f, deployDate: e.target.value }))}
-                            fullWidth
-                            InputLabelProps={{ shrink: true }}
-                            helperText="Ngày bắt đầu triển khai"
-                        />
-                        <TextField
-                            label="Thời gian kết thúc"
-                            type="date"
-                            value={form.endDate}
-                            onChange={e => setForm(f => ({ ...f, endDate: e.target.value }))}
-                            fullWidth
-                            InputLabelProps={{ shrink: true }}
-                            helperText="Ngày kết thúc"
-                        />
+                        <TextField label="Thời gian triển khai" type="date" value={form.deployDate} onChange={e => setForm(f => ({ ...f, deployDate: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} helperText="Ngày bắt đầu triển khai" size="small" />
+                        <TextField label="Thời gian kết thúc" type="date" value={form.endDate} onChange={e => setForm(f => ({ ...f, endDate: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} helperText="Ngày kết thúc" size="small" />
                     </Box>
+
+                    <Divider />
 
                     {/* ── Devices section ── */}
-                    <Box sx={{ mt: 1 }}>
-                        <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
-                            Devices ({devices.length})
-                        </Typography>
+                    <Typography variant="overline" color="text.secondary" sx={{ lineHeight: 1 }}>
+                        Devices ({devices.length})
+                    </Typography>
 
-                        <Box sx={{ display: 'flex', gap: 1, mb: addDeviceError ? 0.5 : 1.5 }}>
-                            <Autocomplete<Device>
-                                options={availableDevices}
-                                getOptionLabel={d => `${d.name}${d.location ? ` — ${d.location}` : ''}`}
-                                value={selectedDevice}
-                                onChange={(_, v) => { setSelectedDevice(v); setAddDeviceError(null); }}
-                                isOptionEqualToValue={(o, v) => o.id === v.id}
-                                renderInput={params => (
-                                    <TextField {...params} label="Thêm device vào site" size="small" />
-                                )}
-                                size="small"
-                                sx={{ flex: 1 }}
-                                noOptionsText="Không còn device chưa được giao"
-                            />
-                            <Button
-                                variant="outlined"
-                                size="small"
-                                startIcon={addDeviceMutation.isPending ? <CircularProgress size={14} /> : <PersonAdd />}
-                                disabled={!selectedDevice || addDeviceMutation.isPending}
-                                onClick={() => selectedDevice && addDeviceMutation.mutate(selectedDevice.id)}
-                                sx={{ whiteSpace: 'nowrap' }}
-                            >
-                                Thêm
-                            </Button>
-                        </Box>
-                        {addDeviceError && (
-                            <Alert severity="error" sx={{ mb: 1.5, py: 0.5, fontSize: '0.75rem' }}
-                                onClose={() => setAddDeviceError(null)}>
-                                {addDeviceError}
-                            </Alert>
-                        )}
-
-                        <Paper variant="outlined" sx={{ maxHeight: 220, overflowY: 'auto' }}>
-                            {devices.length === 0 ? (
-                                <Box sx={{ p: 2, textAlign: 'center' }}>
-                                    <Typography variant="body2" color="text.secondary">
-                                        Chưa có device nào trong site này
-                                    </Typography>
-                                </Box>
-                            ) : (
-                                devices.map((d: SiteDevice) => (
-                                    <Box
-                                        key={d.id}
-                                        sx={{
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            px: 2, py: 1,
-                                            borderBottom: '1px solid',
-                                            borderColor: 'divider',
-                                            '&:last-child': { borderBottom: 0 },
-                                        }}
-                                    >
-                                        <Box sx={{ flex: 1 }}>
-                                            <Stack direction="row" alignItems="center" spacing={0.5}>
-                                                <Typography variant="body2" fontWeight={500}>{d.name}</Typography>
-                                            </Stack>
-                                            {d.location && (
-                                                <Typography variant="caption" color="text.secondary">{d.location}</Typography>
-                                            )}
-                                        </Box>
-                                        <Chip
-                                            label={d.status}
-                                            size="small"
-                                            color={d.status === 'ONLINE' ? 'success' : 'default'}
-                                            sx={{ mr: 1 }}
-                                        />
-                                        <Tooltip title="Chuyển sang site khác">
-                                            <IconButton
-                                                size="small"
-                                                color="primary"
-                                                onClick={() => setTransferDevice(d)}
-                                            >
-                                                <SwapHoriz fontSize="small" />
-                                            </IconButton>
-                                        </Tooltip>
-                                        <Tooltip title="Xoá khỏi site">
-                                            <IconButton
-                                                size="small"
-                                                color="error"
-                                                onClick={() => removeDeviceMutation.mutate(d.id)}
-                                                disabled={removeDeviceMutation.isPending}
-                                            >
-                                                <Close fontSize="small" />
-                                            </IconButton>
-                                        </Tooltip>
-                                    </Box>
-                                ))
+                    <Box sx={{ display: 'flex', gap: 1 }}>
+                        <Autocomplete<Device>
+                            options={availableDevices}
+                            getOptionLabel={d => `${d.name}${d.location ? ` — ${d.location}` : ''}`}
+                            value={selectedDevice}
+                            onChange={(_, v) => { setSelectedDevice(v); setAddDeviceError(null); }}
+                            isOptionEqualToValue={(o, v) => o.id === v.id}
+                            renderInput={params => (
+                                <TextField {...params} label="Thêm device vào site" size="small" />
                             )}
-                        </Paper>
+                            size="small"
+                            sx={{ flex: 1 }}
+                            noOptionsText="Không còn device chưa được giao"
+                        />
+                        <Button
+                            variant="outlined"
+                            size="small"
+                            startIcon={addDeviceMutation.isPending ? <CircularProgress size={14} /> : <PersonAdd />}
+                            disabled={!selectedDevice || addDeviceMutation.isPending}
+                            onClick={() => selectedDevice && addDeviceMutation.mutate(selectedDevice.id)}
+                            sx={{ whiteSpace: 'nowrap' }}
+                        >
+                            Thêm
+                        </Button>
                     </Box>
-
-                    {errorMsg && (
-                        <Alert severity="error">{errorMsg}</Alert>
+                    {addDeviceError && (
+                        <Alert severity="error" sx={{ py: 0.5, fontSize: '0.75rem' }} onClose={() => setAddDeviceError(null)}>
+                            {addDeviceError}
+                        </Alert>
                     )}
+
+                    <Paper variant="outlined" sx={{ borderRadius: 1 }}>
+                        {devices.length === 0 ? (
+                            <Box sx={{ py: 3, textAlign: 'center' }}>
+                                <Typography variant="body2" color="text.secondary">
+                                    Chưa có device nào trong site này
+                                </Typography>
+                            </Box>
+                        ) : (
+                            devices.map((d: SiteDevice) => (
+                                <Box
+                                    key={d.id}
+                                    sx={{
+                                        display: 'flex', alignItems: 'center',
+                                        px: 2, py: 1,
+                                        borderBottom: '1px solid', borderColor: 'divider',
+                                        '&:last-child': { borderBottom: 0 },
+                                    }}
+                                >
+                                    <Box sx={{ flex: 1 }}>
+                                        <Typography variant="body2" fontWeight={500}>{d.name}</Typography>
+                                        {d.location && (
+                                            <Typography variant="caption" color="text.secondary">{d.location}</Typography>
+                                        )}
+                                    </Box>
+                                    <Chip
+                                        label={d.status}
+                                        size="small"
+                                        color={d.status === 'ONLINE' ? 'success' : 'default'}
+                                        sx={{ mr: 1 }}
+                                    />
+                                    <Tooltip title="Chuyển sang site khác">
+                                        <IconButton size="small" color="primary" onClick={() => setTransferDevice(d)}>
+                                            <SwapHoriz fontSize="small" />
+                                        </IconButton>
+                                    </Tooltip>
+                                    <Tooltip title="Xoá khỏi site">
+                                        <IconButton size="small" color="error" onClick={() => removeDeviceMutation.mutate(d.id)} disabled={removeDeviceMutation.isPending}>
+                                            <Close fontSize="small" />
+                                        </IconButton>
+                                    </Tooltip>
+                                </Box>
+                            ))
+                        )}
+                    </Paper>
+
+                    {errorMsg && <Alert severity="error">{errorMsg}</Alert>}
                 </Box>
             </DialogContent>
-            <DialogActions sx={{ justifyContent: 'space-between' }}>
+            <DialogActions sx={{ px: 3, pb: 2, justifyContent: 'space-between' }}>
                 <Box>
                     {confirmDel ? (
                         <Stack direction="row" spacing={1} alignItems="center">
                             <Typography variant="body2" color="error">Xác nhận xóa site này?</Typography>
-                            <Button
-                                size="small"
-                                variant="contained"
-                                color="error"
-                                disabled={deleteSiteMutation.isPending}
-                                onClick={() => deleteSiteMutation.mutate()}
-                                startIcon={deleteSiteMutation.isPending ? <CircularProgress size={14} color="inherit" /> : undefined}
-                            >
-                                Xóa
-                            </Button>
-                            <Button size="small" onClick={() => setConfirmDel(false)} disabled={deleteSiteMutation.isPending}>
-                                Không
-                            </Button>
+                            <Button size="small" color="error" disabled={deleteSiteMutation.isPending} onClick={() => deleteSiteMutation.mutate()} startIcon={deleteSiteMutation.isPending ? <CircularProgress size={14} color="inherit" /> : undefined}>Xóa</Button>
+                            <Button size="small" onClick={() => setConfirmDel(false)} disabled={deleteSiteMutation.isPending}>Không</Button>
                         </Stack>
                     ) : (
-                        <Button
-                            color="error"
-                            startIcon={<Delete />}
-                            onClick={() => setConfirmDel(true)}
-                        >
-                            Xóa Site
-                        </Button>
+                        <Button size="small" color="error" startIcon={<Delete />} onClick={() => setConfirmDel(true)}>Xóa Site</Button>
                     )}
                 </Box>
                 <Box sx={{ display: 'flex', gap: 1 }}>
-                    <Button onClick={onClose} disabled={updateMutation.isPending}>Huỷ</Button>
-                    <Button
-                        variant="contained"
-                        onClick={() => updateMutation.mutate()}
-                        disabled={!form.name.trim() || updateMutation.isPending}
-                        startIcon={updateMutation.isPending ? <CircularProgress size={16} /> : undefined}
-                    >
-                        Lưu
-                    </Button>
+                    <Button size="small" onClick={onClose} disabled={updateMutation.isPending}>Huỷ</Button>
+                    <Button size="small" onClick={() => updateMutation.mutate()} disabled={!form.name.trim() || updateMutation.isPending} startIcon={updateMutation.isPending ? <CircularProgress size={16} /> : undefined}>Lưu</Button>
                 </Box>
             </DialogActions>
 
@@ -692,21 +552,17 @@ function EditSiteDialog({ site, open, onClose }: EditSiteDialogProps) {
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
-const B = { borderLeft: '1px solid', borderColor: 'divider' };
-
 type SortCol = 'timeOn' | 'timeOff' | 'deployDate' | 'endDate';
 
 export default function SitePage() {
-    const [search, setSearch]       = useState('');
-    const [page, setPage]           = useState(1);
-    const [limit, setLimit]         = useState(10);
-    const [addOpen, setAddOpen]     = useState(false);
-    const [editSite, setEditSite]   = useState<Site | null>(null);
+    const [search, setSearch]           = useState('');
+    const [page, setPage]               = useState(1);
+    const [limit, setLimit]             = useState(10);
+    const [addOpen, setAddOpen]         = useState(false);
+    const [editSite, setEditSite]       = useState<Site | null>(null);
     const [visibleCols, setVisibleCols] = useState<Set<ColId>>(DEFAULT_VISIBLE);
-    const [sortBy, setSortBy]       = useState<SortCol | null>(null);
-    const [sortDir, setSortDir]     = useState<'asc' | 'desc'>('asc');
-
-    const qc = useQueryClient();
+    const [sortBy, setSortBy]           = useState<SortCol | null>(null);
+    const [sortDir, setSortDir]         = useState<'asc' | 'desc'>('asc');
 
     const handleSort = (col: SortCol) => {
         if (sortBy === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -718,47 +574,60 @@ export default function SitePage() {
         queryFn:  () => sitesApi.list({ page, limit: limit === 0 ? 9999 : limit, search: search || undefined }),
     });
 
-    const sites: Site[] =[...(data?.data ?? [])].sort((a, b) => {
+    const sites: Site[] = [...(data?.data ?? [])].sort((a, b) => {
         if (!sortBy) return 0;
         const va = a[sortBy] ?? '';
         const vb = b[sortBy] ?? '';
         const cmp = String(va).localeCompare(String(vb), 'vi');
         return sortDir === 'asc' ? cmp : -cmp;
     });
+
     const colCount = visibleCols.size;
     const show = (id: ColId) => visibleCols.has(id);
 
     return (
         <Box>
             {/* ── Header ── */}
-            <Stack direction="row" justifyContent="space-between" alignItems="center" mb={3}>
+            <Stack direction="row" justifyContent="space-between" alignItems="flex-start" mb={3}>
                 <Box>
-                    <Typography variant="h4" fontWeight={700}>Sites Management</Typography>
-                    <Typography variant="body2" color="text.secondary">Quản lý các chi nhánh</Typography>
+                    <Typography variant="h5" fontWeight={700}>Sites Management</Typography>
+                    <Typography variant="body2" color="text.secondary" mt={0.25}>
+                        Quản lý các chi nhánh và thiết bị thuộc site
+                    </Typography>
                 </Box>
-                <Button variant="contained" startIcon={<Add />} onClick={() => setAddOpen(true)}>
+                <Button size="small" startIcon={<Add />} onClick={() => setAddOpen(true)}>
                     Thêm Site
                 </Button>
             </Stack>
 
-            <Card>
+            <Card variant="outlined">
                 <CardContent sx={{ p: 0 }}>
                     {/* ── Toolbar ── */}
-                    <Stack direction="row" spacing={1} alignItems="center" sx={{ p: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
+                    <Stack
+                        direction="row"
+                        alignItems="center"
+                        spacing={1}
+                        sx={{ px: 2, py: 1.5, borderBottom: '1px solid', borderColor: 'divider' }}
+                    >
                         <TextField
                             placeholder="Tìm kiếm site..."
                             value={search}
                             onChange={e => { setSearch(e.target.value); setPage(1); }}
                             size="small"
-                            sx={{ width: 280 }}
+                            sx={{ width: 260 }}
                             InputProps={{
                                 startAdornment: (
                                     <InputAdornment position="start">
-                                        <Search fontSize="small" sx={{ color: 'text.secondary' }} />
+                                        <Search fontSize="small" sx={{ color: 'text.disabled' }} />
                                     </InputAdornment>
                                 ),
                             }}
                         />
+                        {!isLoading && data && (
+                            <Typography variant="body2" color="text.secondary">
+                                {data.total ?? 0} site
+                            </Typography>
+                        )}
                         <Box sx={{ flex: 1 }} />
                         <ColumnPicker visible={visibleCols} onChange={setVisibleCols} />
                     </Stack>
@@ -771,25 +640,41 @@ export default function SitePage() {
                             <Table size="small">
                                 <TableHead>
                                     <TableRow>
-                                        {show('name')       && <TableCell align="center" sx={{ fontWeight: 700, width: 160 }}>Tên Site</TableCell>}
-                                        {show('id')         && <TableCell align="center" sx={{ fontWeight: 700, ...B }}>Mã</TableCell>}
-                                        {show('address')    && <TableCell align="center" sx={{ fontWeight: 700, ...B }}>Địa chỉ</TableCell>}
-                                        {show('contact')    && <TableCell align="center" sx={{ fontWeight: 700, ...B }}>Liên hệ</TableCell>}
-                                        {show('timezone')   && <TableCell align="center" sx={{ fontWeight: 700, ...B }}>Timezone</TableCell>}
-                                        {show('timeOn')     && <TableCell align="center" sx={{ fontWeight: 700, ...B }}>
-                                            <TableSortLabel active={sortBy === 'timeOn'} direction={sortBy === 'timeOn' ? sortDir : 'asc'} onClick={() => handleSort('timeOn')}>Time ON</TableSortLabel>
-                                        </TableCell>}
-                                        {show('timeOff')    && <TableCell align="center" sx={{ fontWeight: 700, ...B }}>
-                                            <TableSortLabel active={sortBy === 'timeOff'} direction={sortBy === 'timeOff' ? sortDir : 'asc'} onClick={() => handleSort('timeOff')}>Time OFF</TableSortLabel>
-                                        </TableCell>}
-                                        {show('deployDate') && <TableCell align="center" sx={{ fontWeight: 700, ...B }}>
-                                            <TableSortLabel active={sortBy === 'deployDate'} direction={sortBy === 'deployDate' ? sortDir : 'asc'} onClick={() => handleSort('deployDate')}>Triển khai</TableSortLabel>
-                                        </TableCell>}
-                                        {show('endDate')    && <TableCell align="center" sx={{ fontWeight: 700, ...B }}>
-                                            <TableSortLabel active={sortBy === 'endDate'} direction={sortBy === 'endDate' ? sortDir : 'asc'} onClick={() => handleSort('endDate')}>Kết thúc</TableSortLabel>
-                                        </TableCell>}
-                                        {show('devices')    && <TableCell align="center" sx={{ fontWeight: 700, ...B }}>Devices</TableCell>}
-                                        {show('actions')    && <TableCell align="center" sx={{ fontWeight: 700, ...B, width: 90 }}>Thao tác</TableCell>}
+                                        {show('name')       && <TableCell sx={{ ...TH_SX, pl: 2 }}>Tên Site</TableCell>}
+                                        {show('id')         && <TableCell sx={TH_SX}>Mã</TableCell>}
+                                        {show('address')    && <TableCell sx={TH_SX}>Địa chỉ</TableCell>}
+                                        {show('contact')    && <TableCell sx={TH_SX}>Liên hệ</TableCell>}
+                                        {show('timezone')   && <TableCell sx={TH_SX}>Timezone</TableCell>}
+                                        {show('timeOn')     && (
+                                            <TableCell sx={TH_SX}>
+                                                <TableSortLabel active={sortBy === 'timeOn'} direction={sortBy === 'timeOn' ? sortDir : 'asc'} onClick={() => handleSort('timeOn')}>
+                                                    Time ON
+                                                </TableSortLabel>
+                                            </TableCell>
+                                        )}
+                                        {show('timeOff')    && (
+                                            <TableCell sx={TH_SX}>
+                                                <TableSortLabel active={sortBy === 'timeOff'} direction={sortBy === 'timeOff' ? sortDir : 'asc'} onClick={() => handleSort('timeOff')}>
+                                                    Time OFF
+                                                </TableSortLabel>
+                                            </TableCell>
+                                        )}
+                                        {show('deployDate') && (
+                                            <TableCell sx={TH_SX}>
+                                                <TableSortLabel active={sortBy === 'deployDate'} direction={sortBy === 'deployDate' ? sortDir : 'asc'} onClick={() => handleSort('deployDate')}>
+                                                    Triển khai
+                                                </TableSortLabel>
+                                            </TableCell>
+                                        )}
+                                        {show('endDate')    && (
+                                            <TableCell sx={TH_SX}>
+                                                <TableSortLabel active={sortBy === 'endDate'} direction={sortBy === 'endDate' ? sortDir : 'asc'} onClick={() => handleSort('endDate')}>
+                                                    Kết thúc
+                                                </TableSortLabel>
+                                            </TableCell>
+                                        )}
+                                        {show('devices')    && <TableCell sx={{ ...TH_SX, textAlign: 'center' }}>Devices</TableCell>}
+                                        {show('actions')    && <TableCell sx={{ ...TH_SX, textAlign: 'center', width: 80 }}>Thao tác</TableCell>}
                                     </TableRow>
                                 </TableHead>
                                 <TableBody>
@@ -797,81 +682,131 @@ export default function SitePage() {
                                         ? Array.from({ length: 5 }).map((_, i) => (
                                             <TableRow key={i}>
                                                 {Array.from({ length: colCount }).map((__, j) => (
-                                                    <TableCell key={j}><Skeleton height={24} /></TableCell>
+                                                    <TableCell key={j} sx={{ py: 1.5 }}><Skeleton height={20} /></TableCell>
                                                 ))}
                                             </TableRow>
                                         ))
                                         : sites.length === 0 ? (
                                             <TableRow>
-                                                <TableCell colSpan={colCount} align="center" sx={{ py: 8, color: 'text.secondary' }}>
-                                                    {search ? 'Không tìm thấy site nào' : 'Chưa có site nào — nhấn Thêm Site để tạo'}
+                                                <TableCell colSpan={colCount}>
+                                                    <Box sx={{ py: 8, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1.5, color: 'text.disabled' }}>
+                                                        <StoreMallDirectory sx={{ fontSize: 48 }} />
+                                                        <Typography variant="body2">
+                                                            {search ? 'Không tìm thấy site nào phù hợp' : 'Chưa có site nào — nhấn Thêm Site để tạo'}
+                                                        </Typography>
+                                                    </Box>
                                                 </TableCell>
                                             </TableRow>
                                         ) : sites.map(site => (
-                                            <TableRow key={site.id} hover>
+                                            <TableRow key={site.id} hover sx={{ cursor: 'pointer' }} onClick={() => setEditSite(site)}>
                                                 {show('name') && (
-                                                    <TableCell align="center">
-                                                        <Typography variant="body2" fontWeight={600}>{site.name}</Typography>
-                                                        {site.description && (
-                                                            <Typography variant="caption" color="text.secondary" display="block">{site.description}</Typography>
-                                                        )}
-                                                        {site.startEpoch ? (
-                                                            <Chip
-                                                                size="small"
-                                                                label="● Đang chạy"
-                                                                color="success"
-                                                                sx={{ fontSize: '0.62rem', height: 16, mt: 0.3 }}
-                                                            />
-                                                        ) : null}
+                                                    <TableCell sx={{ pl: 2, py: 1.25 }}>
+                                                        <Stack direction="row" alignItems="center" spacing={1}>
+                                                            <Box>
+                                                                <Typography variant="body2" fontWeight={600}>{site.name}</Typography>
+                                                                {site.description && (
+                                                                    <Typography variant="caption" color="text.secondary" display="block">
+                                                                        {site.description}
+                                                                    </Typography>
+                                                                )}
+                                                            </Box>
+                                                            {site.startEpoch ? (
+                                                                <Chip label="Đang chạy" size="small" color="success" sx={{ fontSize: '0.65rem', height: 18 }} />
+                                                            ) : null}
+                                                        </Stack>
                                                     </TableCell>
                                                 )}
                                                 {show('id') && (
-                                                    <TableCell align="center" sx={B}>
+                                                    <TableCell sx={{ py: 1.25 }}>
                                                         <Tooltip title={site.id} placement="top">
-                                                            <Typography variant="body2" fontFamily="monospace" color="text.secondary" sx={{ cursor: 'default', letterSpacing: 0.5 }}>
+                                                            <Typography variant="caption" fontFamily="monospace" color="text.secondary" sx={{ cursor: 'default', letterSpacing: 0.5 }}>
                                                                 {shortId(site.id)}
                                                             </Typography>
                                                         </Tooltip>
                                                     </TableCell>
                                                 )}
-                                                {show('address')  && <TableCell align="center" sx={B}><Typography variant="body2">{site.address ?? '—'}</Typography></TableCell>}
-                                                {show('contact')  && <TableCell align="center" sx={B}><Typography variant="body2">{site.contact ?? '—'}</Typography></TableCell>}
+                                                {show('address')  && (
+                                                    <TableCell sx={{ py: 1.25 }}>
+                                                        <Typography variant="body2" color={site.address ? 'text.primary' : 'text.disabled'}>
+                                                            {site.address ?? '—'}
+                                                        </Typography>
+                                                    </TableCell>
+                                                )}
+                                                {show('contact')  && (
+                                                    <TableCell sx={{ py: 1.25 }}>
+                                                        <Typography variant="body2" color={site.contact ? 'text.primary' : 'text.disabled'}>
+                                                            {site.contact ?? '—'}
+                                                        </Typography>
+                                                    </TableCell>
+                                                )}
                                                 {show('timezone') && (
-                                                    <TableCell align="center" sx={B}>
+                                                    <TableCell sx={{ py: 1.25 }}>
                                                         {site.timezone
-                                                            ? <Chip label={site.timezone} size="small" variant="outlined" sx={{ fontFamily: 'monospace', fontSize: '0.7rem' }} />
+                                                            ? <Chip label={site.timezone} size="small" variant="outlined" sx={{ fontFamily: 'monospace', fontSize: '0.68rem' }} />
                                                             : <Typography variant="body2" color="text.disabled">—</Typography>
                                                         }
                                                     </TableCell>
                                                 )}
-                                                {show('timeOn')  && <TableCell align="center" sx={B}><Typography variant="body2">{fmtTime(site.timeOn)}</Typography></TableCell>}
-                                                {show('timeOff') && <TableCell align="center" sx={B}><Typography variant="body2">{fmtTime(site.timeOff)}</Typography></TableCell>}
-                                                {show('deployDate') && <TableCell align="center" sx={B}><Typography variant="body2">{fmtDate(site.deployDate)}</Typography></TableCell>}
-                                                {show('endDate')    && <TableCell align="center" sx={B}><Typography variant="body2">{fmtDate(site.endDate)}</Typography></TableCell>}
+                                                {show('timeOn')  && (
+                                                    <TableCell sx={{ py: 1.25 }}>
+                                                        <Typography variant="body2" fontFamily="monospace" color={site.timeOn ? 'text.primary' : 'text.disabled'}>
+                                                            {fmtTime(site.timeOn)}
+                                                        </Typography>
+                                                    </TableCell>
+                                                )}
+                                                {show('timeOff') && (
+                                                    <TableCell sx={{ py: 1.25 }}>
+                                                        <Typography variant="body2" fontFamily="monospace" color={site.timeOff ? 'text.primary' : 'text.disabled'}>
+                                                            {fmtTime(site.timeOff)}
+                                                        </Typography>
+                                                    </TableCell>
+                                                )}
+                                                {show('deployDate') && (
+                                                    <TableCell sx={{ py: 1.25 }}>
+                                                        <Typography variant="body2" color={site.deployDate ? 'text.primary' : 'text.disabled'}>
+                                                            {fmtDate(site.deployDate)}
+                                                        </Typography>
+                                                    </TableCell>
+                                                )}
+                                                {show('endDate') && (
+                                                    <TableCell sx={{ py: 1.25 }}>
+                                                        <Typography variant="body2" color={site.endDate ? 'text.primary' : 'text.disabled'}>
+                                                            {fmtDate(site.endDate)}
+                                                        </Typography>
+                                                    </TableCell>
+                                                )}
                                                 {show('devices') && (
-                                                    <TableCell align="center" sx={B}>
+                                                    <TableCell align="center" sx={{ py: 1.25 }}>
                                                         <Tooltip
                                                             title={site.deviceCount === 0 ? 'Chưa có device' : (site.deviceNames?.join(', ') || `${site.deviceCount} device`)}
                                                             placement="top"
                                                         >
-                                                            <Chip
-                                                                label={site.deviceCount}
-                                                                size="small"
-                                                                color={site.onlineCount > 0 ? 'success' : 'default'}
-                                                                sx={{ cursor: 'default' }}
-                                                            />
+                                                            <Stack direction="row" justifyContent="center" spacing={0.5}>
+                                                                <Chip
+                                                                    label={`${site.onlineCount ?? 0} online`}
+                                                                    size="small"
+                                                                    color={site.onlineCount > 0 ? 'success' : 'default'}
+                                                                    sx={{ fontSize: '0.68rem', height: 20 }}
+                                                                />
+                                                                {site.deviceCount > 0 && (
+                                                                    <Chip
+                                                                        label={`${site.deviceCount} total`}
+                                                                        size="small"
+                                                                        variant="outlined"
+                                                                        sx={{ fontSize: '0.68rem', height: 20 }}
+                                                                    />
+                                                                )}
+                                                            </Stack>
                                                         </Tooltip>
                                                     </TableCell>
                                                 )}
                                                 {show('actions') && (
-                                                    <TableCell align="center" sx={B}>
-                                                        <Box sx={{ display: 'flex', justifyContent: 'center', gap: 0.5 }}>
-                                                            <Tooltip title="Chỉnh sửa site">
-                                                                <IconButton size="small" onClick={() => setEditSite(site)}>
-                                                                    <Edit fontSize="small" />
-                                                                </IconButton>
-                                                            </Tooltip>
-                                                        </Box>
+                                                    <TableCell align="center" sx={{ py: 1.25 }} onClick={e => e.stopPropagation()}>
+                                                        <Tooltip title="Chỉnh sửa site">
+                                                            <IconButton size="small" onClick={() => setEditSite(site)}>
+                                                                <Edit fontSize="small" />
+                                                            </IconButton>
+                                                        </Tooltip>
                                                     </TableCell>
                                                 )}
                                             </TableRow>
@@ -884,16 +819,35 @@ export default function SitePage() {
 
                     {/* ── Pagination ── */}
                     {data && (
-                        <Box sx={{ p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid', borderColor: 'divider' }}>
+                        <Stack
+                            direction="row"
+                            alignItems="center"
+                            justifyContent="space-between"
+                            sx={{ px: 2, py: 1.25, borderTop: '1px solid', borderColor: 'divider' }}
+                        >
                             <Stack direction="row" alignItems="center" spacing={1}>
                                 <Typography variant="caption" color="text.secondary">{data.total ?? 0} site</Typography>
-                                <Select size="small" value={limit} onChange={e => { setLimit(Number(e.target.value)); setPage(1); }} sx={{ fontSize: '0.75rem', height: 28 }}>
-                                    {[10, 20, 50, 100].map(n => <MenuItem key={n} value={n} sx={{ fontSize: '0.75rem' }}>{n} / trang</MenuItem>)}
+                                <Select
+                                    size="small"
+                                    value={limit}
+                                    onChange={e => { setLimit(Number(e.target.value)); setPage(1); }}
+                                    sx={{ fontSize: '0.75rem', height: 28 }}
+                                >
+                                    {[10, 20, 50, 100].map(n => (
+                                        <MenuItem key={n} value={n} sx={{ fontSize: '0.75rem' }}>{n} / trang</MenuItem>
+                                    ))}
                                     <MenuItem value={0} sx={{ fontSize: '0.75rem' }}>Tất cả</MenuItem>
                                 </Select>
                             </Stack>
-                            <Pagination count={limit === 0 ? 1 : (data.totalPages || 1)} page={page} onChange={(_, p) => setPage(p)} variant="outlined" shape="rounded" size="small" />
-                        </Box>
+                            <Pagination
+                                count={limit === 0 ? 1 : (data.totalPages || 1)}
+                                page={page}
+                                onChange={(_, p) => setPage(p)}
+                                variant="outlined"
+                                shape="rounded"
+                                size="small"
+                            />
+                        </Stack>
                     )}
                 </CardContent>
             </Card>
@@ -901,7 +855,6 @@ export default function SitePage() {
             {/* ── Dialogs ── */}
             <AddSiteDialog open={addOpen} onClose={() => setAddOpen(false)} />
             {editSite && <EditSiteDialog site={editSite} open={true} onClose={() => setEditSite(null)} />}
-
         </Box>
     );
 }

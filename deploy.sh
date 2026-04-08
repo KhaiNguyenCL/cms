@@ -1,54 +1,59 @@
 #!/usr/bin/env bash
 # =============================================================================
-#  deploy.sh — SignageCMS Production Deploy Script
+#  DMS Signage — Docker Deploy Script
+#  Chạy trên server Ubuntu: bash deploy.sh
 #
-#  Prerequisites:
-#    - Node.js 20+, npm, PM2 installed globally
-#    - PostgreSQL + Redis running
-#    - .env file present in backend/
-#    - Log dir exists: sudo mkdir -p /var/log/cms && sudo chown $USER /var/log/cms
-#
-#  Usage:
-#    chmod +x deploy.sh
-#    ./deploy.sh
+#  Yêu cầu:
+#    - Docker + Docker Compose v2 đã cài
+#    - Certbot đã cài: sudo apt install certbot
+#    - Domain dms.saigontech.net đã trỏ A record về IP server này
 # =============================================================================
-
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")" && pwd)"
-BACKEND="$REPO_ROOT/backend"
-FRONTEND="$REPO_ROOT/frontend"
+DOMAIN="dms.saigontech.net"
+SSL_DIR="$REPO_ROOT/docker/ssl"
 
-echo "=== [1/6] Pull latest code ==="
-git -C "$REPO_ROOT" pull origin main
-
-echo "=== [2/6] Install backend dependencies ==="
-npm --prefix "$BACKEND" install --omit=dev
-
-echo "=== [3/6] Build backend (TypeScript) ==="
-npm --prefix "$BACKEND" run build
-
-echo "=== [4/6] Install frontend dependencies + build ==="
-npm --prefix "$FRONTEND" install --omit=dev
-npm --prefix "$FRONTEND" run build
-
-echo "=== [5/6] Reload backend (PM2 zero-downtime) ==="
-# If PM2 process doesn't exist yet, start it; otherwise reload gracefully
-if pm2 describe cms-backend > /dev/null 2>&1; then
-  pm2 reload "$BACKEND/ecosystem.config.js" --env production
+echo "▶ [1/5] Lấy SSL certificate..."
+if [ ! -f "$SSL_DIR/certs/cert.pem" ]; then
+    mkdir -p "$SSL_DIR/certs" "$SSL_DIR/private"
+    # Dừng port 80 nếu đang chạy
+    docker compose -f "$REPO_ROOT/docker-compose.yml" down 2>/dev/null || true
+    sudo certbot certonly --standalone -d "$DOMAIN" \
+        --non-interactive --agree-tos -m khainq@dnsvn.com
+    sudo cp /etc/letsencrypt/live/$DOMAIN/fullchain.pem "$SSL_DIR/certs/cert.pem"
+    sudo cp /etc/letsencrypt/live/$DOMAIN/privkey.pem   "$SSL_DIR/private/key.pem"
+    sudo chown -R "$USER:$USER" "$SSL_DIR"
+    echo "  ✓ SSL cert đã lấy"
 else
-  pm2 start "$BACKEND/ecosystem.config.js" --env production
-  pm2 save
+    echo "  ✓ SSL cert đã có sẵn, bỏ qua"
 fi
 
-echo "=== [6/6] Reload Nginx ==="
-if command -v nginx > /dev/null 2>&1; then
-  sudo nginx -t && sudo systemctl reload nginx
-  echo "Nginx reloaded."
-else
-  echo "Nginx not found — skipping."
-fi
+echo "▶ [2/5] Build frontend..."
+cd "$REPO_ROOT/frontend"
+npm install --omit=dev
+npm run build
+echo "  ✓ Frontend built → frontend/dist/"
+
+echo "▶ [3/5] Build Docker images..."
+cd "$REPO_ROOT"
+docker compose build --no-cache
+
+echo "▶ [4/5] Khởi động tất cả services..."
+docker compose up -d
+
+echo "▶ [5/5] Kiểm tra trạng thái..."
+sleep 10
+docker compose ps
 
 echo ""
-echo "Deploy complete!"
-echo "Health check: curl http://localhost:3000/health"
+echo "============================================"
+echo "  ✓ Deploy xong!"
+echo "  Web:    https://$DOMAIN"
+echo "  Health: https://$DOMAIN/health"
+echo "============================================"
+
+# Tự động gia hạn SSL cert mỗi tháng
+RENEW_CMD="certbot renew --quiet && cp /etc/letsencrypt/live/$DOMAIN/fullchain.pem $SSL_DIR/certs/cert.pem && cp /etc/letsencrypt/live/$DOMAIN/privkey.pem $SSL_DIR/private/key.pem && docker compose -f $REPO_ROOT/docker-compose.yml restart nginx"
+(crontab -l 2>/dev/null | grep -v "certbot renew"; echo "0 3 1 * * $RENEW_CMD") | crontab -
+echo "  ✓ Đã đặt lịch tự gia hạn SSL (mỗi tháng)"

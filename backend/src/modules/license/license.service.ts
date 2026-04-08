@@ -2,6 +2,7 @@ import { query, queryOne, withTransaction } from '../../shared/database/db';
 import type { PoolClient } from 'pg';
 import { AppError } from '../../shared/middleware/error.middleware';
 import logger from '../../shared/utils/logger';
+import redis, { RedisKeys } from '../../shared/cache/redis';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -314,12 +315,16 @@ export async function assignLicense(
              performedById, performedByName],
         );
 
-        // Update device
+        // Update device — sync license dates (use YYYY-MM-DD for DATE columns to avoid type conflict)
         await cq(client,
             `UPDATE devices
-             SET "isLicensed" = true, "licenseExpiresAt" = $1, "updatedAt" = NOW()
-             WHERE id = $2`,
-            [expiresAt.toISOString(), deviceId],
+             SET "isLicensed" = true, "licenseExpiresAt" = $1,
+                 "licenseStartDate" = $2, "licenseEndDate" = $3, "updatedAt" = NOW()
+             WHERE id = $4`,
+            [expiresAt.toISOString(),
+             activatedAt.toISOString().slice(0, 10),
+             expiresAt.toISOString().slice(0, 10),
+             deviceId],
         );
 
         await logHistory(client, organizationId, 'ASSIGN', {
@@ -328,6 +333,7 @@ export async function assignLicense(
             detail: { packageType, expiresAt: expiresAt.toISOString() },
         });
     });
+    await redis.del(RedisKeys.deviceLicenseCache(deviceId));
     logger.info('License assigned', { organizationId, deviceId, packageType });
 }
 
@@ -390,16 +396,21 @@ export async function transferLicense(
              lic.expiresAt, performedById, performedByName, fromDeviceId],
         );
 
-        // Update device flags
+        // Update device flags — sync license dates
         await cq(client,
-            `UPDATE devices SET "isLicensed" = false, "licenseExpiresAt" = NULL, "updatedAt" = NOW()
+            `UPDATE devices SET "isLicensed" = false, "licenseExpiresAt" = NULL,
+                 "licenseStartDate" = NULL, "licenseEndDate" = NULL, "updatedAt" = NOW()
              WHERE id = $1`,
             [fromDeviceId],
         );
         await cq(client,
-            `UPDATE devices SET "isLicensed" = true, "licenseExpiresAt" = $1, "updatedAt" = NOW()
-             WHERE id = $2`,
-            [lic.expiresAt, toDeviceId],
+            `UPDATE devices SET "isLicensed" = true, "licenseExpiresAt" = $1,
+                 "licenseStartDate" = $2, "licenseEndDate" = $3, "updatedAt" = NOW()
+             WHERE id = $4`,
+            [lic.expiresAt,
+             new Date().toISOString().slice(0, 10),
+             new Date(lic.expiresAt).toISOString().slice(0, 10),
+             toDeviceId],
         );
 
         await logHistory(client, organizationId, 'TRANSFER', {
@@ -412,6 +423,10 @@ export async function transferLicense(
             },
         });
     });
+    await Promise.all([
+        redis.del(RedisKeys.deviceLicenseCache(fromDeviceId)),
+        redis.del(RedisKeys.deviceLicenseCache(toDeviceId)),
+    ]);
     logger.info('License transferred', { organizationId, fromDeviceId, toDeviceId });
 }
 
@@ -445,9 +460,10 @@ export async function adjustExpiry(
             [d.toISOString(), deviceId],
         );
         await cq(client,
-            `UPDATE devices SET "isLicensed" = true, "licenseExpiresAt" = $1, "updatedAt" = NOW()
-             WHERE id = $2`,
-            [d.toISOString(), deviceId],
+            `UPDATE devices SET "isLicensed" = true, "licenseExpiresAt" = $1,
+                 "licenseEndDate" = $2, "updatedAt" = NOW()
+             WHERE id = $3`,
+            [d.toISOString(), d.toISOString().slice(0, 10), deviceId],
         );
 
         await logHistory(client, organizationId, 'ADJUST_EXPIRY', {
@@ -501,7 +517,8 @@ export async function revokeLicense(
         }
 
         await cq(client,
-            `UPDATE devices SET "isLicensed" = false, "licenseExpiresAt" = NULL, "updatedAt" = NOW()
+            `UPDATE devices SET "isLicensed" = false, "licenseExpiresAt" = NULL,
+                 "licenseStartDate" = NULL, "licenseEndDate" = NULL, "updatedAt" = NOW()
              WHERE id = $1`,
             [deviceId],
         );
@@ -513,6 +530,7 @@ export async function revokeLicense(
             detail: { packageType: lic.packageType, expiresAt: lic.expiresAt },
         });
     });
+    await redis.del(RedisKeys.deviceLicenseCache(deviceId));
     logger.info('License revoked', { organizationId, deviceId });
 }
 

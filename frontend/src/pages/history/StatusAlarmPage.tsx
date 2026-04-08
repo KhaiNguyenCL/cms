@@ -8,7 +8,7 @@ import {
 import {
     NotificationsActive, Mail, Add, Delete, Edit, CheckCircle,
     Cancel, SignalWifiOff, PowerSettingsNew, BugReport, Send,
-    Circle, AccessTime,
+    Circle, AccessTime, Visibility, VisibilityOff,
 } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSocket } from '@hooks/useSocket';
@@ -38,10 +38,10 @@ function fmtTime(iso: string | null): string {
 
 function statusChip(status: string) {
     const map: Record<string, { label: string; color: 'success' | 'error' | 'warning' | 'default' }> = {
-        ONLINE:     { label: 'Online',    color: 'success' },
-        OFFLINE:    { label: 'Offline',   color: 'error' },
-        APP_EXIT:   { label: 'App exit',  color: 'warning' },
-        SLEEP:      { label: 'Sleep',     color: 'default' },
+        ONLINE: { label: 'Online', color: 'success' },
+        OFFLINE: { label: 'Offline', color: 'error' },
+        APP_EXIT: { label: 'App exit', color: 'warning' },
+        SLEEP: { label: 'Sleep', color: 'default' },
         REGISTERED: { label: 'Chưa kết nối', color: 'default' },
     };
     const cfg = map[status] ?? { label: status, color: 'default' };
@@ -114,8 +114,10 @@ function MailSettingDialog({ open, onClose }: { open: boolean; onClose: () => vo
 
     return (
         <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-            <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <Mail fontSize="small" color="primary" /> Cài đặt email cảnh báo
+            <DialogTitle fontWeight={700}>
+                <Stack direction="row" alignItems="center" gap={1}>
+                    <Mail fontSize="small" color="primary" /> Cài đặt email cảnh báo
+                </Stack>
             </DialogTitle>
             <DialogContent dividers>
                 <Typography variant="body2" color="text.secondary" mb={2}>
@@ -134,7 +136,7 @@ function MailSettingDialog({ open, onClose }: { open: boolean; onClose: () => vo
                                             placeholder="Nhập email mới"
                                             sx={{ fontSize: '0.8rem' }}
                                         />
-                                        <Button size="small" variant="contained" disableElevation
+                                        <Button size="small" disableElevation
                                             disabled={!editInput.includes('@') || updateMut.isPending}
                                             onClick={() => updateMut.mutate({ id: em.id, data: { email: editInput } })}>
                                             Lưu
@@ -225,8 +227,8 @@ function MailSettingDialog({ open, onClose }: { open: boolean; onClose: () => vo
                 )}
 
             </DialogContent>
-            <DialogActions>
-                <Button onClick={onClose}>Đóng</Button>
+            <DialogActions sx={{ px: 3, pb: 2 }}>
+                <Button size="small" onClick={onClose}>Đóng</Button>
             </DialogActions>
         </Dialog>
     );
@@ -267,12 +269,12 @@ export default function StatusAlarmPage() {
             qc.setQueryData<AlarmDevice[]>(['alarm-devices'], prev =>
                 prev?.map(d => {
                     if (d.id !== data.deviceId) return d;
-                    const isOnline  = data.status === 'ONLINE' || data.status === 'SLEEP';
+                    const isOnline = data.status === 'ONLINE' || data.status === 'SLEEP';
                     const isOffline = data.status === 'OFFLINE' || data.status === 'APP_EXIT';
                     return {
                         ...d,
                         status: data.status,
-                        lastOnlineAt:  isOnline  ? now : d.lastOnlineAt,
+                        lastOnlineAt: isOnline ? now : d.lastOnlineAt,
                         lastOfflineAt: isOffline ? now : d.lastOfflineAt,
                     };
                 })
@@ -304,7 +306,7 @@ export default function StatusAlarmPage() {
     }, [devices, search, statusFilter]);
 
     const offlineCount = devices.filter(d => d.status === 'OFFLINE' || d.status === 'APP_EXIT').length;
-    const onlineCount  = devices.filter(d => d.status === 'ONLINE' || d.status === 'SLEEP').length;
+    const onlineCount = devices.filter(d => d.status === 'ONLINE' || d.status === 'SLEEP').length;
 
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
@@ -379,7 +381,7 @@ export default function StatusAlarmPage() {
                                         <TableCell sx={{ fontSize: '0.7rem', fontWeight: 700, py: 0.75 }}>Tên</TableCell>
                                         <TableCell sx={{ fontSize: '0.7rem', fontWeight: 700, py: 0.75 }}>Trạng thái</TableCell>
                                         <TableCell sx={{ fontSize: '0.7rem', fontWeight: 700, py: 0.75 }}>
-                                            <AccessTime sx={{ fontSize: 12, verticalAlign: 'middle' }} />
+                                            Online
                                         </TableCell>
                                         <TableCell sx={{ fontSize: '0.7rem', fontWeight: 700, py: 0.75, width: 60 }}>Chi tiết</TableCell>
                                     </TableRow>
@@ -414,15 +416,15 @@ export default function StatusAlarmPage() {
                                                     </Typography>
                                                 </TableCell>
                                                 <TableCell sx={{ py: 0.75, textAlign: 'center' }}>
-                                                    <Button
-                                                        size="small"
-                                                        variant={isSelected ? 'contained' : 'outlined'}
-                                                        disableElevation
-                                                        sx={{ fontSize: '0.6rem', py: 0.25, px: 1, minWidth: 0 }}
-                                                        onClick={() => setSelectedDevice(isSelected ? null : d)}
-                                                    >
-                                                        {isSelected ? 'Ẩn' : 'Xem'}
-                                                    </Button>
+                                                    <Tooltip title={isSelected ? 'Ẩn' : 'Xem chi tiết'}>
+                                                        <IconButton
+                                                            size="small"
+                                                            color={isSelected ? 'primary' : 'default'}
+                                                            onClick={() => setSelectedDevice(isSelected ? null : d)}
+                                                        >
+                                                            {isSelected ? <VisibilityOff fontSize="small" /> : <Visibility fontSize="small" />}
+                                                        </IconButton>
+                                                    </Tooltip>
                                                 </TableCell>
                                             </TableRow>
                                         );
@@ -439,7 +441,7 @@ export default function StatusAlarmPage() {
                         <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'text.disabled' }}>
                             <NotificationsActive sx={{ fontSize: 56, mb: 2, opacity: 0.15 }} />
                             <Typography variant="body1" fontWeight={500}>Chọn thiết bị để xem lịch sử</Typography>
-                            <Typography variant="body2" mt={0.5}>Nhấn nút <strong>Xem</strong> ở cột Detail bên trái</Typography>
+                            <Typography variant="body2" mt={0.5}>Nhấn icon <strong>con mắt</strong> ở cột Detail bên trái</Typography>
                         </Box>
                     ) : (
                         <>
@@ -457,7 +459,7 @@ export default function StatusAlarmPage() {
                                 <Typography variant="caption" color="text.disabled">
                                     {history.length} sự kiện
                                 </Typography>
-                                            </Box>
+                            </Box>
 
                             {/* History list */}
                             <Box sx={{ flex: 1, overflowY: 'auto', px: 3, py: 2 }}>
@@ -503,7 +505,7 @@ export default function StatusAlarmPage() {
                                                                     size="small"
                                                                     label={
                                                                         ev.reason === 'SOFTWARE' ? 'Phần mềm' :
-                                                                        ev.reason === 'DEVICE_OFF' ? 'Thiết bị tắt' : 'Mạng'
+                                                                            ev.reason === 'DEVICE_OFF' ? 'Thiết bị tắt' : 'Mạng'
                                                                     }
                                                                     variant="outlined"
                                                                     sx={{ fontSize: '0.6rem', height: 16 }}
