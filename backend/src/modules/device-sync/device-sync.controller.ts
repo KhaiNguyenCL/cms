@@ -70,6 +70,16 @@ export async function logPlayback(req: Request, res: Response, next: NextFunctio
     } catch (err) { next(err); }
 }
 
+// POST /api/device/playlist-log
+// Log 1 vòng playlist hoàn thành hoặc bị gián đoạn
+export async function logPlaylistSession(req: Request, res: Response, next: NextFunction) {
+    try {
+        const deviceId = req.user!.userId;
+        await deviceSyncService.logPlaylistSession(deviceId, req.body);
+        res.status(201).json({ success: true });
+    } catch (err) { next(err); }
+}
+
 // POST /api/device/playback-logs/batch
 // Upload many offline logs at once
 export async function batchLogPlayback(req: Request, res: Response, next: NextFunction) {

@@ -25,10 +25,10 @@ function fmtDuration(ms: number): string {
     if (m < 60) return `${m}p`;
     const h = Math.floor(m / 60);
     const rm = m % 60;
-    if (h < 24) return rm > 0 ? `${h}g${rm}p` : `${h}g`;
+    if (h < 24) return rm > 0 ? `${h}h${rm}p` : `${h}h`;
     const d = Math.floor(h / 24);
     const rh = h % 24;
-    return rh > 0 ? `${d}ng${rh}g` : `${d}ng`;
+    return rh > 0 ? `${d}ng${rh}h` : `${d}ng`;
 }
 
 function fmtTime(iso: string | null): string {
@@ -309,9 +309,9 @@ export default function StatusAlarmPage() {
     const onlineCount = devices.filter(d => d.status === 'ONLINE' || d.status === 'SLEEP').length;
 
     return (
-        <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+        <Box sx={{ height: 'calc(100vh - 64px)', display: 'flex', flexDirection: 'column', p: 2, gap: 2 }}>
             {/* Top bar */}
-            <Box sx={{ px: 3, py: 2, display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap', borderBottom: '1px solid', borderColor: 'divider' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
                 <Stack direction="row" alignItems="center" gap={1}>
                     <NotificationsActive color="primary" />
                     <Typography variant="h6" fontWeight={700}>Status Alarm</Typography>
@@ -330,12 +330,12 @@ export default function StatusAlarmPage() {
             </Box>
 
             {/* Content: left + right panels */}
-            <Box sx={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+            <Box sx={{ display: 'flex', flex: 1, gap: 2, minHeight: 0 }}>
 
                 {/* ── Left panel: device list ── */}
-                <Box sx={{
+                <Paper variant="outlined" sx={{
                     width: 420, flexShrink: 0, display: 'flex', flexDirection: 'column',
-                    borderRight: '1px solid', borderColor: 'divider', overflow: 'hidden',
+                    overflow: 'hidden',
                 }}>
                     {/* Filters */}
                     <Box sx={{ px: 1.5, py: 1, display: 'flex', gap: 1, flexWrap: 'wrap', borderBottom: '1px solid', borderColor: 'divider' }}>
@@ -433,10 +433,10 @@ export default function StatusAlarmPage() {
                             </Table>
                         )}
                     </Box>
-                </Box>
+                </Paper>
 
                 {/* ── Right panel: history ── */}
-                <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
+                <Paper variant="outlined" sx={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
                     {!selectedDevice ? (
                         <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'text.disabled' }}>
                             <NotificationsActive sx={{ fontSize: 56, mb: 2, opacity: 0.15 }} />
@@ -529,7 +529,7 @@ export default function StatusAlarmPage() {
                             </Box>
                         </>
                     )}
-                </Box>
+                </Paper>
             </Box>
 
             <MailSettingDialog open={mailOpen} onClose={() => setMailOpen(false)} />

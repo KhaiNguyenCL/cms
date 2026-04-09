@@ -10,11 +10,10 @@ export async function getDevices(req: Request, res: Response, next: NextFunction
 
 export async function getDeviceLogs(req: Request, res: Response, next: NextFunction) {
     try {
-        const result = await svc.getDevicePlaybackLogs(
+        const result = await svc.getDeviceContentLogs(
             String(req.params.id),
             String(req.user!.organizationId),
             {
-                search:   req.query.search   ? String(req.query.search)   : undefined,
                 dateFrom: req.query.dateFrom ? String(req.query.dateFrom) : undefined,
                 dateTo:   req.query.dateTo   ? String(req.query.dateTo)   : undefined,
                 limit:    req.query.limit    ? Number(req.query.limit)    : undefined,

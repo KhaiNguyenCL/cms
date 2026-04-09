@@ -44,4 +44,8 @@ export const usersApi = {
     delete: async (id: string) => {
         await apiClient.delete(`/users/${id}`);
     },
+
+    hardDelete: async (id: string) => {
+        await apiClient.delete(`/users/${id}/permanent`);
+    },
 };

@@ -43,6 +43,17 @@ export const playbackLogSchema = z.object({
     }),
 });
 
+// ─── Playlist session log ────────────────────────────────────────────────────
+// Gửi khi hoàn thành 1 vòng playlist (completed=true) hoặc bị gián đoạn giữa chừng (completed=false)
+
+export const playlistLogSchema = z.object({
+    body: z.object({
+        playlistId: z.string().uuid(),
+        startedAt: z.string().datetime(),   // ISO 8601 — khi bắt đầu vòng này
+        completed: z.boolean(),             // true = đã phát hết 1 vòng
+    }),
+});
+
 // ─── Batch playback logs ──────────────────────────────────────────────────────
 // Gửi nhiều logs 1 lần khi device offline rồi reconnect
 

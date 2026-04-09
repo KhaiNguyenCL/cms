@@ -10,19 +10,15 @@ export interface ContentDevice {
     storeName: string | null;
     scheduleName: string | null;
     playlistName: string | null;
-    lastMediaTitle: string | null;
-    lastPlayedAt: string | null;
-    totalPlayedTodaySec: number;
+    lastSyncedAt: string | null;
 }
 
-export interface PlaybackLog {
+export interface ContentLog {
     id: string;
-    mediaId: string;
-    mediaTitle: string;
-    mediaType: string;
-    playedAt: string;
-    durationPlayed: number;
-    completed: boolean;
+    playlistId: string | null;
+    playlistName: string | null;
+    scheduleName: string | null;
+    syncedAt: string;
 }
 
 // ─── Device list ──────────────────────────────────────────────────────────────
@@ -32,7 +28,6 @@ export async function getContentDevices(organizationId: string): Promise<Content
         SELECT
             d.id, d.name, d.status,
             d."storeId", st.name AS "storeName",
-            -- Most recent schedule assignment (by sortOrder then assignedAt)
             (SELECT sc.name FROM schedule_assignments sa
              JOIN schedules sc ON sc.id = sa."scheduleId"
              WHERE sa."targetId" = d.id AND sa."targetType" = 'DEVICE'
@@ -46,23 +41,10 @@ export async function getContentDevices(organizationId: string): Promise<Content
                AND sa."organizationId" = d."organizationId"
              ORDER BY sa."sortOrder", sa."assignedAt" DESC LIMIT 1
             ) AS "playlistName",
-            -- Last media played
-            (SELECT m.title FROM playback_logs pl
-             JOIN media m ON m.id = pl."mediaId"
-             WHERE pl."deviceId" = d.id
-             ORDER BY pl."playedAt" DESC LIMIT 1
-            ) AS "lastMediaTitle",
-            (SELECT pl."playedAt" FROM playback_logs pl
-             WHERE pl."deviceId" = d.id
-             ORDER BY pl."playedAt" DESC LIMIT 1
-            ) AS "lastPlayedAt",
-            -- Total seconds played today
-            COALESCE((
-                SELECT SUM(pl."durationPlayed")
-                FROM playback_logs pl
-                WHERE pl."deviceId" = d.id
-                  AND pl."playedAt" >= CURRENT_DATE
-            ), 0)::int AS "totalPlayedTodaySec"
+            (SELECT dcl."syncedAt" FROM device_content_logs dcl
+             WHERE dcl."deviceId" = d.id
+             ORDER BY dcl."syncedAt" DESC LIMIT 1
+            ) AS "lastSyncedAt"
         FROM devices d
         LEFT JOIN stores st ON st.id = d."storeId"
         WHERE d."organizationId" = $1
@@ -70,14 +52,13 @@ export async function getContentDevices(organizationId: string): Promise<Content
     `, [organizationId]);
 }
 
-// ─── Playback logs for one device ────────────────────────────────────────────
+// ─── Playlist sync logs for one device ───────────────────────────────────────
 
-export async function getDevicePlaybackLogs(
+export async function getDeviceContentLogs(
     deviceId: string,
     organizationId: string,
-    opts: { search?: string; dateFrom?: string; dateTo?: string; limit?: number; offset?: number }
-): Promise<{ data: PlaybackLog[]; total: number }> {
-    // Verify device belongs to org
+    opts: { dateFrom?: string; dateTo?: string; limit?: number; offset?: number }
+): Promise<{ data: ContentLog[]; total: number }> {
     const dev = await queryOne<{ id: string }>(
         `SELECT id FROM devices WHERE id = $1 AND "organizationId" = $2`,
         [deviceId, organizationId]
@@ -85,44 +66,56 @@ export async function getDevicePlaybackLogs(
     if (!dev) return { data: [], total: 0 };
 
     const params: unknown[] = [deviceId];
-    const where: string[] = [`pl."deviceId" = $1`];
+    const where: string[] = [`"deviceId" = $1`];
     let i = 2;
 
-    if (opts.search?.trim()) {
-        where.push(`m.title ILIKE $${i++}`);
-        params.push(`%${opts.search.trim()}%`);
-    }
-    if (opts.dateFrom) {
-        where.push(`pl."playedAt" >= $${i++}`);
-        params.push(opts.dateFrom);
-    }
-    if (opts.dateTo) {
-        where.push(`pl."playedAt" <= $${i++}`);
-        params.push(opts.dateTo);
-    }
+    if (opts.dateFrom) { where.push(`"syncedAt" >= $${i++}`); params.push(opts.dateFrom); }
+    if (opts.dateTo)   { where.push(`"syncedAt" <= $${i++}`); params.push(opts.dateTo + 'T23:59:59'); }
 
-    const whereClause = where.join(' AND ');
-    const limit  = Math.min(opts.limit  ?? 100, 500);
+    const limit  = Math.min(opts.limit  ?? 200, 500);
     const offset = opts.offset ?? 0;
+    const whereClause = where.join(' AND ');
 
     const [data, countRows] = await Promise.all([
-        query<PlaybackLog>(`
-            SELECT pl.id, pl."mediaId",
-                   m.title AS "mediaTitle", m.type AS "mediaType",
-                   pl."playedAt", pl."durationPlayed", pl.completed
-            FROM playback_logs pl
-            JOIN media m ON m.id = pl."mediaId"
+        query<ContentLog>(`
+            SELECT id, "playlistId", "playlistName", "scheduleName", "syncedAt"
+            FROM device_content_logs
             WHERE ${whereClause}
-            ORDER BY pl."playedAt" DESC
+            ORDER BY "syncedAt" DESC
             LIMIT ${limit} OFFSET ${offset}
         `, params),
         query<{ total: string }>(`
-            SELECT COUNT(*) AS total
-            FROM playback_logs pl
-            JOIN media m ON m.id = pl."mediaId"
-            WHERE ${whereClause}
+            SELECT COUNT(*) AS total FROM device_content_logs WHERE ${whereClause}
         `, params),
     ]);
 
     return { data, total: parseInt(countRows[0]?.total ?? '0', 10) };
+}
+
+// ─── Log playlist sync (called from device-sync.service) ─────────────────────
+// Inserts a new entry only when the playlist changes (deduplication by playlistId).
+
+export async function logPlaylistSync(
+    deviceId: string,
+    organizationId: string,
+    playlistId: string | null,
+    playlistName: string | null,
+    scheduleName: string | null,
+): Promise<void> {
+    const last = await queryOne<{ playlistId: string | null }>(
+        `SELECT "playlistId" FROM device_content_logs
+         WHERE "deviceId" = $1
+         ORDER BY "syncedAt" DESC LIMIT 1`,
+        [deviceId]
+    );
+
+    // Only log when playlist actually changed
+    if (last && last.playlistId === playlistId) return;
+
+    await query(
+        `INSERT INTO device_content_logs
+           (id, "deviceId", "organizationId", "playlistId", "playlistName", "scheduleName", "syncedAt")
+         VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, NOW())`,
+        [deviceId, organizationId, playlistId, playlistName, scheduleName]
+    );
 }

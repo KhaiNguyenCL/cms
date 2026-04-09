@@ -708,6 +708,18 @@ export async function getDeviceSync(deviceId: string, organizationId: string) {
     const contentHash = await computeDeviceContentHash(deviceId, organizationId);
     await redis.setex(RedisKeys.deviceContentHash(deviceId), CONTENT_HASH_CACHE_TTL, contentHash);
 
+    // Log playlist sync history (deduplication: only when playlist changes)
+    const topSchedule = schedules[0] ?? null;
+    import('../content-history/content-history.service')
+        .then(({ logPlaylistSync }) =>
+            logPlaylistSync(
+                deviceId, organizationId,
+                topSchedule?.playlistId ?? null,
+                topSchedule?.playlistName ?? null,
+                topSchedule?.name ?? null,
+            )
+        ).catch(() => {});
+
     // If sync group is actively playing, load its playlist items for the device
     if (syncGroup?.startEpoch && syncGroup.playlistId) {
         const sgItems = await query<{
@@ -783,7 +795,21 @@ export async function logPlayback(
     return { logId: rows[0].id };
 }
 
-// ─── 5. Batch playback logs (offline => online catchup) ───────────────────────
+// ─── 5. Playlist session log ──────────────────────────────────────────────────
+
+export async function logPlaylistSession(
+    deviceId: string,
+    data: { playlistId: string; startedAt: string; completed: boolean }
+): Promise<void> {
+    await query(
+        `INSERT INTO playlist_play_logs (id, "deviceId", "playlistId", "startedAt", "completedAt", completed)
+         VALUES (gen_random_uuid()::text, $1, $2, $3::timestamp, $4, $5)`,
+        [deviceId, data.playlistId, data.startedAt, data.completed ? new Date().toISOString() : null, data.completed]
+    );
+    logger.debug('Playlist session logged', { deviceId, playlistId: data.playlistId, completed: data.completed });
+}
+
+// ─── 6. Batch playback logs (offline => online catchup) ───────────────────────
 
 export async function batchLogPlayback(
     deviceId: string,

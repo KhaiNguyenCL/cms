@@ -3,20 +3,30 @@ import { useQuery } from '@tanstack/react-query';
 import {
     Box, Grid, Card, CardContent, Typography, Stack, Skeleton,
     ToggleButtonGroup, ToggleButton, TextField, Chip,
+    Select, MenuItem, FormControl, InputLabel,
     Table, TableBody, TableCell, TableHead, TableRow,
     Tooltip as MuiTooltip, alpha, useTheme,
 } from '@mui/material';
 import {
     PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer,
-    AreaChart, Area, XAxis, YAxis, CartesianGrid,
+    BarChart, Bar, XAxis, YAxis, CartesianGrid,
     Tooltip as RTooltip,
 } from 'recharts';
 import {
     Tv, PlayArrow, CheckCircle, BarChart as BarChartIcon,
     Image, VideoFile, Language,
-    TrendingUp, QueueMusic, CalendarMonth, Devices, VerifiedUser,
+    QueueMusic, CalendarMonth, VerifiedUser,
 } from '@mui/icons-material';
 import { analyticsApi, type PieSlice } from '@api/analytics.api';
+
+// ── Chart metric options ───────────────────────────────────────────────────────
+
+const METRICS = [
+    { key: 'plays',   label: 'Số lượng lượt phát theo ngày', color: '#6C63FF' },
+    { key: 'devices', label: 'Thiết bị tạo theo thời gian',  color: '#29B6F6' },
+    { key: 'sites',   label: 'Site tạo theo thời gian',       color: '#FFA726' },
+] as const;
+type MetricKey = typeof METRICS[number]['key'];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -100,24 +110,30 @@ function PieCard({ title, data, colors, loading, total }: {
                         <Typography variant="body2" color="text.disabled">Chưa có dữ liệu</Typography>
                     </Box>
                 ) : (
-                    <ResponsiveContainer width="100%" height={240}>
-                        <PieChart>
-                            <Pie data={data} cx="50%" cy="44%" outerRadius={80}
-                                dataKey="value" labelLine={false} label={<PieLabel />}>
-                                {data.map((entry, idx) => (
-                                    <Cell key={entry.name} fill={getColor(entry.name, idx)} />
-                                ))}
-                            </Pie>
-                            <Tooltip
-                                contentStyle={{
-                                    background: theme.palette.background.paper,
-                                    border: `1px solid ${theme.palette.divider}`,
-                                    borderRadius: 8, fontSize: 12,
-                                }}
-                            />
-                            <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11, paddingTop: 4 }} />
-                        </PieChart>
-                    </ResponsiveContainer>
+                    <Box sx={{ '& svg': { outline: 'none' } }}>
+                        <ResponsiveContainer width="100%" height={240}>
+                            <PieChart>
+                                <Pie data={data} cx="50%" cy="44%" outerRadius={80}
+                                    dataKey="value" labelLine={false} label={<PieLabel />}>
+                                    {data.map((entry, idx) => (
+                                        <Cell key={entry.name} fill={getColor(entry.name, idx)} />
+                                    ))}
+                                </Pie>
+                                <Tooltip
+                                    contentStyle={{
+                                        background: theme.palette.background.paper,
+                                        border: `1px solid ${theme.palette.divider}`,
+                                        borderRadius: 8,
+                                        fontSize: 12,
+                                        color: theme.palette.text.primary,
+                                    }}
+                                    itemStyle={{ color: theme.palette.text.primary }}
+                                    labelStyle={{ color: theme.palette.text.secondary }}
+                                />
+                                <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11, paddingTop: 4 }} />
+                            </PieChart>
+                        </ResponsiveContainer>
+                    </Box>
                 )}
             </CardContent>
         </Card>
@@ -211,7 +227,9 @@ export default function DashboardPage() {
     const [preset, setPreset]     = useState<number>(30);
     const [customFrom, setCustomFrom] = useState('');
     const [customTo, setCustomTo]   = useState('');
-    const [groupBy, setGroupBy]   = useState<'day' | 'week' | 'month'>('day');
+    const [groupBy, setGroupBy]         = useState<'day' | 'week' | 'month'>('day');
+    const [selectedMetric, setSelectedMetric] = useState<MetricKey>('plays');
+    const [barHovered, setBarHovered]         = useState(false);
 
     const { dateFrom, dateTo } = useMemo(() => {
         if (customFrom && customTo) return { dateFrom: customFrom, dateTo: customTo };
@@ -254,12 +272,47 @@ export default function DashboardPage() {
         refetchInterval: 60_000,
     });
 
+    const { data: creationStats = [], isLoading: loadingCreation } = useQuery({
+        queryKey: ['analytics-creation', dateFrom, dateTo, groupBy],
+        queryFn: () => analyticsApi.creationStats({ startDate: dateFrom, endDate: dateTo, groupBy }),
+        refetchInterval: 60_000,
+    });
+
+    const today = toLocalDate(0);
+    const { data: todayPlayback } = useQuery({
+        queryKey: ['analytics-playback-today', today],
+        queryFn: () => analyticsApi.playbackStats({ startDate: today, endDate: today, groupBy: 'day' }),
+        refetchInterval: 60_000,
+    });
+    const todayPlays = todayPlayback?.[0]?.plays ?? 0;
+
     const fmtPeriod = groupBy === 'month' ? fmtDateMonth : groupBy === 'week' ? fmtDateWeek : fmtDate;
-    const chartData = playback.map(p => ({
-        period: fmtPeriod(p.period),
-        'Lượt phát': p.plays,
-        'Hoàn thành': p.completed ?? 0,
-    }));
+
+    // Merge playback + creation stats by period
+    const chartData = useMemo(() => {
+        const map = new Map<string, { plays: number; completed: number; devices: number; sites: number }>();
+        for (const p of playback) {
+            map.set(p.period, { plays: p.plays, completed: p.completed ?? 0, devices: 0, sites: 0 });
+        }
+        for (const c of creationStats) {
+            const existing = map.get(c.period);
+            if (existing) {
+                existing.devices = c.devices;
+                existing.sites   = c.sites;
+            } else {
+                map.set(c.period, { plays: 0, completed: 0, devices: c.devices, sites: c.sites });
+            }
+        }
+        return Array.from(map.entries())
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([period, vals]) => ({ period: fmtPeriod(period), ...vals }));
+    }, [playback, creationStats, fmtPeriod]);
+
+    // Chỉ giữ lại các ngày có giá trị của metric đang chọn
+    const filteredChartData = useMemo(
+        () => chartData.filter(d => (d[selectedMetric] ?? 0) > 0),
+        [chartData, selectedMetric]
+    );
 
     const devOnline   = overview?.devices.online ?? 0;
     const devTotal    = overview?.devices.total ?? 0;
@@ -320,9 +373,9 @@ export default function DashboardPage() {
                     { icon: <Tv />,          label: 'Online',     color: '#4CAF82',
                       value: loadingOverview ? '…' : `${devOnline}/${devTotal}`,
                       sub: `${onlineRate}% online` },
-                    { icon: <PlayArrow />,   label: 'Lượt phát', color: '#6C63FF',
-                      value: loadingOverview ? '…' : (overview?.playback.totalPlays ?? 0).toLocaleString(),
-                      sub: `${overview?.playback.totalMinutes ?? 0} phút` },
+                    { icon: <PlayArrow />,   label: 'Lượt phát hôm nay', color: '#6C63FF',
+                      value: loadingOverview ? '…' : todayPlays.toLocaleString(),
+                      sub: 'lượt trong ngày' },
                     { icon: <CheckCircle />, label: 'Hoàn thành', color: '#29B6F6',
                       value: loadingOverview ? '…' : `${overview?.playback.completionRate ?? 0}%`,
                       sub: 'tỷ lệ xem hết' },
@@ -345,47 +398,65 @@ export default function DashboardPage() {
                 ))}
             </Box>
 
-            {/* ── Playback chart ────────────────────────────────────────────── */}
+            {/* ── Dynamic chart ─────────────────────────────────────────────── */}
             <Card sx={{ mb: 2.5 }}>
                 <CardContent sx={{ p: 2.5 }}>
-                    <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1.5}>
-                        <SectionTitle icon={<BarChartIcon />} title="Lượt phát theo thời gian" />
-                        <ToggleButtonGroup exclusive size="small" value={groupBy}
-                            onChange={(_, v) => { if (v) setGroupBy(v); }}>
-                            <ToggleButton value="day"   sx={{ px: 1.5, fontSize: '0.72rem' }}>Ngày</ToggleButton>
-                            <ToggleButton value="week"  sx={{ px: 1.5, fontSize: '0.72rem' }}>Tuần</ToggleButton>
-                            <ToggleButton value="month" sx={{ px: 1.5, fontSize: '0.72rem' }}>Tháng</ToggleButton>
-                        </ToggleButtonGroup>
+                    {/* Header row */}
+                    <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between"
+                        alignItems={{ sm: 'center' }} gap={1.5} mb={2}>
+                        <SectionTitle icon={<BarChartIcon />} title="Thống kê theo thời gian" />
+                        <FormControl size="small" sx={{ minWidth: 280 }}>
+                            <InputLabel>Chỉ số hiển thị</InputLabel>
+                            <Select
+                                value={selectedMetric}
+                                label="Chỉ số hiển thị"
+                                onChange={e => setSelectedMetric(e.target.value as MetricKey)}
+                            >
+                                {METRICS.map(m => (
+                                    <MenuItem key={m.key} value={m.key}>
+                                        <Stack direction="row" alignItems="center" gap={1}>
+                                            <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: m.color, flexShrink: 0 }} />
+                                            {m.label}
+                                        </Stack>
+                                    </MenuItem>
+                                ))}
+                            </Select>
+                        </FormControl>
                     </Stack>
-                    {loadingPlayback ? (
-                        <Skeleton variant="rounded" height={240} />
-                    ) : chartData.length === 0 ? (
-                        <Box sx={{ height: 240, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <Typography color="text.secondary" variant="body2">Chưa có dữ liệu phát trong khoảng thời gian này</Typography>
+
+                    {/* Chart */}
+                    {(loadingPlayback || loadingCreation) ? (
+                        <Skeleton variant="rounded" height={260} />
+                    ) : filteredChartData.length === 0 ? (
+                        <Box sx={{ height: 260, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <Typography color="text.secondary" variant="body2">Chưa có dữ liệu trong khoảng thời gian này</Typography>
                         </Box>
-                    ) : (
-                        <ResponsiveContainer width="100%" height={240}>
-                            <AreaChart data={chartData} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
-                                <defs>
-                                    <linearGradient id="gPlays" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%" stopColor="#6C63FF" stopOpacity={0.3} />
-                                        <stop offset="95%" stopColor="#6C63FF" stopOpacity={0} />
-                                    </linearGradient>
-                                    <linearGradient id="gDone" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%" stopColor="#4CAF82" stopOpacity={0.3} />
-                                        <stop offset="95%" stopColor="#4CAF82" stopOpacity={0} />
-                                    </linearGradient>
-                                </defs>
-                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                                <XAxis dataKey="period" tick={{ fontSize: 11, fill: '#888' }} tickLine={false} axisLine={false} />
-                                <YAxis tick={{ fontSize: 11, fill: '#888' }} tickLine={false} axisLine={false} allowDecimals={false} />
-                                <RTooltip content={<PlaybackTooltip />} />
-                                <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
-                                <Area type="monotone" dataKey="Lượt phát" stroke="#6C63FF" strokeWidth={2} fill="url(#gPlays)" dot={false} activeDot={{ r: 4 }} />
-                                <Area type="monotone" dataKey="Hoàn thành" stroke="#4CAF82" strokeWidth={2} fill="url(#gDone)" dot={false} activeDot={{ r: 4 }} />
-                            </AreaChart>
-                        </ResponsiveContainer>
-                    )}
+                    ) : (() => {
+                        const m = METRICS.find(x => x.key === selectedMetric)!;
+                        return (
+                            <Box sx={{ '& svg': { outline: 'none' } }}>
+                            <ResponsiveContainer width="100%" height={260}>
+                                <BarChart data={filteredChartData} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}
+                                    barCategoryGap="30%">
+                                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(128,128,128,0.12)" vertical={false} />
+                                    <XAxis dataKey="period" tick={{ fontSize: 11, fill: '#888' }} tickLine={false} axisLine={false} />
+                                    <YAxis tick={{ fontSize: 11, fill: '#888' }} tickLine={false} axisLine={false} allowDecimals={false} />
+                                    <RTooltip
+                                        content={<PlaybackTooltip />}
+                                        wrapperStyle={{ visibility: barHovered ? 'visible' : 'hidden', pointerEvents: 'none' }}
+                                        cursor={false}
+                                        isAnimationActive={false}
+                                    />
+                                    <Bar dataKey={m.key} name={m.label} fill={m.color}
+                                        radius={[4, 4, 0, 0]} maxBarSize={48} fillOpacity={0.88}
+                                        onMouseEnter={() => setBarHovered(true)}
+                                        onMouseLeave={() => setBarHovered(false)}
+                                    />
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </Box>
+                        );
+                    })()}
                 </CardContent>
             </Card>
 

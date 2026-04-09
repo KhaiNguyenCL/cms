@@ -4,7 +4,7 @@ import * as deviceSyncController from './device-sync.controller';
 import { authenticateDevice } from '../../shared/middleware/auth.middleware';
 import { validate } from '../../shared/middleware/validate.middleware';
 import {
-    heartbeatSchema, playbackLogSchema, batchPlaybackLogSchema, registerDeviceSchema,
+    heartbeatSchema, playbackLogSchema, batchPlaybackLogSchema, registerDeviceSchema, playlistLogSchema,
 } from './device-sync.schema';
 
 const router = Router();
@@ -118,6 +118,7 @@ router.get('/sync', syncLimiter, deviceSyncController.syncContent);
  * @access  Device JWT
  */
 router.post('/playback-log', playbackLogLimiter, validate(playbackLogSchema), deviceSyncController.logPlayback);
+router.post('/playlist-log', playbackLogLimiter, validate(playlistLogSchema), deviceSyncController.logPlaylistSession);
 
 /**
  * @route   POST /api/device/playback-logs/batch

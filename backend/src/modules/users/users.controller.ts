@@ -64,7 +64,7 @@ export async function updateUser(req: Request, res: Response, next: NextFunction
     }
 }
 
-// DELETE /api/users/:id
+// DELETE /api/users/:id  (soft — disable)
 export async function deleteUser(req: Request, res: Response, next: NextFunction) {
     try {
         const { email } = await userService.deleteUser(
@@ -74,6 +74,21 @@ export async function deleteUser(req: Request, res: Response, next: NextFunction
         );
         logAction(req.user!.organizationId, req.user!.userId, 'DELETE', 'USER', req.params.id as string, email).catch(() => {});
         res.json({ success: true, message: 'User đã bị vô hiệu hoá' });
+    } catch (err) {
+        next(err);
+    }
+}
+
+// DELETE /api/users/:id/permanent  (hard — xoá thật)
+export async function hardDeleteUser(req: Request, res: Response, next: NextFunction) {
+    try {
+        const { email } = await userService.hardDeleteUser(
+            req.params.id as string,
+            req.user!.organizationId,
+            req.user!.userId
+        );
+        logAction(req.user!.organizationId, req.user!.userId, 'DELETE', 'USER', req.params.id as string, email).catch(() => {});
+        res.json({ success: true, message: 'User đã bị xoá vĩnh viễn' });
     } catch (err) {
         next(err);
     }

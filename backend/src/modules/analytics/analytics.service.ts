@@ -21,7 +21,8 @@ function buildDateRange(
 
 export async function getDashboardOverview(organizationId: string, q: OverviewQuery) {
     const { from, to } = q;
-    const dr = buildDateRange('pl', '"playedAt"', from, to, 2);
+    const dr    = buildDateRange('pl',  '"playedAt"',  from, to, 2);
+    const drPpl = buildDateRange('ppl', '"startedAt"', from, to, 2);
 
     // Run all counts in parallel
     const [
@@ -69,14 +70,14 @@ export async function getDashboardOverview(organizationId: string, q: OverviewQu
              WHERE d."organizationId" = $1${dr.clause ? ' AND ' + dr.clause : ''}`,
             [organizationId, ...dr.values]
         ),
-        // Playback completed ratio
+        // Playlist session completion ratio
         queryOne<{ completed: string; total: string }>(
-            `SELECT COUNT(*) FILTER (WHERE pl.completed = true) as completed,
+            `SELECT COUNT(*) FILTER (WHERE ppl.completed = true) as completed,
                     COUNT(*) as total
-             FROM playback_logs pl
-             JOIN devices d ON d.id = pl."deviceId"
-             WHERE d."organizationId" = $1${dr.clause ? ' AND ' + dr.clause : ''}`,
-            [organizationId, ...dr.values]
+             FROM playlist_play_logs ppl
+             JOIN devices d ON d.id = ppl."deviceId"
+             WHERE d."organizationId" = $1${drPpl.clause ? ' AND ' + drPpl.clause : ''}`,
+            [organizationId, ...drPpl.values]
         ),
         // Storage used by all devices
         queryOne<{ storageUsed: string; storageTotal: string }>(
@@ -369,6 +370,55 @@ export async function getTopSchedules(organizationId: string, q: { from?: string
         plays: parseInt(r.plays), completed: parseInt(r.completed),
         totalMinutes: r.totalMinutes,
     })));
+}
+
+// ─── 7. Creation stats over time (devices + sites created per period) ─────────
+
+export async function getCreationStats(
+    organizationId: string,
+    q: { from?: string; to?: string; groupBy?: 'day' | 'week' | 'month' }
+) {
+    const { from, to, groupBy = 'day' } = q;
+    const truncUnit = groupBy === 'month' ? 'month' : groupBy === 'week' ? 'week' : 'day';
+
+    const conditions: string[] = [`"organizationId" = $1`];
+    const values: unknown[]    = [organizationId];
+    let idx = 2;
+    if (from) { conditions.push(`"createdAt" >= $${idx++}::timestamp`); values.push(from); }
+    if (to)   { conditions.push(`"createdAt" <= ($${idx++}::timestamp + INTERVAL '1 day' - INTERVAL '1 second')`); values.push(to); }
+    const where = conditions.join(' AND ');
+
+    const deviceRows = await query<{ period: string; count: string }>(
+        `SELECT DATE_TRUNC('${truncUnit}', "createdAt") AS period, COUNT(*)::int AS count
+         FROM devices WHERE ${where} GROUP BY period ORDER BY period ASC`,
+        values
+    );
+
+    let siteRows: { period: string; count: string }[] = [];
+    try {
+        siteRows = await query<{ period: string; count: string }>(
+            `SELECT DATE_TRUNC('${truncUnit}', "createdAt") AS period, COUNT(*)::int AS count
+             FROM stores WHERE ${where} GROUP BY period ORDER BY period ASC`,
+            values
+        );
+    } catch { /* stores table not yet migrated */ }
+
+    // Union all periods, fill missing with 0
+    const map = new Map<string, { period: string; devices: number; sites: number }>();
+    for (const r of deviceRows) {
+        const key = new Date(r.period).toISOString();
+        map.set(key, { period: key, devices: parseInt(r.count), sites: 0 });
+    }
+    for (const r of siteRows) {
+        const key = new Date(r.period).toISOString();
+        const existing = map.get(key);
+        if (existing) existing.sites = parseInt(r.count);
+        else map.set(key, { period: key, devices: 0, sites: parseInt(r.count) });
+    }
+
+    return Array.from(map.values())
+        .sort((a, b) => new Date(a.period).getTime() - new Date(b.period).getTime())
+        .map(r => ({ ...r, period: new Date(r.period).toISOString() }));
 }
 
 // ─── 6. Device activity summary (plays per device) ────────────────────────────

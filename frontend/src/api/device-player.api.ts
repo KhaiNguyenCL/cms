@@ -132,3 +132,11 @@ export async function logPlayback(payload: {
 }): Promise<void> {
     await client.post('/playback-log', payload);
 }
+
+export async function logPlaylistSession(payload: {
+    playlistId: string;
+    startedAt: string;
+    completed: boolean;
+}): Promise<void> {
+    await client.post('/playlist-log', payload);
+}

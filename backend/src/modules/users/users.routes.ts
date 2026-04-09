@@ -67,4 +67,10 @@ router.delete(
     usersController.deleteUser
 );
 
+router.delete(
+    '/:id/permanent',
+    authorize('ADMIN'),
+    usersController.hardDeleteUser
+);
+
 export default router;

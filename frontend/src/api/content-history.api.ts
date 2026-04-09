@@ -8,23 +8,19 @@ export interface ContentDevice {
     storeName: string | null;
     scheduleName: string | null;
     playlistName: string | null;
-    lastMediaTitle: string | null;
-    lastPlayedAt: string | null;
-    totalPlayedTodaySec: number;
+    lastSyncedAt: string | null;
 }
 
-export interface PlaybackLog {
+export interface ContentLog {
     id: string;
-    mediaId: string;
-    mediaTitle: string;
-    mediaType: string;
-    playedAt: string;
-    durationPlayed: number;
-    completed: boolean;
+    playlistId: string | null;
+    playlistName: string | null;
+    scheduleName: string | null;
+    syncedAt: string;
 }
 
-export interface PlaybackLogsResult {
-    data: PlaybackLog[];
+export interface ContentLogsResult {
+    data: ContentLog[];
     total: number;
 }
 
@@ -34,8 +30,8 @@ const contentHistoryApi = {
 
     getDeviceLogs: (
         deviceId: string,
-        params?: { search?: string; dateFrom?: string; dateTo?: string; limit?: number; offset?: number }
-    ): Promise<PlaybackLogsResult> =>
+        params?: { dateFrom?: string; dateTo?: string; limit?: number; offset?: number }
+    ): Promise<ContentLogsResult> =>
         apiClient.get(`/content-history/devices/${deviceId}/logs`, { params }).then(r => r.data),
 };
 

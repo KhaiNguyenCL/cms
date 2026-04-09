@@ -534,6 +534,19 @@ export function createAppTheme(mode: PaletteMode) {
                     badge: { fontSize: '0.65rem', fontWeight: 700, minWidth: 18, height: 18, padding: '0 4px' },
                 },
             },
+
+            // ── SvgIcon — ensure icons follow theme text color in dark mode ──
+            MuiSvgIcon: {
+                styleOverrides: {
+                    root: ({ theme }) => ({
+                        color: 'inherit',
+                        // When no explicit color context, fallback to text.primary
+                        '.MuiBox-root > &, .MuiStack-root > &': {
+                            color: theme.palette.text.primary,
+                        },
+                    }),
+                },
+            },
         },
     });
 }

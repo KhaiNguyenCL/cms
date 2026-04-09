@@ -42,6 +42,7 @@ import {
     fetchSync,
     sendHeartbeat,
     logPlayback,
+    logPlaylistSession,
     type SyncResponse,
     type PlaylistItemSync,
     type SiteState,
@@ -321,6 +322,8 @@ export default function PlayerPage() {
     const currentScheduleIdRef = useRef<string | null>(null);
     // Track active store sync for heartbeat drift correction
     const syncGroupRef = useRef<SiteState | null>(null);
+    // Track playlist session for completion logging: { playlistId, startedAt }
+    const playlistSessionRef = useRef<{ playlistId: string; startedAt: string } | null>(null);
     // True when device is in an active sync group → faster heartbeat (10s vs 30s)
     const [inSyncGroup, setInSyncGroup] = useState(false);
 
@@ -834,6 +837,16 @@ export default function PlayerPage() {
         // Helper: position slots from global clock (same algorithm as sync groups).
         // All devices compute the same position → naturally synchronized.
         const clockReset = () => {
+            // If a playlist session was in progress mid-cycle, log it as incomplete
+            if (playlistSessionRef.current && currentIndexRef.current > 0) {
+                logPlaylistSession({ ...playlistSessionRef.current, completed: false }).catch(() => {});
+            }
+            // Start a new session for the incoming playlist
+            const incomingPlaylistId = activeSchedule?.playlist.id ?? null;
+            playlistSessionRef.current = incomingPlaylistId
+                ? { playlistId: incomingPlaylistId, startedAt: new Date().toISOString() }
+                : null;
+
             currentScheduleIdRef.current = newScheduleId;
             lastAdvancedRef.current = Date.now();
             activeSlotRef.current = 'A';
@@ -983,6 +996,13 @@ export default function PlayerPage() {
             durationPlayed: Math.round((nowMs - new Date(playedAtRef.current).getTime()) / 1000),
             completed: true,
         }).catch(() => {});
+
+        // Playlist session tracking: log completion when wrapping back to index 0
+        if (targetIdx === 0 && prevIdx > 0 && playlistSessionRef.current) {
+            logPlaylistSession({ ...playlistSessionRef.current, completed: true }).catch(() => {});
+            // Start new session immediately
+            playlistSessionRef.current = { playlistId: playlistSessionRef.current.playlistId, startedAt: new Date().toISOString() };
+        }
 
         currentIndexRef.current = targetIdx;
         setCurrentIndex(targetIdx);

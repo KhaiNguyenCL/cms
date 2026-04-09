@@ -29,6 +29,8 @@ export const updateUserSchema = z.object({
     body: z.object({
         role: z.enum(USER_ROLES).optional(),
         status: z.enum(USER_STATUSES).optional(),
+        email: z.string().email().optional(),
+        password: z.string().min(6).optional(),
     }).refine(
         (data) => Object.keys(data).length > 0,
         { message: 'Phải cung cấp ít nhất một trường để cập nhật' }

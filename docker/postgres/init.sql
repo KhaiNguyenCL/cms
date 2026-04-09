@@ -247,6 +247,30 @@ CREATE TABLE "device_comments" (
 );
 CREATE INDEX "dc_deviceId_createdAt_idx" ON "device_comments"("deviceId", "createdAt" DESC);
 
+CREATE TABLE "device_content_logs" (
+    "id"             TEXT        NOT NULL DEFAULT gen_random_uuid()::text,
+    "deviceId"       TEXT        NOT NULL,
+    "organizationId" TEXT        NOT NULL,
+    "playlistId"     TEXT,
+    "playlistName"   TEXT,
+    "scheduleName"   TEXT,
+    "syncedAt"       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT "device_content_logs_pkey" PRIMARY KEY ("id")
+);
+CREATE INDEX "dcl_deviceId_syncedAt_idx" ON "device_content_logs"("deviceId", "syncedAt" DESC);
+
+CREATE TABLE IF NOT EXISTS "playlist_play_logs" (
+    "id"          TEXT        NOT NULL DEFAULT gen_random_uuid()::text,
+    "deviceId"    TEXT        NOT NULL,
+    "playlistId"  TEXT        NOT NULL,
+    "startedAt"   TIMESTAMPTZ NOT NULL,
+    "completedAt" TIMESTAMPTZ,
+    "completed"   BOOLEAN     NOT NULL DEFAULT false,
+    "createdAt"   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT "playlist_play_logs_pkey" PRIMARY KEY ("id")
+);
+CREATE INDEX "ppl_deviceId_startedAt_idx" ON "playlist_play_logs"("deviceId", "startedAt" DESC);
+
 -- ─── Foreign Keys ─────────────────────────────────────────────────────────────
 
 ALTER TABLE "users"
@@ -408,7 +432,30 @@ CREATE TABLE IF NOT EXISTS program_assignments (
 CREATE INDEX IF NOT EXISTS "pa_orgId_idx"    ON program_assignments("organizationId");
 CREATE INDEX IF NOT EXISTS "pa_programId_idx" ON program_assignments("programId");
 
--- ─── Unique name constraints per org (run IF NOT EXISTS for existing installs) ─
+-- ─── Stores (Sites / Sync Groups) ────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS stores (
+    "id"              TEXT         NOT NULL DEFAULT gen_random_uuid()::text,
+    "organizationId"  TEXT         NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    "name"            TEXT         NOT NULL,
+    "description"     TEXT,
+    "address"         TEXT,
+    "contact"         TEXT,
+    "openDate"        TIMESTAMPTZ,
+    "closeDate"       TIMESTAMPTZ,
+    "playlistId"      TEXT         REFERENCES playlists(id) ON DELETE SET NULL,
+    "startEpoch"      BIGINT,
+    "totalDurationMs" INTEGER,
+    "createdAt"       TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    "updatedAt"       TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    CONSTRAINT "stores_pkey" PRIMARY KEY ("id")
+);
+CREATE INDEX IF NOT EXISTS "stores_orgId_idx" ON stores("organizationId");
+
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS "storeId" TEXT REFERENCES stores(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS "dev_storeId_idx" ON devices("storeId");
+
+-- ─── Unique name constraints per org ──────────────────────────────────────────
 CREATE UNIQUE INDEX IF NOT EXISTS "stores_org_name_unique" ON stores("organizationId", lower(name));
 
 -- ─── Site timezone (2026-03-17) ───────────────────────────────────────────────

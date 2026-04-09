@@ -4,7 +4,7 @@ import {
     Table, TableBody, TableCell, TableHead, TableRow,
     CircularProgress, Tooltip, InputAdornment,
     Dialog, DialogTitle, DialogContent, DialogActions,
-    IconButton, Alert, LinearProgress,
+    IconButton, Alert, LinearProgress, Paper,
 } from '@mui/material';
 import {
     Search, SystemUpdate, CheckCircle, Warning, Help,
@@ -230,12 +230,11 @@ export default function SoftwareHistoryPage() {
     };
 
     return (
-        <Box sx={{ display: 'flex', height: 'calc(100vh - 64px)', overflow: 'hidden' }}>
+        <Box sx={{ height: 'calc(100vh - 64px)', display: 'flex', p: 2, gap: 2 }}>
             {/* ── Left Panel ── */}
-            <Box sx={{
+            <Paper variant="outlined" sx={{
                 width: 380, flexShrink: 0,
                 display: 'flex', flexDirection: 'column',
-                borderRight: '1px solid', borderColor: 'divider',
                 overflow: 'hidden',
             }}>
                 <Box sx={{ p: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
@@ -318,10 +317,10 @@ export default function SoftwareHistoryPage() {
                         </Typography>
                     )}
                 </Box>
-            </Box>
+            </Paper>
 
             {/* ── Right Panel ── */}
-            <Box sx={{ flex: 1, overflow: 'hidden' }}>
+            <Paper variant="outlined" sx={{ flex: 1, overflow: 'hidden' }}>
                 {selected ? (
                     <DeviceLogsPanel device={selected} />
                 ) : (
@@ -330,7 +329,7 @@ export default function SoftwareHistoryPage() {
                         <Typography>Chọn thiết bị để xem lịch sử phiên bản</Typography>
                     </Box>
                 )}
-            </Box>
+            </Paper>
 
         </Box>
     );

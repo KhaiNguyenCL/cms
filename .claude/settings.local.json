@@ -67,7 +67,8 @@
       "Bash(sed -n '1,12p' \"E:/cms/frontend/src/pages/history/ContentHistoryPage.tsx\")",
       "Bash(openssl rand:*)",
       "Bash(npx --yes bcrypt-cli hash 'Admin@123456' 12)",
-      "Read(//tmp/**)"
+      "Read(//tmp/**)",
+      "Bash(xargs wc:*)"
     ],
     "additionalDirectories": [
       "E:\\player"

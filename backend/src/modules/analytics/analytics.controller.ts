@@ -68,6 +68,17 @@ export async function getTopSchedules(req: Request, res: Response, next: NextFun
     } catch (err) { next(err); }
 }
 
+// GET /api/analytics/creation-stats
+export async function getCreationStats(req: Request, res: Response, next: NextFunction) {
+    try {
+        const from    = req.query.startDate as string | undefined;
+        const to      = req.query.endDate   as string | undefined;
+        const groupBy = (req.query.groupBy as 'day' | 'week' | 'month' | undefined) ?? 'day';
+        const data    = await analyticsService.getCreationStats(req.user!.organizationId, { from, to, groupBy });
+        res.json({ success: true, data });
+    } catch (err) { next(err); }
+}
+
 // GET /api/analytics/device-activity
 export async function getDeviceActivity(req: Request, res: Response, next: NextFunction) {
     try {

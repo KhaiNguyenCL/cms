@@ -9,7 +9,7 @@ import {
 } from '@mui/material';
 import {
     Search, PersonAdd, MoreVert, Edit, Block, DeleteForever,
-    CheckCircle, Cancel, Person, Shield, Visibility, Info,
+    CheckCircle, Cancel, Person, Shield, Visibility, VisibilityOff, Info,
 } from '@mui/icons-material';
 import { useAppDispatch, useAppSelector } from '@store/hooks';
 import { pushToast } from '@store/slices/uiSlice';
@@ -60,7 +60,6 @@ function RoleChip({ role }: { role: User['role'] }) {
             <Chip
                 label={cfg.label}
                 size="small"
-                icon={cfg.icon as any}
                 sx={{
                     bgcolor: alpha(cfg.color, 0.15),
                     color: cfg.color,
@@ -231,6 +230,9 @@ function EditUserDialog({
     const qc = useQueryClient();
     const [role, setRole] = useState<User['role']>(user?.role ?? 'VIEWER');
     const [status, setStatus] = useState<User['status']>(user?.status ?? 'ACTIVE');
+    const [email, setEmail] = useState(user?.email ?? '');
+    const [password, setPassword] = useState('');
+    const [showPw, setShowPw] = useState(false);
     const [error, setError] = useState('');
 
     const mutation = useMutation({
@@ -248,6 +250,8 @@ function EditUserDialog({
     if (!user) return null;
 
     const payload: UpdateUserPayload = {};
+    if (email && email !== user.email) payload.email = email;
+    if (password) payload.password = password;
     if (role !== user.role && (role === 'ADMIN' || role === 'MANAGER' || role === 'VIEWER')) payload.role = role;
     if (status !== user.status && (status === 'ACTIVE' || status === 'INACTIVE')) payload.status = status;
     const hasChange = Object.keys(payload).length > 0;
@@ -260,8 +264,29 @@ function EditUserDialog({
                     {error && <Alert severity="error" sx={{ borderRadius: 2 }}>{error}</Alert>}
 
                     <TextField
-                        label="Email" value={user.email} fullWidth disabled size="small"
-                        helperText="Email không thể thay đổi"
+                        label="Email"
+                        value={email}
+                        onChange={e => setEmail(e.target.value)}
+                        fullWidth size="small"
+                        type="email"
+                    />
+
+                    <TextField
+                        label="Mật khẩu mới"
+                        value={password}
+                        onChange={e => setPassword(e.target.value)}
+                        fullWidth size="small"
+                        type={showPw ? 'text' : 'password'}
+                        placeholder="Để trống nếu không đổi"
+                        InputProps={{
+                            endAdornment: (
+                                <InputAdornment position="end">
+                                    <IconButton size="small" onClick={() => setShowPw(!showPw)} edge="end">
+                                        {showPw ? <VisibilityOff fontSize="small" /> : <Visibility fontSize="small" />}
+                                    </IconButton>
+                                </InputAdornment>
+                            ),
+                        }}
                     />
 
                     <FormControl fullWidth size="small">
@@ -313,19 +338,18 @@ function EditUserDialog({
 // ── Row actions menu ───────────────────────────────────────────────────────────
 
 function UserActionsMenu({
-    user, isSelf, isAdmin, onEdit, onDelete,
+    user, isSelf, isAdmin, onEdit, onHardDelete,
 }: {
     user: User;
     isSelf: boolean;
     isAdmin: boolean;
     onEdit: () => void;
-    onDelete: () => void;
+    onHardDelete: () => void;
 }) {
     const [anchor, setAnchor] = useState<null | HTMLElement>(null);
     const open = Boolean(anchor);
 
     if (!isAdmin) return null;
-    // SUPER_ADMIN không thể bị chỉnh sửa hoặc xoá từ Users page
     if (user.role === 'SUPER_ADMIN') return null;
 
     return (
@@ -334,18 +358,18 @@ function UserActionsMenu({
                 <MoreVert fontSize="small" />
             </IconButton>
             <Menu anchorEl={anchor} open={open} onClose={() => setAnchor(null)}
-                slotProps={{ paper: { sx: { minWidth: 160 } } }}>
+                slotProps={{ paper: { sx: { minWidth: 180 } } }}>
                 <MuiMenuItem onClick={() => { setAnchor(null); onEdit(); }}>
                     <Edit fontSize="small" sx={{ mr: 1.5 }} /> Chỉnh sửa
                 </MuiMenuItem>
-                <Tooltip title={isSelf ? 'Không thể xoá chính mình' : ''} placement="left">
+                <Tooltip title={isSelf ? 'Không thể tự xoá' : ''} placement="left">
                     <span>
                         <MuiMenuItem
-                            onClick={() => { setAnchor(null); onDelete(); }}
+                            onClick={() => { setAnchor(null); onHardDelete(); }}
                             disabled={isSelf}
                             sx={{ color: 'error.main' }}
                         >
-                            <DeleteForever fontSize="small" sx={{ mr: 1.5 }} /> Xoá user
+                            <DeleteForever fontSize="small" sx={{ mr: 1.5 }} /> Xoá vĩnh viễn
                         </MuiMenuItem>
                     </span>
                 </Tooltip>
@@ -384,21 +408,27 @@ export default function UsersPage() {
         }),
     });
 
-    const deleteMutation = useMutation({
-        mutationFn: (id: string) => usersApi.delete(id),
+const hardDeleteMutation = useMutation({
+        mutationFn: (id: string) => usersApi.hardDelete(id),
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: ['users'] });
-            dispatch(pushToast({ severity: 'success', message: 'Đã xoá user' }));
+            dispatch(pushToast({ severity: 'success', message: 'Đã xoá user vĩnh viễn' }));
         },
         onError: (e: any) => {
             dispatch(pushToast({ severity: 'error', message: e?.response?.data?.message ?? 'Xoá thất bại' }));
         },
     });
 
-    const handleDelete = (user: User) => {
-        if (window.confirm(`Xoá user "${user.email}"? Hành động này không thể hoàn tác.`)) {
-            deleteMutation.mutate(user.id);
-        }
+    const [confirmUserId, setConfirmUserId] = useState<{ id: string; action: 'disable' | 'delete' } | null>(null);
+
+const handleHardDelete = (user: User) => {
+        setConfirmUserId({ id: user.id, action: 'delete' });
+    };
+
+    const handleConfirm = () => {
+        if (!confirmUserId) return;
+        hardDeleteMutation.mutate(confirmUserId.id);
+        setConfirmUserId(null);
     };
 
     const users = data?.data ?? [];
@@ -525,13 +555,23 @@ export default function UsersPage() {
                                                 </Typography>
                                             </TableCell>
                                             <TableCell align="right">
-                                                <UserActionsMenu
-                                                    user={user}
-                                                    isSelf={isSelf}
-                                                    isAdmin={isAdmin}
-                                                    onEdit={() => setEditUser(user)}
-                                                    onDelete={() => handleDelete(user)}
-                                                />
+                                                {confirmUserId?.id === user.id ? (
+                                                    <Stack direction="row" spacing={0.5} alignItems="center" justifyContent="flex-end">
+                                                        <Typography variant="caption" color={confirmUserId.action === 'delete' ? 'error' : 'warning.main'}>
+                                                            {confirmUserId.action === 'delete' ? 'Xoá vĩnh viễn?' : 'Disable?'}
+                                                        </Typography>
+                                                        <Button size="small" color={confirmUserId.action === 'delete' ? 'error' : 'warning'} onClick={handleConfirm}>Có</Button>
+                                                        <Button size="small" onClick={() => setConfirmUserId(null)}>Không</Button>
+                                                    </Stack>
+                                                ) : (
+                                                    <UserActionsMenu
+                                                        user={user}
+                                                        isSelf={isSelf}
+                                                        isAdmin={isAdmin}
+                                                        onEdit={() => setEditUser(user)}
+                                                        onHardDelete={() => handleHardDelete(user)}
+                                                    />
+                                                )}
                                             </TableCell>
                                         </TableRow>
                                     );

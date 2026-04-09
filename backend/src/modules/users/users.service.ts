@@ -149,6 +149,17 @@ export async function updateUser(
     const values: unknown[] = [];
     let paramIndex = 1;
 
+    if (data.email !== undefined) {
+        const existing = await queryOne(`SELECT id FROM users WHERE email = $1 AND id != $2`, [data.email, userId]);
+        if (existing) throw new AppError(409, 'Email đã được sử dụng');
+        fields.push(`email = $${paramIndex++}`);
+        values.push(data.email);
+    }
+    if (data.password !== undefined) {
+        const passwordHash = await bcrypt.hash(data.password, BCRYPT_ROUNDS);
+        fields.push(`"passwordHash" = $${paramIndex++}`);
+        values.push(passwordHash);
+    }
     if (data.role !== undefined) {
         fields.push(`role = $${paramIndex++}`);
         values.push(data.role);
@@ -206,5 +217,32 @@ export async function deleteUser(
     );
 
     logger.info('User deleted (soft)', { requesterId, targetUserId: userId });
+    return { email: target.email };
+}
+
+// ─── Hard delete user ──────────────────────────────────────────────────────────
+
+export async function hardDeleteUser(
+    userId: string,
+    organizationId: string,
+    requesterId: string
+): Promise<{ email: string }> {
+    if (userId === requesterId) {
+        throw new AppError(400, 'Không thể tự xoá tài khoản của mình');
+    }
+
+    const target = await queryOne<{ id: string; role: string; email: string }>(
+        `SELECT id, role, email FROM users WHERE id = $1 AND "organizationId" = $2`,
+        [userId, organizationId]
+    );
+    if (!target) throw new AppError(404, 'User không tồn tại');
+
+    if (target.role === 'SUPER_ADMIN') {
+        throw new AppError(403, 'Không thể xoá tài khoản SUPER_ADMIN');
+    }
+
+    await query(`DELETE FROM users WHERE id = $1 AND "organizationId" = $2`, [userId, organizationId]);
+
+    logger.info('User hard deleted', { requesterId, targetUserId: userId });
     return { email: target.email };
 }

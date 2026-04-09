@@ -53,7 +53,8 @@ router.get('/device-charts', analyticsController.getDeviceCharts);
  * @access  ADMIN, MANAGER
  */
 router.get('/device-activity', authorize('ADMIN', 'MANAGER'), analyticsController.getDeviceActivity);
-router.get('/top-playlists',  analyticsController.getTopPlaylists);
-router.get('/top-schedules',  analyticsController.getTopSchedules);
+router.get('/top-playlists',    analyticsController.getTopPlaylists);
+router.get('/top-schedules',    analyticsController.getTopSchedules);
+router.get('/creation-stats',   analyticsController.getCreationStats);
 
 export default router;

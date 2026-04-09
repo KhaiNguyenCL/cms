@@ -52,36 +52,36 @@ type NavEntry = NavLeaf | NavGroup;
 // ── Nav structure ─────────────────────────────────────────────────────────────
 
 const navStructure: NavEntry[] = [
-    { kind: 'item', label: 'Dashboard', icon: <Dashboard />, path: '/dashboard', roles: null },
-    { kind: 'item', label: 'Sites Management', icon: <Storefront />, path: '/sites', roles: null },
-    { kind: 'item', label: 'Device Management', icon: <DevicesOther />, path: '/device-management', roles: null },
+    { kind: 'item', label: 'Dashboard', icon: <Dashboard sx={{ color: '#38BDF8' }} />, path: '/dashboard', roles: null },
+    { kind: 'item', label: 'Sites Management', icon: <Storefront sx={{ color: '#34D399' }} />, path: '/sites', roles: null },
+    { kind: 'item', label: 'Device Management', icon: <DevicesOther sx={{ color: '#60A5FA' }} />, path: '/device-management', roles: null },
     {
-        kind: 'group', id: 'content-management', label: 'Content Management', icon: <PhotoLibrary />,
+        kind: 'group', id: 'content-management', label: 'Content Management', icon: <PhotoLibrary sx={{ color: '#A78BFA' }} />,
         children: [
-            { kind: 'item', label: 'Media Library', icon: <PermMedia />, path: '/media', roles: null },
-            { kind: 'item', label: 'Playlist', icon: <QueueMusic />, path: '/playlists', roles: null },
-            { kind: 'item', label: 'Schedule', icon: <Today />, path: '/schedules', roles: null },
-            { kind: 'item', label: 'Schedule Assignment', icon: <CalendarMonth />, path: '/schedule-assignment', roles: null },
+            { kind: 'item', label: 'Media Library', icon: <PermMedia sx={{ color: '#F472B6' }} />, path: '/media', roles: null },
+            { kind: 'item', label: 'Playlist', icon: <QueueMusic sx={{ color: '#A78BFA' }} />, path: '/playlists', roles: null },
+            { kind: 'item', label: 'Schedule', icon: <Today sx={{ color: '#FB923C' }} />, path: '/schedules', roles: null },
+            { kind: 'item', label: 'Schedule Assignment', icon: <CalendarMonth sx={{ color: '#FBBF24' }} />, path: '/schedule-assignment', roles: null },
         ],
     },
     {
-        kind: 'group', id: 'history', label: 'History', icon: <History />,
+        kind: 'group', id: 'history', label: 'History', icon: <History sx={{ color: '#94A3B8' }} />,
         roles: ['ADMIN', 'MANAGER', 'SUPER_ADMIN'],
         children: [
-            { kind: 'item', label: 'Status Alarm', icon: <NotificationsActive />, path: '/history/alarm', roles: null },
-            { kind: 'item', label: 'Content History', icon: <PlayCircleOutline />, path: '/history/content', roles: null },
-            { kind: 'item', label: 'Software History', icon: <SystemUpdate />, path: '/history/software', roles: null },
-            { kind: 'item', label: 'Action History', icon: <Assignment />, path: '/history/action', roles: null },
+            { kind: 'item', label: 'Status Alarm', icon: <NotificationsActive sx={{ color: '#F87171' }} />, path: '/history/alarm', roles: null },
+            { kind: 'item', label: 'Content History', icon: <PlayCircleOutline sx={{ color: '#34D399' }} />, path: '/history/content', roles: null },
+            { kind: 'item', label: 'Software History', icon: <SystemUpdate sx={{ color: '#60A5FA' }} />, path: '/history/software', roles: null },
+            { kind: 'item', label: 'Action History', icon: <Assignment sx={{ color: '#94A3B8' }} />, path: '/history/action', roles: null },
         ],
     },
-    { kind: 'item', label: 'Users', icon: <People />, path: '/users', roles: ['ADMIN', 'MANAGER', 'SUPER_ADMIN'] },
-    { kind: 'item', label: 'License', icon: <WorkspacePremium />, path: '/license', roles: ['ADMIN', 'MANAGER', 'SUPER_ADMIN'] },
-    { kind: 'item', label: 'Settings', icon: <Settings />, path: '/settings', roles: ['ADMIN', 'MANAGER', 'SUPER_ADMIN'] },
+    { kind: 'item', label: 'Users', icon: <People sx={{ color: '#4ADE80' }} />, path: '/users', roles: ['ADMIN', 'MANAGER', 'SUPER_ADMIN'] },
+    { kind: 'item', label: 'License', icon: <WorkspacePremium sx={{ color: '#FBBF24' }} />, path: '/license', roles: ['ADMIN', 'MANAGER', 'SUPER_ADMIN'] },
+    { kind: 'item', label: 'Settings', icon: <Settings sx={{ color: '#94A3B8' }} />, path: '/settings', roles: ['ADMIN', 'MANAGER', 'SUPER_ADMIN'] },
 ];
 
 const superAdminItems: NavLeaf[] = [
-    { kind: 'item', label: 'Super Admin',        icon: <AdminPanelSettings />, path: '/super-admin' },
-    { kind: 'item', label: 'License Management', icon: <WorkspacePremium />,   path: '/license-management' },
+    { kind: 'item', label: 'Super Admin',        icon: <AdminPanelSettings sx={{ color: '#F87171' }} />, path: '/super-admin' },
+    { kind: 'item', label: 'License Management', icon: <WorkspacePremium sx={{ color: '#FBBF24' }} />,   path: '/license-management' },
 ];
 
 // ── Label finder for AppBar ───────────────────────────────────────────────────
@@ -273,13 +273,15 @@ export default function DashboardLayout() {
                         pl: sidebarOpen ? (indented ? 3.5 : 2) : 1.5,
                         pr: sidebarOpen ? 2 : 1.5,
                         '&.Mui-selected': {
-                            background: 'linear-gradient(135deg, rgba(108,99,255,0.2), rgba(108,99,255,0.1))',
+                            background: 'linear-gradient(135deg, rgba(37,99,235,0.12), rgba(37,99,235,0.06))',
                             color: 'primary.main',
+                            border: '1px solid',
+                            borderColor: 'primary.main',
                             '& .MuiListItemIcon-root': { color: 'primary.main' },
                         },
                     }}
                 >
-                    <ListItemIcon sx={{ minWidth: sidebarOpen ? 40 : 0, color: 'text.secondary' }}>
+                    <ListItemIcon sx={{ minWidth: sidebarOpen ? 40 : 0 }}>
                         <Badge
                             badgeContent={isLicenseMgmtItem && sidebarOpen ? (pendingRequestCount || undefined) : undefined}
                             variant={isLicenseMgmtItem && sidebarOpen ? 'standard' : 'dot'}
@@ -587,6 +589,8 @@ export default function DashboardLayout() {
                                             '&.Mui-selected': {
                                                 background: 'linear-gradient(135deg, rgba(244,67,54,0.15), rgba(244,67,54,0.08))',
                                                 color: 'error.main',
+                                                border: '1px solid',
+                                                borderColor: 'error.main',
                                                 '& .MuiListItemIcon-root': { color: 'error.main' },
                                             },
                                         }}

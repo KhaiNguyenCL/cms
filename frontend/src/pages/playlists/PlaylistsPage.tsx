@@ -1366,13 +1366,13 @@ function PlaylistRow({ playlist, selected, onSelect, onDeleted }: {
                 </TableCell>
                 <TableCell onClick={() => onSelect(playlist.id)} sx={{ maxWidth: 0 }}>
                     <Tooltip title={playlist.description ?? ''} disableHoverListener={!playlist.description}>
-                        <Typography variant="body2" color="text.secondary" noWrap display="block">
+                        <Typography variant="body2" color={playlist.description ? 'text.secondary' : 'text.disabled'} noWrap display="block" align={playlist.description ? 'left' : 'center'}>
                             {playlist.description ?? '—'}
                         </Typography>
                     </Tooltip>
                 </TableCell>
                 <TableCell align="center" onClick={() => onSelect(playlist.id)}>
-                    <Typography variant="body2" color="text.secondary">{playlist.itemCount ?? 0} items</Typography>
+                    <Typography variant="body2" color="text.secondary">{playlist.itemCount ?? 0}</Typography>
                 </TableCell>
                 <TableCell align="center" onClick={() => onSelect(playlist.id)}>
                     <Typography variant="body2" color="text.secondary" noWrap>{new Date(playlist.createdAt).toLocaleDateString('vi-VN')}</Typography>
