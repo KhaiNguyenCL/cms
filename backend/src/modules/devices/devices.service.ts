@@ -135,8 +135,8 @@ export async function createDevice(
     let rows: DeviceRow[];
     try {
         rows = await query<DeviceRow>(
-            `INSERT INTO devices (id, "organizationId", name, "pairingCode", status, "isLicensed", location, timezone, settings, "createdAt", "updatedAt")
-             VALUES (gen_random_uuid()::text, $1, $2, $3, 'OFFLINE', false, $4, $5, $6, NOW(), NOW())
+            `INSERT INTO devices (id, "organizationId", name, "pairingCode", status, "isLicensed", location, timezone, settings, "storeId", "createdAt", "updatedAt")
+             VALUES (gen_random_uuid()::text, $1, $2, $3, 'OFFLINE', false, $4, $5, $6, $7, NOW(), NOW())
              RETURNING id, "organizationId", name, "pairingCode", "androidId", model, "osVersion", "appVersion",
                        status, "isLicensed", "licenseStartDate", "licenseEndDate",
                        "lastSeen", "lastOnlineAt", "lastOfflineAt",
@@ -148,6 +148,7 @@ export async function createDevice(
                 data.location ?? null,
                 data.timezone ?? 'Asia/Ho_Chi_Minh',
                 data.settings ? JSON.stringify(data.settings) : null,
+                data.siteId ?? null,
             ]
         );
     } catch (err) {
@@ -197,6 +198,42 @@ export async function updateDevice(
         handleUniqueViolation(err, 'Tên thiết bị đã tồn tại trong tổ chức');
     }
     if (!rows![0]) throw new AppError(404, 'Device không tồn tại');
+
+    // Trigger mail notification when device status is set to ERROR
+    if (data.status === 'ERROR') {
+        const dev = rows[0];
+        const errorAt = new Date().toLocaleString('vi-VN');
+        queryOne<{ siteName: string | null }>(
+            `SELECT s.name AS "siteName" FROM devices d LEFT JOIN stores s ON s.id = d."storeId" WHERE d.id = $1`,
+            [deviceId]
+        ).then(siteRow => {
+            import('../../shared/jobs/queues')
+                .then(({ enqueueMailNotification }) => {
+                    enqueueMailNotification({
+                        eventType: 'DEVICE_ERROR',
+                        orgId: organizationId,
+                        vars: {
+                            deviceName: dev.name,
+                            siteName: siteRow?.siteName ?? '',
+                            orgName: '',
+                            errorAt,
+                            recipientName: '',
+                        },
+                    }).catch(() => {});
+                })
+                .catch(() => {});
+        }).catch(() => {});
+    }
+
+    // In-app notification for ERROR status
+    if (data.status === 'ERROR') {
+        import('../../modules/notifications/notifications.service')
+            .then(({ createNotification, NOTIF_TYPES }) =>
+                createNotification(organizationId, NOTIF_TYPES.DEVICE_ERROR,
+                    `Thiết bị lỗi: ${rows[0].name}`, 'Trạng thái thiết bị chuyển sang ERROR',
+                    deviceId, 'device')
+            ).catch(() => {});
+    }
 
     logger.info('Device updated', { deviceId });
     return rows[0];
@@ -298,7 +335,6 @@ export async function sendDeviceCommand(
         RESTART: 'command.restart',
         SCREENSHOT: 'command.screenshot',
         RELOAD_CONTENT: 'command.reload_content',
-        CLEAR_CACHE: 'command.clear_cache',
         SLEEP: 'command.sleep',
         WAKE_UP: 'command.wake_up',
         VIEWER_RESTART: 'command.viewer_restart',

@@ -342,7 +342,6 @@ export type DeviceCommand =
     | 'command.restart'
     | 'command.screenshot'
     | 'command.reload_content'
-    | 'command.clear_cache'
     | 'content.update'
     | 'schedule.update'
     | 'OTA_UPDATE';

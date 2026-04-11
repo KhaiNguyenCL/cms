@@ -13,31 +13,33 @@ export const listSitesSchema = z.object({
 
 export const createSiteSchema = z.object({
     body: z.object({
-        name:        z.string().min(1).max(100),
-        description: z.string().max(500).optional(),
-        address:     z.string().max(500).optional(),
-        contact:     z.string().max(200).optional(),
-        timezone:    z.string().max(100).optional(),   // IANA timezone, e.g. 'Asia/Ho_Chi_Minh'
-        timeOn:      timeString,   // HH:MM — hour device screen turns on
-        timeOff:     timeString,   // HH:MM — hour device screen turns off
-        deployDate:  z.string().optional(),   // ISO date — deployment start date
-        endDate:     z.string().optional(),   // ISO date — deployment end date
-        playlistId:  z.string().min(1).optional(),
+        name:               z.string().min(1).max(100),
+        description:        z.string().max(500).optional(),
+        address:            z.string().max(500).optional(),
+        contact:            z.string().max(200).optional(),
+        timezone:           z.string().max(100).optional(),
+        timeOn:             timeString,
+        timeOff:            timeString,
+        deployDate:         z.string().optional(),
+        endDate:            z.string().optional(),
+        playlistId:         z.string().min(1).optional(),
+        alarmToleranceMin:  z.number().int().min(0).max(480).optional(),  // 0–8 hours
     }),
 });
 
 export const updateSiteSchema = z.object({
     body: z.object({
-        name:        z.string().min(1).max(100).optional(),
-        description: z.string().max(500).nullable().optional(),
-        address:     z.string().max(500).nullable().optional(),
-        contact:     z.string().max(200).nullable().optional(),
-        timezone:    z.string().max(100).nullable().optional(),
-        timeOn:      z.string().nullable().optional(),
-        timeOff:     z.string().nullable().optional(),
-        deployDate:  z.string().nullable().optional(),
-        endDate:     z.string().nullable().optional(),
-        playlistId:  z.string().min(1).nullable().optional(),
+        name:               z.string().min(1).max(100).optional(),
+        description:        z.string().max(500).nullable().optional(),
+        address:            z.string().max(500).nullable().optional(),
+        contact:            z.string().max(200).nullable().optional(),
+        timezone:           z.string().max(100).nullable().optional(),
+        timeOn:             z.string().nullable().optional(),
+        timeOff:            z.string().nullable().optional(),
+        deployDate:         z.string().nullable().optional(),
+        endDate:            z.string().nullable().optional(),
+        playlistId:         z.string().min(1).nullable().optional(),
+        alarmToleranceMin:  z.number().int().min(0).max(480).optional(),
     }),
 });
 

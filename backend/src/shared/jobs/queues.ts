@@ -14,6 +14,7 @@ export const QUEUE_NAMES = {
     CLEANUP_LOGS: 'cleanup-logs',
     GENERATE_REPORTS: 'generate-reports',
     LICENSE_DEDUCTION: 'license-deduction',
+    MAIL_NOTIFICATION: 'mail-notification',
 } as const;
 
 // ─── Queue instances ──────────────────────────────────────────────────────────
@@ -73,6 +74,17 @@ export const licenseDeductionQueue = new Queue(QUEUE_NAMES.LICENSE_DEDUCTION, {
     },
 });
 
+/** Queue: send templated email notifications for system events */
+export const mailNotificationQueue = new Queue(QUEUE_NAMES.MAIL_NOTIFICATION, {
+    connection: bullmqConnection,
+    defaultJobOptions: {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 10_000 },
+        removeOnComplete: { count: 200 },
+        removeOnFail: { count: 200 },
+    },
+});
+
 /** Queue: generate analytics reports (daily/weekly summaries → future: email) */
 export const generateReportsQueue = new Queue(QUEUE_NAMES.GENERATE_REPORTS, {
     connection: bullmqConnection,
@@ -126,6 +138,13 @@ export interface LicenseDeductionJobData {
     triggeredBy?: string;
 }
 
+export interface MailNotificationJobData {
+    eventType: string;          // e.g. 'DEVICE_OFFLINE', 'DEVICE_ERROR', 'LICENSE_EXPIRY'
+    orgId: string;
+    vars: Record<string, string>;  // template variable substitutions
+    deviceId?: string;          // for cooldown tracking per device
+}
+
 // ─── Helper: add jobs from anywhere ──────────────────────────────────────────
 
 export async function enqueueVideoTranscoding(data: VideoTranscodingJobData): Promise<string> {
@@ -156,4 +175,19 @@ export async function enqueueGenerateReport(data: GenerateReportsJobData): Promi
 export async function enqueueLicenseDeduction(data: LicenseDeductionJobData = {}): Promise<string> {
     const job = await licenseDeductionQueue.add('daily-deduction', data);
     return job.id!;
+}
+
+export async function enqueueMailNotification(
+    data: MailNotificationJobData,
+    delayMs = 0,
+): Promise<void> {
+    // Dedupe key: same event + same device (or org) within the delay window
+    const dedupeKey = data.deviceId
+        ? `mail-${data.eventType}-${data.deviceId}`
+        : `mail-${data.eventType}-${data.orgId}-${Math.floor(Date.now() / 300_000)}`;
+
+    await mailNotificationQueue.add('send-mail', data, {
+        jobId: dedupeKey,
+        delay: delayMs,
+    });
 }

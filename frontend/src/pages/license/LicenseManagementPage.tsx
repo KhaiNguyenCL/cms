@@ -10,11 +10,13 @@ import {
     AdminPanelSettings, Inventory2, CheckCircle,
     Cancel, HourglassEmpty, Edit, InfoOutlined,
     DevicesOther, History, DeleteOutline, EditCalendar,
-    SwapHoriz, WorkspacePremium,
+    SwapHoriz, WorkspacePremium, Storage,
 } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import licenseApi from '@api/license.api';
 import type { OrgPoolRow, PurchaseRequestRow, PackageType, DeviceLicenseRow, PoolBatch, LicenseHistoryRow } from '@api/license.api';
+import { storageQuotaApi } from '@api/storage-quota.api';
+import type { StoragePurchaseRequest } from '@api/storage-quota.api';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -849,17 +851,177 @@ function RequestsTab() {
     );
 }
 
+// ─── Storage Requests Tab ─────────────────────────────────────────────────────
+
+function StorageRequestsTab() {
+    const qc = useQueryClient();
+    const { data = [], isLoading } = useQuery({
+        queryKey: ['storage-requests-all'],
+        queryFn: () => storageQuotaApi.listAllRequests(),
+    });
+
+    const [actionRow, setActionRow]     = useState<StoragePurchaseRequest | null>(null);
+    const [adminNote, setAdminNote]     = useState('');
+    const [actionType, setActionType]   = useState<'approve' | 'reject'>('approve');
+    const [actionError, setActionError] = useState('');
+
+    const actionMut = useMutation({
+        mutationFn: () => actionType === 'approve'
+            ? storageQuotaApi.approveRequest(actionRow!.id, adminNote || undefined)
+            : storageQuotaApi.rejectRequest(actionRow!.id, adminNote || undefined),
+        onSuccess: () => {
+            setActionRow(null);
+            setActionError('');
+            qc.invalidateQueries({ queryKey: ['storage-requests-all'] });
+            qc.invalidateQueries({ queryKey: ['storage-pending-count'] });
+            qc.invalidateQueries({ queryKey: ['license-requests-pending'] });
+        },
+        onError: (e: unknown) => {
+            const msg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error;
+            setActionError(msg ?? 'Có lỗi xảy ra, vui lòng thử lại');
+        },
+    });
+
+    const pending = data.filter(r => r.status === 'PENDING').length;
+
+    if (isLoading) return <CircularProgress sx={{ m: 3 }} />;
+
+    const PKG_LABEL: Record<number, string> = { 50: '+50 MB', 100: '+100 MB', 200: '+200 MB' };
+
+    return (
+        <Box>
+            {pending > 0 && (
+                <Box sx={{ mb: 2, p: 1.5, bgcolor: alpha('#FF9800', 0.1), borderRadius: 1,
+                    border: '1px solid', borderColor: 'warning.main' }}>
+                    <Typography variant="body2" color="warning.main" fontWeight={600}>
+                        {pending} yêu cầu dung lượng đang chờ duyệt
+                    </Typography>
+                </Box>
+            )}
+
+            <Table size="small">
+                <TableHead>
+                    <TableRow>
+                        <TableCell>Tổ chức</TableCell>
+                        <TableCell>Người yêu cầu</TableCell>
+                        <TableCell>Gói dung lượng</TableCell>
+                        <TableCell align="center">Số lượng</TableCell>
+                        <TableCell align="center">Tổng</TableCell>
+                        <TableCell>Ghi chú</TableCell>
+                        <TableCell>Trạng thái</TableCell>
+                        <TableCell>Ngày tạo</TableCell>
+                        <TableCell align="right">Thao tác</TableCell>
+                    </TableRow>
+                </TableHead>
+                <TableBody>
+                    {data.map(row => (
+                        <TableRow key={row.id} hover
+                            sx={row.status === 'PENDING' ? { bgcolor: alpha('#FF9800', 0.04) } : {}}>
+                            <TableCell>
+                                <Typography variant="body2" fontWeight={500}>{row.orgName ?? '—'}</Typography>
+                            </TableCell>
+                            <TableCell>{row.requestedByName ?? '—'}</TableCell>
+                            <TableCell>{PKG_LABEL[row.packageMb] ?? `+${row.packageMb} MB`}</TableCell>
+                            <TableCell align="center">{row.quantity}</TableCell>
+                            <TableCell align="center">
+                                <Chip label={`+${row.totalMb} MB`} size="small" color="info" />
+                            </TableCell>
+                            <TableCell>
+                                <Typography variant="caption">{row.note ?? '—'}</Typography>
+                                {row.adminNote && (
+                                    <Typography variant="caption" color="text.secondary" display="block">
+                                        → {row.adminNote}
+                                    </Typography>
+                                )}
+                            </TableCell>
+                            <TableCell><RequestStatusChip status={row.status} /></TableCell>
+                            <TableCell>
+                                <Typography variant="caption">{fmtDate(row.createdAt)}</Typography>
+                                {row.resolvedAt && (
+                                    <Typography variant="caption" color="text.secondary" display="block">
+                                        xử lý: {fmtDate(row.resolvedAt)}
+                                    </Typography>
+                                )}
+                            </TableCell>
+                            <TableCell align="right">
+                                {row.status === 'PENDING' && (
+                                    <Stack direction="row" gap={0.5} justifyContent="flex-end">
+                                        <Tooltip title="Duyệt">
+                                            <IconButton size="small" color="success"
+                                                onClick={() => { setActionRow(row); setAdminNote(''); setActionType('approve'); }}>
+                                                <CheckCircle fontSize="inherit" />
+                                            </IconButton>
+                                        </Tooltip>
+                                        <Tooltip title="Từ chối">
+                                            <IconButton size="small" color="error"
+                                                onClick={() => { setActionRow(row); setAdminNote(''); setActionType('reject'); }}>
+                                                <Cancel fontSize="inherit" />
+                                            </IconButton>
+                                        </Tooltip>
+                                    </Stack>
+                                )}
+                            </TableCell>
+                        </TableRow>
+                    ))}
+                    {data.length === 0 && (
+                        <TableRow>
+                            <TableCell colSpan={9} align="center" sx={{ py: 4, color: 'text.disabled' }}>
+                                Không có yêu cầu dung lượng
+                            </TableCell>
+                        </TableRow>
+                    )}
+                </TableBody>
+            </Table>
+
+            <Dialog open={!!actionRow} onClose={() => { setActionRow(null); setActionError(''); }} maxWidth="xs" fullWidth>
+                <DialogTitle fontWeight={700}>
+                    {actionType === 'approve' ? 'Duyệt yêu cầu dung lượng' : 'Từ chối yêu cầu dung lượng'}
+                </DialogTitle>
+                <DialogContent dividers>
+                    {actionRow && (
+                        <Typography variant="body2" mb={2}>
+                            <strong>{actionRow.orgName}</strong> — {actionRow.quantity}×{' '}
+                            {PKG_LABEL[actionRow.packageMb] ?? `+${actionRow.packageMb} MB`}
+                            {' '}(tổng <strong>+{actionRow.totalMb} MB</strong>)
+                        </Typography>
+                    )}
+                    <TextField fullWidth size="small" label="Ghi chú admin (tùy chọn)"
+                        multiline rows={2}
+                        value={adminNote} onChange={e => setAdminNote(e.target.value)} />
+                    {actionError && <Alert severity="error" sx={{ mt: 1.5 }}>{actionError}</Alert>}
+                </DialogContent>
+                <DialogActions sx={{ px: 3, pb: 2 }}>
+                    <Button size="small" onClick={() => { setActionRow(null); setActionError(''); }}>Hủy</Button>
+                    <Button size="small"
+                        color={actionType === 'approve' ? 'success' : 'error'}
+                        disabled={actionMut.isPending}
+                        onClick={() => actionMut.mutate()}>
+                        {actionType === 'approve' ? 'Duyệt' : 'Từ chối'}
+                    </Button>
+                </DialogActions>
+            </Dialog>
+        </Box>
+    );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function LicenseManagementPage() {
     const [tab, setTab] = useState(0);
 
-    const { data: requests = [] } = useQuery({
+    const { data: licenseRequests = [] } = useQuery({
         queryKey: ['license-requests'],
         queryFn: licenseApi.getPurchaseRequests,
         staleTime: 60_000,
     });
-    const pendingCount = requests.filter(r => r.status === 'PENDING').length;
+    const pendingLicense = licenseRequests.filter(r => r.status === 'PENDING').length;
+
+    const { data: storageRequests = [] } = useQuery({
+        queryKey: ['storage-requests-all'],
+        queryFn: () => storageQuotaApi.listAllRequests(),
+        staleTime: 60_000,
+    });
+    const pendingStorage = storageRequests.filter(r => r.status === 'PENDING').length;
 
     return (
         <Box>
@@ -871,13 +1033,20 @@ export default function LicenseManagementPage() {
             <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mb: 3 }}>
                 <Tab icon={<Inventory2 fontSize="small" />} iconPosition="start" label="Tổ chức" />
                 <Tab
-                    label={pendingCount > 0 ? `Yêu cầu mua (${pendingCount})` : 'Yêu cầu mua'}
-                    sx={pendingCount > 0 ? { color: 'warning.main' } : {}}
+                    icon={<WorkspacePremium fontSize="small" />} iconPosition="start"
+                    label={pendingLicense > 0 ? `Yêu cầu license (${pendingLicense})` : 'Yêu cầu license'}
+                    sx={pendingLicense > 0 ? { color: 'warning.main' } : {}}
+                />
+                <Tab
+                    icon={<Storage fontSize="small" />} iconPosition="start"
+                    label={pendingStorage > 0 ? `Yêu cầu dung lượng (${pendingStorage})` : 'Yêu cầu dung lượng'}
+                    sx={pendingStorage > 0 ? { color: 'error.main' } : {}}
                 />
             </Tabs>
 
             {tab === 0 && <OrgsTab />}
             {tab === 1 && <RequestsTab />}
+            {tab === 2 && <StorageRequestsTab />}
         </Box>
     );
 }

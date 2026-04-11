@@ -1,19 +1,22 @@
 import { useState } from 'react';
 import {
     Box, Typography, Tabs, Tab, Stack, Chip, Card, CardContent,
-    Table, TableBody, TableCell, TableHead, TableRow,
+    Table, TableBody, TableCell, TableHead, TableRow, TablePagination,
     CircularProgress, Button, IconButton,
     Dialog, DialogTitle, DialogContent, DialogActions,
-    TextField, MenuItem, Tooltip, Alert, alpha,
+    TextField, MenuItem, Tooltip, Alert, alpha, Divider,
+    LinearProgress,
 } from '@mui/material';
 import {
     DevicesOther, PlayArrow,
     SwapHoriz, Add, Refresh, CheckCircle,
-    HourglassEmpty, History, Inventory2, ManageSearch,
+    HourglassEmpty, History, Inventory2, ManageSearch, Storage,
 } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import licenseApi from '@api/license.api';
 import type { DeviceLicenseRow, LicenseHistoryRow, PurchaseRequestRow, PackageType } from '@api/license.api';
+import { storageQuotaApi } from '@api/storage-quota.api';
+import type { StoragePurchaseRequest } from '@api/storage-quota.api';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -206,6 +209,8 @@ function DevicesTab() {
     const [historyDev, setHistoryDev]   = useState<DeviceLicenseRow | null>(null);
     const [selPkg, setSelPkg]           = useState<PackageType>('12M');
     const [toDeviceId, setToDeviceId]   = useState('');
+    const [page, setPage]               = useState(0);
+    const [rowsPerPage, setRowsPerPage] = useState(10);
 
     const { data: devHistory = [], isLoading: histLoading } = useQuery({
         queryKey: ['license-history-device', historyDev?.deviceId],
@@ -226,6 +231,8 @@ function DevicesTab() {
 
     if (isLoading) return <CircularProgress sx={{ m: 3 }} />;
 
+    const pagedDevices = data.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
+
     return (
         <Box>
             <Table size="small">
@@ -240,7 +247,7 @@ function DevicesTab() {
                     </TableRow>
                 </TableHead>
                 <TableBody>
-                    {data.map(row => (
+                    {pagedDevices.map(row => (
                         <TableRow key={row.deviceId} hover
                             sx={{
                                 bgcolor: !row.isLicensed && row.expiresAt ? alpha('#DC2626', 0.05)
@@ -328,6 +335,17 @@ function DevicesTab() {
                     )}
                 </TableBody>
             </Table>
+            <TablePagination
+                component="div"
+                count={data.length}
+                page={page}
+                onPageChange={(_, p) => setPage(p)}
+                rowsPerPage={rowsPerPage}
+                onRowsPerPageChange={e => { setRowsPerPage(parseInt(e.target.value)); setPage(0); }}
+                rowsPerPageOptions={[5, 10, 25, 50]}
+                labelRowsPerPage="Mỗi trang:"
+                labelDisplayedRows={({ from, to, count }) => `${from}–${to} / ${count}`}
+            />
 
             {/* Assign Dialog */}
             <Dialog open={!!assignDev} onClose={() => setAssignDev(null)} maxWidth="xs" fullWidth>
@@ -467,86 +485,273 @@ function DevicesTab() {
     );
 }
 
+const STORAGE_PACKAGES = [50, 100, 200] as const;
+type StoragePackageMb = typeof STORAGE_PACKAGES[number];
+
+function fmtMb(mb: number) {
+    return mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb} MB`;
+}
+
 // ─── Requests Tab ─────────────────────────────────────────────────────────────
 
 function RequestsTab() {
     const qc = useQueryClient();
-    const { data = [], isLoading } = useQuery({
+
+    // ── License requests ──────────────────────────────────────────────────────
+    const { data: licReqs = [], isLoading: licLoading } = useQuery({
         queryKey: ['license-requests'], queryFn: licenseApi.getPurchaseRequests,
     });
+    const [licOpen, setLicOpen]   = useState(false);
+    const [selPkg, setSelPkg]     = useState<PackageType>('12M');
+    const [licQty, setLicQty]     = useState('1');
+    const [licNote, setLicNote]   = useState('');
+    const [licPage, setLicPage]   = useState(0);
+    const LIC_PER_PAGE = 5;
 
-    const [newOpen, setNewOpen] = useState(false);
-    const [selPkg, setSelPkg]   = useState<PackageType>('12M');
-    const [qty, setQty]         = useState('1');
-    const [note, setNote]       = useState('');
-
-    const createMut = useMutation({
+    const licCreateMut = useMutation({
         mutationFn: () => licenseApi.createPurchaseRequest({
-            packageType: selPkg, quantity: parseInt(qty), note: note || undefined,
+            packageType: selPkg, quantity: parseInt(licQty), note: licNote || undefined,
         }),
         onSuccess: () => {
-            setNewOpen(false);
+            setLicOpen(false);
             qc.invalidateQueries({ queryKey: ['license-requests'] });
         },
     });
 
-    if (isLoading) return <CircularProgress sx={{ m: 3 }} />;
+    // ── Storage requests ──────────────────────────────────────────────────────
+    const { data: storReqs = [], isLoading: storLoading } = useQuery({
+        queryKey: ['storage-own-requests'], queryFn: storageQuotaApi.listOwnRequests,
+    });
+    const { data: storUsage } = useQuery({
+        queryKey: ['storage-usage'], queryFn: storageQuotaApi.getUsage, staleTime: 30_000,
+    });
+    const [storOpen, setStorOpen]     = useState(false);
+    const [storPkg, setStorPkg]       = useState<StoragePackageMb>(50);
+    const [storQty, setStorQty]       = useState('1');
+    const [storNote, setStorNote]     = useState('');
+    const [storPage, setStorPage]     = useState(0);
+    const STOR_PER_PAGE = 5;
+
+    const storCreateMut = useMutation({
+        mutationFn: () => storageQuotaApi.createRequest({
+            packageMb: storPkg, quantity: parseInt(storQty), note: storNote || undefined,
+        }),
+        onSuccess: () => {
+            setStorOpen(false);
+            qc.invalidateQueries({ queryKey: ['storage-own-requests'] });
+        },
+    });
+
+    const storPreviewMb = storPkg * parseInt(storQty || '1');
+    const currentUsedMb = storUsage?.usedMb ?? 0;
+    const currentQuotaMb = storUsage?.totalQuotaMb ?? 0;
+    const afterMb = currentQuotaMb + storPreviewMb;
+
+    const pagedLicReqs  = licReqs.slice(licPage  * LIC_PER_PAGE,  licPage  * LIC_PER_PAGE  + LIC_PER_PAGE);
+    const pagedStorReqs = storReqs.slice(storPage * STOR_PER_PAGE, storPage * STOR_PER_PAGE + STOR_PER_PAGE);
 
     return (
         <Box>
-            <Stack direction="row" justifyContent="flex-end" mb={2}>
+            {/* ── License purchase requests ── */}
+            <Stack direction="row" alignItems="center" justifyContent="space-between" mb={2}>
+                <Stack direction="row" alignItems="center" gap={1}>
+                    <Inventory2 fontSize="small" color="primary" />
+                    <Typography variant="subtitle1" fontWeight={700}>Yêu cầu mua gói License</Typography>
+                </Stack>
                 <Button size="small" startIcon={<Add />}
-                    onClick={() => { setSelPkg('12M'); setQty('1'); setNote(''); setNewOpen(true); }}>
-                    Tạo yêu cầu mua
+                    onClick={() => { setSelPkg('12M'); setLicQty('1'); setLicNote(''); setLicOpen(true); }}>
+                    Tạo yêu cầu
                 </Button>
             </Stack>
 
-            <Table size="small">
-                <TableHead>
-                    <TableRow>
-                        <TableCell>Gói</TableCell>
-                        <TableCell>Số lượng</TableCell>
-                        <TableCell>Ghi chú</TableCell>
-                        <TableCell>Trạng thái</TableCell>
-                        <TableCell>Phản hồi admin</TableCell>
-                        <TableCell>Ngày tạo</TableCell>
-                    </TableRow>
-                </TableHead>
-                <TableBody>
-                    {data.map((row: PurchaseRequestRow) => (
-                        <TableRow key={row.id} hover>
-                            <TableCell><Typography variant="body2">{PKG_LABELS[row.packageType as PackageType] ?? row.packageType}</Typography></TableCell>
-                            <TableCell><Typography variant="body2">{row.quantity}</Typography></TableCell>
-                            <TableCell><Typography variant="caption">{row.note ?? '—'}</Typography></TableCell>
-                            <TableCell><RequestStatusChip status={row.status} /></TableCell>
-                            <TableCell><Typography variant="caption" color="text.secondary">{row.adminNote ?? '—'}</Typography></TableCell>
-                            <TableCell><Typography variant="body2">{fmtDate(row.createdAt)}</Typography></TableCell>
-                        </TableRow>
-                    ))}
-                    {data.length === 0 && (
+            {licLoading ? <CircularProgress size={24} sx={{ m: 2 }} /> : (
+                <>
+                <Table size="small">
+                    <TableHead>
                         <TableRow>
-                            <TableCell colSpan={6} align="center" sx={{ py: 4, color: 'text.disabled' }}>
-                                Chưa có yêu cầu nào
-                            </TableCell>
+                            <TableCell>Gói</TableCell>
+                            <TableCell>Số lượng</TableCell>
+                            <TableCell>Ghi chú</TableCell>
+                            <TableCell>Trạng thái</TableCell>
+                            <TableCell>Phản hồi admin</TableCell>
+                            <TableCell>Ngày tạo</TableCell>
                         </TableRow>
-                    )}
-                </TableBody>
-            </Table>
+                    </TableHead>
+                    <TableBody>
+                        {pagedLicReqs.map((row: PurchaseRequestRow) => (
+                            <TableRow key={row.id} hover>
+                                <TableCell><Typography variant="body2">{PKG_LABELS[row.packageType as PackageType] ?? row.packageType}</Typography></TableCell>
+                                <TableCell><Typography variant="body2">{row.quantity}</Typography></TableCell>
+                                <TableCell><Typography variant="caption">{row.note ?? '—'}</Typography></TableCell>
+                                <TableCell><RequestStatusChip status={row.status} /></TableCell>
+                                <TableCell><Typography variant="caption" color="text.secondary">{row.adminNote ?? '—'}</Typography></TableCell>
+                                <TableCell><Typography variant="body2">{fmtDate(row.createdAt)}</Typography></TableCell>
+                            </TableRow>
+                        ))}
+                        {licReqs.length === 0 && (
+                            <TableRow>
+                                <TableCell colSpan={6} align="center" sx={{ py: 3, color: 'text.disabled' }}>
+                                    Chưa có yêu cầu nào
+                                </TableCell>
+                            </TableRow>
+                        )}
+                    </TableBody>
+                </Table>
+                <TablePagination
+                    component="div"
+                    count={licReqs.length}
+                    page={licPage}
+                    onPageChange={(_, p) => setLicPage(p)}
+                    rowsPerPage={LIC_PER_PAGE}
+                    onRowsPerPageChange={() => {}}
+                    rowsPerPageOptions={[LIC_PER_PAGE]}
+                    labelRowsPerPage=""
+                    labelDisplayedRows={({ from, to, count }) => `${from}–${to} / ${count}`}
+                />
+                </>
+            )}
 
-            <Dialog open={newOpen} onClose={() => setNewOpen(false)} maxWidth="xs" fullWidth>
-                <DialogTitle>Tạo yêu cầu mua gói</DialogTitle>
+            <Divider sx={{ my: 4 }} />
+
+            {/* ── Storage purchase requests ── */}
+            <Stack direction="row" alignItems="center" justifyContent="space-between" mb={2}>
+                <Stack direction="row" alignItems="center" gap={1}>
+                    <Storage fontSize="small" color="primary" />
+                    <Typography variant="subtitle1" fontWeight={700}>Yêu cầu mua gói Dung lượng</Typography>
+                </Stack>
+                <Button size="small" startIcon={<Add />}
+                    onClick={() => { setStorPkg(50); setStorQty('1'); setStorNote(''); setStorOpen(true); }}>
+                    Tạo yêu cầu
+                </Button>
+            </Stack>
+
+            {/* Current usage summary */}
+            {storUsage && (
+                <Box sx={{ mb: 2, p: 1.5, borderRadius: 1.5, border: '1px solid', borderColor: 'divider', bgcolor: 'action.hover' }}>
+                    <Stack direction="row" justifyContent="space-between" alignItems="center" mb={0.5}>
+                        <Typography variant="caption" color="text.secondary">Dung lượng hiện tại</Typography>
+                        <Typography variant="caption" fontWeight={700}
+                            color={storUsage.percentUsed >= 90 ? 'error.main' : storUsage.percentUsed >= 70 ? 'warning.main' : 'text.primary'}>
+                            {fmtMb(storUsage.usedMb)} / {fmtMb(storUsage.totalQuotaMb)} · {storUsage.percentUsed}%
+                        </Typography>
+                    </Stack>
+                    <LinearProgress variant="determinate" value={Math.min(storUsage.percentUsed, 100)}
+                        color={storUsage.percentUsed >= 90 ? 'error' : storUsage.percentUsed >= 70 ? 'warning' : 'primary'}
+                        sx={{ height: 5, borderRadius: 2 }} />
+                </Box>
+            )}
+
+            {storLoading ? <CircularProgress size={24} sx={{ m: 2 }} /> : (
+                <>
+                <Table size="small">
+                    <TableHead>
+                        <TableRow>
+                            <TableCell>Gói</TableCell>
+                            <TableCell>Số lượng</TableCell>
+                            <TableCell>Tổng</TableCell>
+                            <TableCell>Ghi chú</TableCell>
+                            <TableCell>Trạng thái</TableCell>
+                            <TableCell>Phản hồi admin</TableCell>
+                            <TableCell>Ngày tạo</TableCell>
+                        </TableRow>
+                    </TableHead>
+                    <TableBody>
+                        {pagedStorReqs.map((row: StoragePurchaseRequest) => (
+                            <TableRow key={row.id} hover>
+                                <TableCell><Chip label={`+${row.packageMb} MB`} size="small" variant="outlined" /></TableCell>
+                                <TableCell><Typography variant="body2">{row.quantity}</Typography></TableCell>
+                                <TableCell><Typography variant="body2" fontWeight={600}>{fmtMb(row.totalMb)}</Typography></TableCell>
+                                <TableCell><Typography variant="caption">{row.note ?? '—'}</Typography></TableCell>
+                                <TableCell><RequestStatusChip status={row.status} /></TableCell>
+                                <TableCell><Typography variant="caption" color="text.secondary">{row.adminNote ?? '—'}</Typography></TableCell>
+                                <TableCell><Typography variant="body2">{fmtDate(row.createdAt)}</Typography></TableCell>
+                            </TableRow>
+                        ))}
+                        {storReqs.length === 0 && (
+                            <TableRow>
+                                <TableCell colSpan={7} align="center" sx={{ py: 3, color: 'text.disabled' }}>
+                                    Chưa có yêu cầu nào
+                                </TableCell>
+                            </TableRow>
+                        )}
+                    </TableBody>
+                </Table>
+                <TablePagination
+                    component="div"
+                    count={storReqs.length}
+                    page={storPage}
+                    onPageChange={(_, p) => setStorPage(p)}
+                    rowsPerPage={STOR_PER_PAGE}
+                    onRowsPerPageChange={() => {}}
+                    rowsPerPageOptions={[STOR_PER_PAGE]}
+                    labelRowsPerPage=""
+                    labelDisplayedRows={({ from, to, count }) => `${from}–${to} / ${count}`}
+                />
+                </>
+            )}
+
+            {/* ── Dialog: tạo yêu cầu license ── */}
+            <Dialog open={licOpen} onClose={() => setLicOpen(false)} maxWidth="xs" fullWidth>
+                <DialogTitle>Tạo yêu cầu mua gói License</DialogTitle>
                 <DialogContent dividers>
                     <Stack gap={2} pt={0.5}>
-                        <TextField select fullWidth label="Loại gói" value={selPkg} onChange={e => setSelPkg(e.target.value as PackageType)} size="small">
+                        <TextField select fullWidth label="Loại gói" value={selPkg}
+                            onChange={e => setSelPkg(e.target.value as PackageType)} size="small">
                             {PKG_TYPES.map(t => <MenuItem key={t} value={t}>{PKG_LABELS[t]}</MenuItem>)}
                         </TextField>
-                        <TextField fullWidth label="Số lượng" type="number" size="small" value={qty} onChange={e => setQty(e.target.value)} inputProps={{ min: 1, max: 100 }} />
-                        <TextField fullWidth label="Ghi chú / Lý do" size="small" multiline rows={2} value={note} onChange={e => setNote(e.target.value)} />
+                        <TextField fullWidth label="Số lượng" type="number" size="small"
+                            value={licQty} onChange={e => setLicQty(e.target.value)}
+                            inputProps={{ min: 1, max: 100 }} />
+                        <TextField fullWidth label="Ghi chú / Lý do" size="small" multiline rows={2}
+                            value={licNote} onChange={e => setLicNote(e.target.value)} />
                     </Stack>
                 </DialogContent>
                 <DialogActions>
-                    <Button size="small" onClick={() => setNewOpen(false)}>Hủy</Button>
-                    <Button size="small" disabled={!qty || createMut.isPending} onClick={() => createMut.mutate()}>Gửi yêu cầu</Button>
+                    <Button size="small" onClick={() => setLicOpen(false)}>Hủy</Button>
+                    <Button size="small" disabled={!licQty || licCreateMut.isPending}
+                        onClick={() => licCreateMut.mutate()}>Gửi yêu cầu</Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* ── Dialog: tạo yêu cầu storage ── */}
+            <Dialog open={storOpen} onClose={() => setStorOpen(false)} maxWidth="xs" fullWidth>
+                <DialogTitle>
+                    <Stack direction="row" alignItems="center" gap={1}>
+                        <Storage fontSize="small" />
+                        Tạo yêu cầu mua Dung lượng
+                    </Stack>
+                </DialogTitle>
+                <DialogContent dividers>
+                    <Stack gap={2} pt={0.5}>
+                        <TextField select fullWidth label="Gói dung lượng" value={storPkg}
+                            onChange={e => setStorPkg(Number(e.target.value) as StoragePackageMb)} size="small">
+                            {STORAGE_PACKAGES.map(mb => (
+                                <MenuItem key={mb} value={mb}>+{mb} MB</MenuItem>
+                            ))}
+                        </TextField>
+                        <TextField fullWidth label="Số lượng" type="number" size="small"
+                            value={storQty} onChange={e => setStorQty(e.target.value)}
+                            inputProps={{ min: 1, max: 100 }}
+                            helperText={`Tổng: +${fmtMb(storPreviewMb)}`} />
+                        <TextField fullWidth label="Ghi chú / Lý do" size="small" multiline rows={2}
+                            value={storNote} onChange={e => setStorNote(e.target.value)} />
+                        {storUsage && (
+                            <Box sx={{ p: 1.5, borderRadius: 1.5, bgcolor: 'action.hover', border: '1px solid', borderColor: 'divider' }}>
+                                <Typography variant="caption" color="text.secondary" display="block" mb={0.5}>
+                                    Sau khi duyệt
+                                </Typography>
+                                <Typography variant="body2" fontWeight={600}>
+                                    {fmtMb(currentUsedMb)} / <span style={{ color: '#16A34A' }}>{fmtMb(afterMb)}</span>
+                                    {' '}({Math.round((currentUsedMb / afterMb) * 100)}% đã dùng)
+                                </Typography>
+                            </Box>
+                        )}
+                    </Stack>
+                </DialogContent>
+                <DialogActions>
+                    <Button size="small" onClick={() => setStorOpen(false)}>Hủy</Button>
+                    <Button size="small" disabled={!storQty || storCreateMut.isPending}
+                        onClick={() => storCreateMut.mutate()}>Gửi yêu cầu</Button>
                 </DialogActions>
             </Dialog>
         </Box>
@@ -556,27 +761,25 @@ function RequestsTab() {
 // ─── History Tab ──────────────────────────────────────────────────────────────
 
 function HistoryTab() {
-    const [limit, setLimit] = useState(100);
+    const [page, setPage]               = useState(0);
+    const [rowsPerPage, setRowsPerPage] = useState(25);
     const { data = [], isLoading, refetch } = useQuery({
-        queryKey: ['license-history', limit],
-        queryFn: () => licenseApi.getHistory(limit),
+        queryKey: ['license-history'],
+        queryFn: () => licenseApi.getHistory(500),
     });
+
+    const paged = data.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
 
     return (
         <Box>
             <Stack direction="row" alignItems="center" justifyContent="flex-end" gap={1} mb={2}>
-                <TextField select size="small" value={limit} onChange={e => setLimit(Number(e.target.value))}
-                    sx={{ width: 120 }}>
-                    {[50, 100, 200, 500].map(v => (
-                        <MenuItem key={v} value={v}>{v} dòng</MenuItem>
-                    ))}
-                </TextField>
                 <IconButton size="small" onClick={() => refetch()} disabled={isLoading}>
                     <Refresh fontSize="small" />
                 </IconButton>
             </Stack>
 
             {isLoading ? <CircularProgress sx={{ m: 3 }} /> : (
+                <>
                 <Table size="small">
                     <TableHead>
                         <TableRow>
@@ -588,7 +791,7 @@ function HistoryTab() {
                         </TableRow>
                     </TableHead>
                     <TableBody>
-                        {data.map((row: LicenseHistoryRow) => (
+                        {paged.map((row: LicenseHistoryRow) => (
                             <TableRow key={row.id} hover>
                                 <TableCell><Typography variant="caption">{fmtDateTime(row.createdAt)}</Typography></TableCell>
                                 <TableCell><ActionChip action={row.action} /></TableCell>
@@ -612,6 +815,18 @@ function HistoryTab() {
                         )}
                     </TableBody>
                 </Table>
+                <TablePagination
+                    component="div"
+                    count={data.length}
+                    page={page}
+                    onPageChange={(_, p) => setPage(p)}
+                    rowsPerPage={rowsPerPage}
+                    onRowsPerPageChange={e => { setRowsPerPage(parseInt(e.target.value)); setPage(0); }}
+                    rowsPerPageOptions={[10, 25, 50, 100]}
+                    labelRowsPerPage="Mỗi trang:"
+                    labelDisplayedRows={({ from, to, count }) => `${from}–${to} / ${count}`}
+                />
+                </>
             )}
         </Box>
     );

@@ -335,6 +335,14 @@ export async function assignLicense(
     });
     await redis.del(RedisKeys.deviceLicenseCache(deviceId));
     logger.info('License assigned', { organizationId, deviceId, packageType });
+    import('../../modules/notifications/notifications.service')
+        .then(async ({ createNotification, NOTIF_TYPES }) => {
+            const dev = await queryOne<{ name: string }>(`SELECT name FROM devices WHERE id = $1`, [deviceId]);
+            await createNotification(organizationId, NOTIF_TYPES.LICENSE_ASSIGNED,
+                `License đã cấp: ${dev?.name ?? deviceId}`,
+                `Gói ${PKG_LABELS[packageType]} · cấp bởi ${performedByName}`,
+                deviceId, 'device');
+        }).catch(() => {});
 }
 
 // ─── Transfer ─────────────────────────────────────────────────────────────────
@@ -649,6 +657,23 @@ export async function createPurchaseRequest(
                    status, note, "adminNote", "resolvedAt", "createdAt"`,
         [organizationId, requestedById, requestedByName, packageType, quantity, note ?? null],
     );
+
+    // Notify all super admin orgs
+    import('../../modules/notifications/notifications.service')
+        .then(async ({ createNotification, getSuperAdminOrgIds, NOTIF_TYPES }) => {
+            const orgRow = await queryOne<{ name: string }>(`SELECT name FROM organizations WHERE id = $1`, [organizationId]);
+            const orgIds = await getSuperAdminOrgIds();
+            await Promise.all(orgIds.map(adminOrgId =>
+                createNotification(
+                    adminOrgId,
+                    NOTIF_TYPES.LICENSE_REQUEST_NEW,
+                    `Yêu cầu mua license mới`,
+                    `${orgRow?.name ?? organizationId}: ${quantity}× ${PKG_LABELS[packageType]}`,
+                    row!.id, 'license_request',
+                )
+            ));
+        }).catch(() => {});
+
     return row!;
 }
 
@@ -699,6 +724,16 @@ export async function approvePurchaseRequest(
         });
     });
     logger.info('Purchase request approved', { requestId, adminId });
+    // Notify the org that their request was approved
+    import('../../modules/notifications/notifications.service')
+        .then(async ({ createNotification, NOTIF_TYPES }) => {
+            const req2 = await queryOne<{ organizationId: string; packageType: string; quantity: number }>(
+                `SELECT "organizationId", "packageType", quantity FROM purchase_requests WHERE id = $1`, [requestId]);
+            if (req2) await createNotification(req2.organizationId, NOTIF_TYPES.LICENSE_REQUEST_APPROVED,
+                `Yêu cầu mua license đã được duyệt`,
+                `${req2.quantity}× gói ${PKG_LABELS[req2.packageType as PackageType] ?? req2.packageType}${adminNote ? ` — ${adminNote}` : ''}`,
+                requestId, 'license_request');
+        }).catch(() => {});
 }
 
 export async function rejectPurchaseRequest(
@@ -712,12 +747,23 @@ export async function rejectPurchaseRequest(
     if (!req) throw new AppError(404, 'Yêu cầu không tồn tại');
     if (req.status !== 'PENDING') throw new AppError(409, 'Yêu cầu đã được xử lý');
 
+    const full = await queryOne<{ organizationId: string; packageType: string; quantity: number }>(
+        `SELECT "organizationId", "packageType", quantity FROM purchase_requests WHERE id = $1`, [requestId]);
     await query(
         `UPDATE purchase_requests
          SET status = 'REJECTED', "adminNote" = $1, "resolvedById" = $2, "resolvedAt" = NOW()
          WHERE id = $3`,
         [adminNote ?? null, adminId, requestId],
     );
+    if (full) {
+        import('../../modules/notifications/notifications.service')
+            .then(({ createNotification, NOTIF_TYPES }) =>
+                createNotification(full.organizationId, NOTIF_TYPES.LICENSE_REQUEST_REJECTED,
+                    `Yêu cầu mua license bị từ chối`,
+                    `${full.quantity}× gói ${PKG_LABELS[full.packageType as PackageType] ?? full.packageType}${adminNote ? ` — ${adminNote}` : ''}`,
+                    requestId, 'license_request')
+            ).catch(() => {});
+    }
 }
 
 // ─── Daily expiry check (BullMQ worker) ──────────────────────────────────────

@@ -61,7 +61,6 @@ const PlayerPage = lazy(() => import('@pages/player/PlayerPage'));
 const SitePage = lazy(() => import('@pages/sites/SitePage'));
 const TemplatePage         = lazy(() => import('@pages/content/TemplatePage'));
 const SlidePage            = lazy(() => import('@pages/content/SlidePage'));
-const DailySchedulePage    = lazy(() => import('@pages/schedules/DailySchedulePage'));
 const StatusAlarmPage      = lazy(() => import('@pages/history/StatusAlarmPage'));
 const ContentHistoryPage   = lazy(() => import('@pages/history/ContentHistoryPage'));
 const SoftwareHistoryPage  = lazy(() => import('@pages/history/SoftwareHistoryPage'));
@@ -122,7 +121,6 @@ function AppRoutes() {
                 <Route path="/sites"            element={<SitePage />} />
                 <Route path="/template"         element={<TemplatePage />} />
                 <Route path="/slide"            element={<SlidePage />} />
-                <Route path="/daily-schedule"   element={<DailySchedulePage />} />
                 <Route path="/history/alarm"    element={<StatusAlarmPage />} />
                 <Route path="/history/content"  element={<ContentHistoryPage />} />
                 <Route path="/history/software" element={<SoftwareHistoryPage />} />

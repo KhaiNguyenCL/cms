@@ -5,8 +5,8 @@ import {
     Chip, IconButton, Dialog, DialogTitle, DialogContent, DialogActions,
     Skeleton, Divider, Tooltip, InputAdornment,
     CircularProgress, Table, TableBody, TableCell, TableContainer,
-    TableHead, TableRow, Paper, Grid, Card, CardContent, Pagination, Alert,
-    Select, MenuItem, Menu,
+    TableHead, TableRow, Paper, Grid, Card, CardContent, TablePagination, Alert,
+    Select, MenuItem, Menu, Slider,
 } from '@mui/material';
 import {
     Add, QueueMusic, Delete, VideoFile, Image, Edit,
@@ -264,10 +264,18 @@ function AddMediaDialog({
                         </Grid>
                     )}
                 </Box>
-                {videoData && videoData.totalPages > 1 && (
-                    <Box sx={{ display: 'flex', justifyContent: 'center', pb: 2 }}>
-                        <Pagination count={videoData.totalPages} page={page} onChange={(_, p) => setPage(p)} size="small" color="primary" />
-                    </Box>
+                {videoData && (
+                    <TablePagination
+                        component="div"
+                        count={videoData.total ?? 0}
+                        page={page - 1}
+                        onPageChange={(_, p) => setPage(p + 1)}
+                        rowsPerPage={24}
+                        onRowsPerPageChange={() => {}}
+                        rowsPerPageOptions={[24]}
+                        labelRowsPerPage=""
+                        labelDisplayedRows={({ from, to, count }) => `${from}–${to} / ${count}`}
+                    />
                 )}
             </DialogContent>
 
@@ -418,20 +426,37 @@ function getTransition(val?: string | null) {
     return TRANSITIONS.find(t => t.value === (val ?? 'FADE')) ?? TRANSITIONS[0];
 }
 
+const DEFAULT_TRANS_MS = 800;
+const TRANS_DURATION_MARKS = [
+    { value: 200, label: '0.2s' },
+    { value: 1000, label: '1s' },
+    { value: 2000, label: '2s' },
+    { value: 3000, label: '3s' },
+];
+
 function TransitionPicker({
-    value, onChange,
+    value, onChange, durationMs, onDurationChange,
 }: {
     value?: string | null;
     onChange: (v: string) => void;
+    durationMs?: number | null;
+    onDurationChange: (ms: number) => void;
 }) {
     const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+    const committedMs = durationMs ?? DEFAULT_TRANS_MS;
+    const [displayMs, setDisplayMs] = useState<number>(committedMs);
     const current = getTransition(value);
+    const showDuration = (value ?? 'FADE') !== 'NONE';
+
+    // Sync display value when committed value changes from outside (e.g. load from server)
+    useEffect(() => { setDisplayMs(committedMs); }, [committedMs]);
+
     return (
         <>
             <Box
                 sx={{
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    py: 0.25, gap: 0.5, bgcolor: 'action.hover',
+                    py: 0.25, px: 2, gap: 1.5, bgcolor: 'action.hover',
                     borderTop: '1px dashed', borderBottom: '1px dashed', borderColor: 'divider',
                 }}
             >
@@ -442,9 +467,27 @@ function TransitionPicker({
                         label={current.label}
                         onClick={e => setAnchor(e.currentTarget)}
                         variant="outlined"
-                        sx={{ fontSize: '0.65rem', height: 20, cursor: 'pointer', borderStyle: 'dashed' }}
+                        sx={{ fontSize: '0.65rem', height: 20, cursor: 'pointer', borderStyle: 'dashed', flexShrink: 0 }}
                     />
                 </Tooltip>
+                {showDuration && (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1, maxWidth: 200}}>
+                        <Slider
+                            size="small"
+                            value={displayMs}
+                            min={100}
+                            max={3000}
+                            step={100}
+                            marks={TRANS_DURATION_MARKS}
+                            onChange={(_e, v) => setDisplayMs(v as number)}
+                            onChangeCommitted={(_e, v) => onDurationChange(v as number)}
+                            sx={{ py: 0.5 }}
+                        />
+                        <Typography variant="caption" sx={{ fontFamily: 'monospace', whiteSpace: 'nowrap', minWidth: 38, textAlign: 'right', color: 'text.secondary' }}>
+                            {displayMs}ms
+                        </Typography>
+                    </Box>
+                )}
             </Box>
             <Menu anchorEl={anchor} open={Boolean(anchor)} onClose={() => setAnchor(null)}
                 anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
@@ -923,6 +966,7 @@ function PlaylistPanelInner({ playlistId, onClose }: { playlistId: string; onClo
             if (localItems[i].id !== serverItems[i]?.id) return true;
             if (localItems[i].duration !== serverItems[i]?.duration) return true;
             if ((localItems[i].transition ?? 'FADE') !== (serverItems[i]?.transition ?? 'FADE')) return true;
+            if ((localItems[i].transitionDuration ?? DEFAULT_TRANS_MS) !== (serverItems[i]?.transitionDuration ?? DEFAULT_TRANS_MS)) return true;
         }
         return false;
     }, [localItems, serverItems]);
@@ -944,6 +988,10 @@ function PlaylistPanelInner({ playlistId, onClose }: { playlistId: string; onClo
 
     const handleTransitionChange = useCallback((itemId: string, transition: string) => {
         setLocalItems(prev => prev.map(i => i.id === itemId ? { ...i, transition } : i));
+    }, []);
+
+    const handleTransitionDurationChange = useCallback((itemId: string, ms: number) => {
+        setLocalItems(prev => prev.map(i => i.id === itemId ? { ...i, transitionDuration: ms } : i));
     }, []);
 
     const handleStagedAdd = useCallback((items: { media: Media; duration: number }[]) => {
@@ -998,13 +1046,14 @@ function PlaylistPanelInner({ playlistId, onClose }: { playlistId: string; onClo
                 const server = serverItems.find(si => si.id === i.id);
                 if (!server) return false;
                 return server.duration !== i.duration ||
-                    (server.transition ?? 'FADE') !== (i.transition ?? 'FADE');
+                    (server.transition ?? 'FADE') !== (i.transition ?? 'FADE') ||
+                    (server.transitionDuration ?? DEFAULT_TRANS_MS) !== (i.transitionDuration ?? DEFAULT_TRANS_MS);
             });
             await Promise.all(existingChanges.map(i =>
                 playlistsApi.updateItem(playlistId, i.id, {
                     durationOverride: i.duration ?? 10,
                     transition: i.transition ?? 'FADE',
-                    transitionDuration: 200,
+                    transitionDuration: i.transitionDuration ?? DEFAULT_TRANS_MS,
                 })
             ));
 
@@ -1088,13 +1137,11 @@ function PlaylistPanelInner({ playlistId, onClose }: { playlistId: string; onClo
                         </Typography>
                     </Box>
                     <Stack direction="row" alignItems="center" gap={0.5}>
-                        {isDirty && (
-                            <Button size="small" color="inherit" onClick={handleDiscard}
-                                disabled={saveMutation.isPending}
-                                sx={{ fontSize: '0.72rem', color: 'text.secondary' }}>
-                                Huỷ
-                            </Button>
-                        )}
+                        <Button size="small" color="inherit" onClick={handleDiscard}
+                            disabled={!isDirty || saveMutation.isPending}
+                            sx={{ fontSize: '0.72rem', color: isDirty ? 'text.secondary' : 'text.disabled' }}>
+                            Huỷ
+                        </Button>
                         <Button
                             size="small"
                             variant={isDirty ? 'contained' : 'outlined'}
@@ -1122,13 +1169,6 @@ function PlaylistPanelInner({ playlistId, onClose }: { playlistId: string; onClo
                     </Stack>
                 </Stack>
             </Box>
-
-            {/* Unsaved warning */}
-            {isDirty && (
-                <Alert severity="warning" icon={false} sx={{ py: 0.5, px: 2, borderRadius: 0, fontSize: '0.75rem' }}>
-                    Có thay đổi chưa được lưu — nhấn <strong>Save</strong> để áp dụng cho thiết bị
-                </Alert>
-            )}
 
             {/* Item list */}
             <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
@@ -1160,6 +1200,8 @@ function PlaylistPanelInner({ playlistId, onClose }: { playlistId: string; onClo
                                         <TransitionPicker
                                             value={item.transition}
                                             onChange={v => handleTransitionChange(item.id, v)}
+                                            durationMs={item.transitionDuration}
+                                            onDurationChange={ms => handleTransitionDurationChange(item.id, ms)}
                                         />
                                     )}
                                     <SortableItem
@@ -1520,16 +1562,17 @@ export default function PlaylistsPage() {
                     </TableContainer>
 
                     {data && (
-                        <Box sx={{ mt: 1, px: 2, py: 1.5, display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid', borderColor: 'divider' }}>
-                            <Stack direction="row" alignItems="center" spacing={1}>
-                                <Typography variant="caption" color="text.secondary">{data.total ?? 0} playlist</Typography>
-                                <Select size="small" value={limit} onChange={e => { setLimit(Number(e.target.value)); setPage(1); }} sx={{ fontSize: '0.75rem', height: 28 }}>
-                                    {[10, 20, 50, 100].map(n => <MenuItem key={n} value={n} sx={{ fontSize: '0.75rem' }}>{n} / trang</MenuItem>)}
-                                    <MenuItem value={0} sx={{ fontSize: '0.75rem' }}>Tất cả</MenuItem>
-                                </Select>
-                            </Stack>
-                            <Pagination count={limit === 0 ? 1 : (data.totalPages || 1)} page={page} onChange={(_, p) => setPage(p)} variant="outlined" shape="rounded" size="small" />
-                        </Box>
+                        <TablePagination
+                            component="div"
+                            count={data.total ?? 0}
+                            page={page - 1}
+                            onPageChange={(_, p) => setPage(p + 1)}
+                            rowsPerPage={limit}
+                            onRowsPerPageChange={e => { setLimit(Number(e.target.value)); setPage(1); }}
+                            rowsPerPageOptions={[10, 25, 50, 100]}
+                            labelRowsPerPage="Mỗi trang:"
+                            labelDisplayedRows={({ from, to, count }) => `${from}–${to} / ${count}`}
+                        />
                     )}
                 </Box>
 

@@ -519,8 +519,8 @@ export async function heartbeat(deviceId: string, organizationId: string, data: 
         await query(
             `INSERT INTO device_health (id, "deviceId", "cpuUsage", "memoryUsage", "storageTotal", "storageUsed",
                                         "networkType", "isOnline", "ipAddress", "macAddress", "heapMemory", "networkConnected",
-                                        "processCpuPercent", "wanIp", "reportedAt")
-             VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, $6, true, $7, $8, $9, $10, $11, $12, NOW())`,
+                                        "processCpuPercent", "wanIp", "subnet", "ipProtocol", "reportedAt")
+             VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, $6, true, $7, $8, $9, $10, $11, $12, $13, $14, NOW())`,
             [
                 deviceId,
                 data.cpuUsage ?? null,
@@ -534,6 +534,8 @@ export async function heartbeat(deviceId: string, organizationId: string, data: 
                 data.networkConnected ?? null,
                 data.processCpuPercent ?? null,
                 wanIp ?? null,
+                data.subnet ?? null,
+                data.ipProtocol ?? null,
             ]
         );
         await redis.setex(healthThrottleKey, HEALTH_WRITE_INTERVAL_S, '1');
@@ -869,14 +871,79 @@ export async function markDeviceOffline(
     import('../alarm/alarm.service')
         .then(async ({ logStatusEvent, sendOfflineAlert }) => {
             await logStatusEvent(deviceId, organizationId, status, reason);
-            const dev = await queryOne<{ name: string }>(
-                `SELECT name FROM devices WHERE id = $1`, [deviceId]
+            const dev = await queryOne<{
+                name: string;
+                siteName: string | null;
+                timeOn: string | null;
+                timeOff: string | null;
+                alarmToleranceMin: number | null;
+                timezone: string | null;
+            }>(
+                `SELECT d.name,
+                        s.name            AS "siteName",
+                        s."timeOn",
+                        s."timeOff",
+                        s."alarmToleranceMin",
+                        COALESCE(s.timezone, d.timezone) AS timezone
+                 FROM devices d
+                 LEFT JOIN stores s ON s.id = d."storeId"
+                 WHERE d.id = $1`, [deviceId]
             );
             if (dev) {
+                // Legacy alarm emails (alarm_emails table)
                 sendOfflineAlert(organizationId, dev.name, reason, new Date().toISOString())
                     .catch(() => {});
+
+                // New template-based mail — only during operating window
+                const { isWithinOperatingWindow } = await import('../../shared/mail/mail.sender');
+                const toleranceMin = dev.alarmToleranceMin ?? 60;
+                const shouldNotify = isWithinOperatingWindow(
+                    dev.timeOn, dev.timeOff, toleranceMin, dev.timezone
+                );
+
+                if (shouldNotify) {
+                    const offlineAt = new Date().toLocaleString('vi-VN');
+                    // Read triggerDelayMin from mail_settings
+                    const { queryOne: qo } = await import('../../shared/database/db');
+                    const ms = await qo<{ triggerDelayMin: number }>(
+                        `SELECT "triggerDelayMin" FROM mail_settings WHERE "eventType" = 'DEVICE_OFFLINE'`
+                    );
+                    const delayMs = (ms?.triggerDelayMin ?? 5) * 60_000;
+                    import('../../shared/jobs/queues')
+                        .then(({ enqueueMailNotification }) => {
+                            enqueueMailNotification({
+                                eventType: 'DEVICE_OFFLINE',
+                                orgId: organizationId,
+                                deviceId,
+                                vars: {
+                                    deviceName: dev.name,
+                                    siteName: dev.siteName ?? '',
+                                    orgName: '',
+                                    offlineAt,
+                                    recipientName: '',
+                                },
+                            }, delayMs).catch(() => {});
+                        })
+                        .catch(() => {});
+                } else {
+                    logger.info('DEVICE_OFFLINE mail suppressed — outside operating window', {
+                        deviceId, timeOn: dev.timeOn, timeOff: dev.timeOff, toleranceMin,
+                    });
+                }
             }
         })
         .catch(() => {});
+    // In-app notification
+    import('../../modules/notifications/notifications.service')
+        .then(async ({ createNotification, NOTIF_TYPES }) => {
+            const dev = await queryOne<{ name: string }>(`SELECT name FROM devices WHERE id = $1`, [deviceId]);
+            await createNotification(
+                organizationId,
+                NOTIF_TYPES.DEVICE_OFFLINE,
+                `Thiết bị offline: ${dev?.name ?? deviceId}`,
+                status === 'APP_EXIT' ? 'Ứng dụng đã thoát' : 'Mất kết nối mạng',
+                deviceId, 'device',
+            );
+        }).catch(() => {});
     logger.info('Device marked offline', { deviceId });
 }

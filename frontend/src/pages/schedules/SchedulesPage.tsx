@@ -7,7 +7,7 @@ import {
     Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
     Paper, Tooltip, Switch, FormControlLabel, Select, MenuItem as MuiMenuItem,
     FormControl, InputLabel, InputAdornment, Skeleton, ToggleButton, ToggleButtonGroup,
-    Pagination, FormHelperText, CircularProgress,
+    TablePagination, FormHelperText, CircularProgress,
 } from '@mui/material';
 import {
     Add, Delete, EventNote, Search, CalendarMonth, AccessTime,
@@ -120,7 +120,7 @@ function TimeRangeField({ startTime, endTime, onChange, error }: {
                 />
                 <Tooltip title={isAllDay ? 'Đang phát cả ngày' : 'Xoá giờ → phát cả ngày'}>
                     <Button
-                        size="small"
+                        size="medium"
                         variant={isAllDay ? 'contained' : 'outlined'}
                         color={isAllDay ? 'success' : 'inherit'}
                         onClick={() => onChange(null, null)}
@@ -439,16 +439,17 @@ export default function SchedulesPage() {
     const dispatch = useAppDispatch();
     const qc = useQueryClient();
     const [page, setPage] = useState(1);
+    const [limit, setLimit] = useState(15);
     const [search, setSearch] = useState('');
     const [filterActive, setFilterActive] = useState<'all' | 'active' | 'inactive'>('all');
     const [createOpen, setCreateOpen] = useState(false);
     const [editingSchedule, setEditingSchedule] = useState<Schedule | null>(null);
 
     const { data, isLoading } = useQuery({
-        queryKey: ['schedules', page, search, filterActive],
+        queryKey: ['schedules', page, limit, search, filterActive],
         queryFn: () => schedulesApi.list({
             page,
-            limit: 15,
+            limit,
             search: search || undefined,
             isActive: filterActive === 'all' ? undefined : filterActive === 'active',
         }),
@@ -668,11 +669,18 @@ export default function SchedulesPage() {
                 </Box>
             )}
 
-            {/* Pagination */}
-            {data && data.totalPages > 1 && (
-                <Box mt={3} display="flex" justifyContent="center">
-                    <Pagination count={data.totalPages} page={page} onChange={(_, p) => setPage(p)} color="primary" />
-                </Box>
+            {data && (
+                <TablePagination
+                    component="div"
+                    count={data.total ?? 0}
+                    page={page - 1}
+                    onPageChange={(_, p) => setPage(p + 1)}
+                    rowsPerPage={limit}
+                    onRowsPerPageChange={e => { setLimit(Number(e.target.value)); setPage(1); }}
+                    rowsPerPageOptions={[10, 15, 25, 50]}
+                    labelRowsPerPage="Mỗi trang:"
+                    labelDisplayedRows={({ from, to, count }) => `${from}–${to} / ${count}`}
+                />
             )}
 
             {/* Create dialog */}

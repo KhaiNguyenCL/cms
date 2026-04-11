@@ -6,7 +6,7 @@ import {
     InputAdornment, LinearProgress, Tooltip, Skeleton, CircularProgress,
     Select, MenuItem as MuiMenuItem, FormControl, InputLabel,
     Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
-    Paper, List, ListItem, Pagination,
+    Paper, List, ListItem, TablePagination, alpha,
 } from '@mui/material';
 import {
     Search, VideoFile, Image,
@@ -14,6 +14,7 @@ import {
     Close, ArrowUpward, ArrowDownward, ZoomIn, Add, WarningAmber,
 } from '@mui/icons-material';
 import { mediaApi } from '@api/media.api';
+import { storageQuotaApi } from '@api/storage-quota.api';
 import { getApiError } from '@api/client';
 import { useAppDispatch } from '@store/hooks';
 import { pushToast } from '@store/slices/uiSlice';
@@ -262,7 +263,7 @@ function MediaPreviewDialog({ media, open, onClose, onDelete }: {
                 )}
             </Box>
 
-            <DialogActions sx={{ px: 3, pb: 2, justifyContent: 'space-between' }}>
+            <DialogActions sx={{ px: 3, pt: 2, pb: 2, justifyContent: 'space-between' }}>
                 <Button size="small" variant="outlined" color="error" startIcon={<Delete />}
                     onClick={() => { onDelete(media.id, media.title); onClose(); }}>
                     Delete
@@ -309,12 +310,37 @@ function makeFileItem(file: File): FileItem {
     };
 }
 
-function UploadDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+function UploadDialog({ open, onClose, storageUsage }: {
+    open: boolean;
+    onClose: () => void;
+    storageUsage?: { usedBytes: number; totalQuotaBytes: number; totalQuotaMb: number; usedMb: number } | null;
+}) {
     const dispatch = useAppDispatch();
     const qc = useQueryClient();
     const [items, setItems] = useState<FileItem[]>([]);
     const [uploading, setUploading] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
+
+    // ── Quota check ───────────────────────────────────────────────────────────
+    const pendingBytes = items.filter(i => i.status === 'pending').reduce((s, i) => s + i.file.size, 0);
+    const usedBytes    = storageUsage?.usedBytes ?? 0;
+    const quotaBytes   = storageUsage?.totalQuotaBytes ?? Infinity;
+    const freeBytes    = quotaBytes - usedBytes;
+    const alreadyFull  = storageUsage != null && usedBytes >= quotaBytes;
+    const wouldExceed  = storageUsage != null && pendingBytes > 0 && (usedBytes + pendingBytes) > quotaBytes;
+
+    // Per-file: cumulative check — mark files that push the total over quota
+    const overLimitIds = useMemo(() => {
+        if (!storageUsage) return new Set<string>();
+        const pending = items.filter(i => i.status === 'pending');
+        const ids = new Set<string>();
+        let running = usedBytes;
+        for (const item of pending) {
+            running += item.file.size;
+            if (running > quotaBytes) ids.add(item.id);
+        }
+        return ids;
+    }, [items, usedBytes, quotaBytes, storageUsage]);
 
     const addFiles = async (files: FileList | null) => {
         if (!files) return;
@@ -358,6 +384,7 @@ function UploadDialog({ open, onClose }: { open: boolean; onClose: () => void })
         }
 
         qc.invalidateQueries({ queryKey: ['media'] });
+        qc.invalidateQueries({ queryKey: ['storage-usage'] });
         setUploading(false);
 
         // If all done/error, show toast and auto-close if all succeeded
@@ -437,6 +464,38 @@ function UploadDialog({ open, onClose }: { open: boolean; onClose: () => void })
                         onClick={(e) => { (e.target as HTMLInputElement).value = ''; }}
                     />
 
+                    {/* Quota warning */}
+                    {alreadyFull && (
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 1.5, borderRadius: 1.5,
+                            bgcolor: theme => alpha(theme.palette.error.main, 0.08), border: '1px solid',
+                            borderColor: 'error.light' }}>
+                            <WarningAmber color="error" sx={{ fontSize: 18, flexShrink: 0 }} />
+                            <Box>
+                                <Typography variant="body2" fontWeight={600} color="error.main">
+                                    Đã hết dung lượng
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                    Đã dùng {formatSize(usedBytes)} / {storageUsage!.totalQuotaMb} MB. Liên hệ admin để nâng cấp.
+                                </Typography>
+                            </Box>
+                        </Box>
+                    )}
+                    {!alreadyFull && wouldExceed && (
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 1.5, borderRadius: 1.5,
+                            bgcolor: theme => alpha(theme.palette.warning.main, 0.08), border: '1px solid',
+                            borderColor: 'warning.light' }}>
+                            <WarningAmber color="warning" sx={{ fontSize: 18, flexShrink: 0 }} />
+                            <Box>
+                                <Typography variant="body2" fontWeight={600} color="warning.main">
+                                    Vượt quá dung lượng
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                    Còn {formatSize(freeBytes)} trống · {overLimitIds.size} file bị đánh dấu đỏ sẽ vượt quá giới hạn.
+                                </Typography>
+                            </Box>
+                        </Box>
+                    )}
+
                     {/* File list */}
                     {items.length > 0 && (
                         <List disablePadding sx={{ maxHeight: 320, overflowY: 'auto' }}>
@@ -448,6 +507,7 @@ function UploadDialog({ open, onClose }: { open: boolean; onClose: () => void })
                                         display: 'flex', flexDirection: 'column', alignItems: 'stretch',
                                         borderBottom: '1px solid', borderColor: 'divider',
                                         py: 1, px: 0,
+                                        bgcolor: overLimitIds.has(item.id) ? theme => alpha(theme.palette.error.main, 0.06) : undefined,
                                     }}
                                 >
                                     <Box sx={{ display: 'flex', alignItems: 'center', mb: item.status === 'uploading' ? 0.5 : 0 }}>
@@ -467,9 +527,12 @@ function UploadDialog({ open, onClose }: { open: boolean; onClose: () => void })
                                             InputProps={{ disableUnderline: item.status !== 'pending' }}
                                         />
 
-                                        {/* File size */}
-                                        <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0, mr: 1 }}>
-                                            {formatSize(item.file.size)}
+                                                        {/* File size */}
+                                        <Typography variant="caption"
+                                            color={overLimitIds.has(item.id) ? 'error.main' : 'text.secondary'}
+                                            fontWeight={overLimitIds.has(item.id) ? 700 : 400}
+                                            sx={{ flexShrink: 0, mr: 1 }}>
+                                            {overLimitIds.has(item.id) && '⚠ '}{formatSize(item.file.size)}
                                         </Typography>
 
                                         {/* Remove button (only pending) */}
@@ -520,9 +583,16 @@ function UploadDialog({ open, onClose }: { open: boolean; onClose: () => void })
                     {allFinished ? 'Close' : 'Cancel'}
                 </Button>
                 {!allFinished && (
-                    <Button size="small" disabled={pendingCount === 0 || uploading} onClick={handleUpload} startIcon={<CloudUpload />}>
-                        {uploading ? 'Uploading...' : `Upload ${pendingCount} file${pendingCount !== 1 ? 's' : ''}`}
-                    </Button>
+                    <Tooltip title={alreadyFull ? 'Đã hết dung lượng, không thể upload' : wouldExceed ? 'Xoá các file bị đánh dấu đỏ để tiếp tục' : ''}>
+                        <span>
+                            <Button size="small"
+                                disabled={pendingCount === 0 || uploading || alreadyFull || wouldExceed}
+                                onClick={handleUpload}
+                                startIcon={<CloudUpload />}>
+                                {uploading ? 'Uploading...' : `Upload ${pendingCount} file${pendingCount !== 1 ? 's' : ''}`}
+                            </Button>
+                        </span>
+                    </Tooltip>
                 )}
             </DialogActions>
         </Dialog>
@@ -560,6 +630,12 @@ export default function MediaPage() {
     const [sortDir, setSortDir]       = useState<SortDir>('desc');
     const [limit, setLimit]           = useState(10);
 
+    const { data: storageUsage } = useQuery({
+        queryKey: ['storage-usage'],
+        queryFn: storageQuotaApi.getUsage,
+        staleTime: 30_000,
+    });
+
     const { data, isLoading } = useQuery({
         queryKey: ['media', page, limit, search, typeFilter],
         queryFn: () => mediaApi.list({ page, limit: limit === 0 ? 9999 : limit, search: search || undefined, type: typeFilter || undefined }),
@@ -581,6 +657,7 @@ export default function MediaPage() {
         mutationFn: (id: string) => mediaApi.delete(id),
         onSuccess: (_, id) => {
             qc.invalidateQueries({ queryKey: ['media'] });
+            qc.invalidateQueries({ queryKey: ['storage-usage'] });
             if (hoveredMedia?.id === id) setHoveredMedia(null);
             setDeleteTarget(null);
             setDeleteError(null);
@@ -628,14 +705,59 @@ export default function MediaPage() {
     return (
         <Box>
             {/* Header */}
-            <Stack direction="row" justifyContent="space-between" alignItems="center" mb={3}>
+            <Stack direction="row" justifyContent="space-between" alignItems="flex-start" mb={3}>
                 <Box>
                     <Typography variant="h4" fontWeight={700}>Media Library</Typography>
                     <Typography variant="body2" color="text.secondary">{data?.total ?? 0} files</Typography>
                 </Box>
-                <Button startIcon={<CloudUpload />} onClick={() => setUploadOpen(true)}>
-                    Upload
-                </Button>
+                <Stack direction="row" alignItems="center" gap={2}>
+                    {/* Storage usage */}
+                    {storageUsage ? (
+                        <Box sx={{ width: 220 }}>
+                            <Stack direction="row" justifyContent="space-between" alignItems="baseline" mb={0.5}>
+                                <Typography variant="caption" color="text.secondary" fontWeight={600}>
+                                    Dung lượng
+                                </Typography>
+                                <Typography variant="caption" fontWeight={700}
+                                    color={storageUsage.percentUsed >= 90 ? 'error.main' : storageUsage.percentUsed >= 70 ? 'warning.main' : 'text.primary'}>
+                                    {storageUsage.usedMb < 1024
+                                        ? `${storageUsage.usedMb.toFixed(1)} MB`
+                                        : `${(storageUsage.usedMb / 1024).toFixed(2)} GB`}
+                                    {' / '}
+                                    {storageUsage.totalQuotaMb >= 1024
+                                        ? `${(storageUsage.totalQuotaMb / 1024).toFixed(1)} GB`
+                                        : `${storageUsage.totalQuotaMb} MB`}
+                                </Typography>
+                            </Stack>
+                            <Tooltip title={`${storageUsage.percentUsed}% đã dùng · ${data?.total ?? 0} file`}>
+                                <LinearProgress
+                                    variant="determinate"
+                                    value={Math.min(storageUsage.percentUsed, 100)}
+                                    color={storageUsage.percentUsed >= 90 ? 'error' : storageUsage.percentUsed >= 70 ? 'warning' : 'primary'}
+                                    sx={{ height: 6, borderRadius: 3,
+                                        bgcolor: theme => alpha(
+                                            storageUsage.percentUsed >= 90 ? theme.palette.error.main
+                                            : storageUsage.percentUsed >= 70 ? theme.palette.warning.main
+                                            : theme.palette.primary.main, 0.15),
+                                    }}
+                                />
+                            </Tooltip>
+                            <Typography variant="caption" color="text.secondary" sx={{ mt: 0.3, display: 'block' }}>
+                                {storageUsage.percentUsed}% đã dùng · còn {
+                                    (() => {
+                                        const freeMb = storageUsage.totalQuotaMb - storageUsage.usedMb;
+                                        return freeMb >= 1024 ? `${(freeMb / 1024).toFixed(1)} GB` : `${freeMb.toFixed(0)} MB`;
+                                    })()
+                                }
+                            </Typography>
+                        </Box>
+                    ) : (
+                        <Skeleton variant="rounded" width={220} height={48} />
+                    )}
+                    <Button startIcon={<CloudUpload />} onClick={() => setUploadOpen(true)}>
+                        Upload
+                    </Button>
+                </Stack>
             </Stack>
 
             {/* Filters */}
@@ -774,7 +896,7 @@ export default function MediaPage() {
                                                         color="error"
                                                         onClick={() => handleDelete(media.id, media.title)}
                                                     >
-                                                        <Delete sx={{ fontSize: 16 }} />
+                                                        <Delete sx={{ fontSize: 16}} />
                                                     </IconButton>
                                                 </Tooltip>
                                             </TableCell>
@@ -784,18 +906,18 @@ export default function MediaPage() {
                         </Table>
                     </TableContainer>
 
-                    {/* Pagination footer */}
                     {data && (
-                        <Box sx={{ px: 2, py: 1.5, display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid', borderColor: 'divider' }}>
-                            <Stack direction="row" alignItems="center" spacing={1}>
-                                <Typography variant="caption" color="text.secondary">{data.total ?? 0} files</Typography>
-                                <Select size="small" value={limit} onChange={e => { setLimit(Number(e.target.value)); setPage(1); }} sx={{ fontSize: '0.75rem', height: 28 }}>
-                                    {[10, 20, 50, 100].map(n => <MuiMenuItem key={n} value={n} sx={{ fontSize: '0.75rem' }}>{n} / trang</MuiMenuItem>)}
-                                    <MuiMenuItem value={0} sx={{ fontSize: '0.75rem' }}>Tất cả</MuiMenuItem>
-                                </Select>
-                            </Stack>
-                            <Pagination count={limit === 0 ? 1 : (data.totalPages || 1)} page={page} onChange={(_, p) => setPage(p)} variant="outlined" shape="rounded" size="small" />
-                        </Box>
+                        <TablePagination
+                            component="div"
+                            count={data.total ?? 0}
+                            page={page - 1}
+                            onPageChange={(_, p) => setPage(p + 1)}
+                            rowsPerPage={limit}
+                            onRowsPerPageChange={e => { setLimit(Number(e.target.value)); setPage(1); }}
+                            rowsPerPageOptions={[10, 25, 50, 100]}
+                            labelRowsPerPage="Mỗi trang:"
+                            labelDisplayedRows={({ from, to, count }) => `${from}–${to} / ${count}`}
+                        />
                     )}
 
                     {/* Empty state */}
@@ -815,7 +937,7 @@ export default function MediaPage() {
                 <PreviewPanel media={hoveredMedia} onDelete={handleDelete} />
             </Box>
 
-            <UploadDialog open={uploadOpen} onClose={() => setUploadOpen(false)} />
+            <UploadDialog open={uploadOpen} onClose={() => setUploadOpen(false)} storageUsage={storageUsage} />
 
             <MediaPreviewDialog
                 media={previewMedia}

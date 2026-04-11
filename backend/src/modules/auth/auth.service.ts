@@ -81,6 +81,7 @@ async function generateTokenPair(user: UserRow) {
 // ─── Login attempt limiter ─────────────────────────────────────────────────────
 
 async function checkLoginAttempts(email: string, ip: string) {
+    if (config.env !== 'production') return;
     const key = `login_attempts:${email}:${ip}`;
     const attempts = await redis.get(key);
     if (attempts && parseInt(attempts) >= MAX_LOGIN_ATTEMPTS) {
@@ -90,12 +91,14 @@ async function checkLoginAttempts(email: string, ip: string) {
 }
 
 async function recordFailedAttempt(email: string, ip: string) {
+    if (config.env !== 'production') return;
     const key = `login_attempts:${email}:${ip}`;
     const attempts = await redis.incr(key);
     if (attempts === 1) await redis.expire(key, LOCKOUT_SECONDS);
 }
 
 async function clearLoginAttempts(email: string, ip: string) {
+    if (config.env !== 'production') return;
     await redis.del(`login_attempts:${email}:${ip}`);
 }
 
@@ -186,6 +189,8 @@ export async function login(data: LoginBody, ip: string) {
 
 // ─── Refresh Token ─────────────────────────────────────────────────────────────
 
+const GRACE_PERIOD_SEC = 30; // seconds after rotation where old token is still accepted
+
 export async function refreshAccessToken(refreshToken: string) {
     let payload: any;
     try {
@@ -196,7 +201,31 @@ export async function refreshAccessToken(refreshToken: string) {
     if (payload.type !== 'refresh') throw new AppError(401, 'Token không đúng loại');
 
     const storedUserId = await redis.get(`refresh:${payload.tokenId}`);
-    if (!storedUserId || storedUserId !== payload.userId) {
+
+    if (!storedUserId) {
+        // Token may have just been rotated by another tab — check grace period
+        const graceUserId = await redis.get(`refresh:grace:${payload.tokenId}`);
+        if (!graceUserId || graceUserId !== payload.userId) {
+            throw new AppError(401, 'Refresh token đã bị thu hồi');
+        }
+        // Within grace period: still serve a fresh token pair to avoid logout
+        logger.debug('Refresh token in grace period, issuing new pair', { tokenId: payload.tokenId });
+        const graceUser = await queryOne<UserRow & { org_active: boolean }>(
+            `SELECT u.id, u.email, '' as password_hash, u.role, u.status,
+                    u."organizationId" as organization_id, u."isRoot" as is_root,
+                    u."createdAt" as created_at, u."updatedAt" as updated_at,
+                    o."isActive" as org_active
+             FROM users u
+             JOIN organizations o ON o.id = u."organizationId"
+             WHERE u.id = $1`,
+            [graceUserId]
+        );
+        if (!graceUser || graceUser.status !== 'ACTIVE') throw new AppError(401, 'Tài khoản không hợp lệ');
+        if (!graceUser.org_active) throw new AppError(401, 'Tổ chức đã bị vô hiệu hoá');
+        return generateTokenPair(graceUser);
+    }
+
+    if (storedUserId !== payload.userId) {
         throw new AppError(401, 'Refresh token đã bị thu hồi');
     }
 
@@ -213,8 +242,10 @@ export async function refreshAccessToken(refreshToken: string) {
     if (!user || user.status !== 'ACTIVE') throw new AppError(401, 'Tài khoản không hợp lệ');
     if (!user.org_active) throw new AppError(401, 'Tổ chức đã bị vô hiệu hoá');
 
+    // Rotate: delete old token, keep grace entry so concurrent tabs don't get logged out
     await redis.srem(`user_tokens:${payload.userId}`, payload.tokenId);
     await redis.del(`refresh:${payload.tokenId}`);
+    await redis.set(`refresh:grace:${payload.tokenId}`, payload.userId, 'EX', GRACE_PERIOD_SEC);
     return generateTokenPair(user);
 }
 

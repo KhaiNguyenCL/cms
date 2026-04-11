@@ -28,6 +28,8 @@ import contentHistoryRoutes from '../modules/content-history/content-history.rou
 import softwareHistoryRoutes from '../modules/software-history/software-history.routes';
 import actionHistoryRoutes from '../modules/action-history/action-history.routes';
 import licenseRoutes from '../modules/license/license.routes';
+import storageQuotaRoutes from '../modules/storage-quota/storage-quota.routes';
+import notificationRoutes from '../modules/notifications/notifications.routes';
 
 // Middleware imports
 import { errorHandler } from './middleware/error.middleware';
@@ -123,6 +125,8 @@ app.use('/api/content-history',   contentHistoryRoutes);
 app.use('/api/software-history',  softwareHistoryRoutes);
 app.use('/api/action-history',    actionHistoryRoutes);
 app.use('/api/license',           licenseRoutes);
+app.use('/api/storage-quota',     storageQuotaRoutes);
+app.use('/api/notifications',     notificationRoutes);
 
 // ── Serve built frontend (SPA) ────────────────────────────────
 // In production: run `npm run build` in /frontend first.

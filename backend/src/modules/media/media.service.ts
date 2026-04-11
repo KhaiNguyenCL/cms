@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import sharp from 'sharp';
 import { query, queryOne } from '../../shared/database/db';
 import { AppError, handleUniqueViolation } from '../../shared/middleware/error.middleware';
+import { checkStorageQuota } from '../../shared/utils/quota';
 import logger from '../../shared/utils/logger';
 import { invalidateContentHashForOrg } from '../device-sync/device-sync.service';
 import { tempDir, mediaDir, thumbDir, MAX_IMAGE_BYTES } from './media.upload';
@@ -115,16 +116,21 @@ export async function uploadMedia(
 ): Promise<MediaRow> {
     const mediaType = detectType(file.mimetype);
 
+    // Check org storage quota before accepting the file
+    await checkStorageQuota(organizationId, file.size);
+
     // Validate size per type
     if (mediaType === 'IMAGE' && file.size > MAX_IMAGE_BYTES) {
         fs.unlinkSync(file.path);
         throw new AppError(413, `Ảnh quá lớn. Tối đa ${process.env.MAX_IMAGE_SIZE_MB || 50}MB`);
     }
 
-    // Move temp file → final media dir
+    // Move temp file → org-specific media dir
     const ext = path.extname(file.originalname).toLowerCase();
     const finalName = `${uuidv4()}${ext}`;
-    const finalPath = path.join(mediaDir, finalName);
+    const orgMediaDir = path.join(mediaDir, organizationId);
+    if (!fs.existsSync(orgMediaDir)) fs.mkdirSync(orgMediaDir, { recursive: true });
+    const finalPath = path.join(orgMediaDir, finalName);
     fs.renameSync(file.path, finalPath);
 
     // Hash
@@ -143,7 +149,9 @@ export async function uploadMedia(
 
             // Generate thumbnail (320x180, webp)
             const thumbName = `thumb_${path.basename(finalName, ext)}.webp`;
-            const thumbFull = path.join(thumbDir, thumbName);
+            const orgThumbDir = path.join(thumbDir, organizationId);
+            if (!fs.existsSync(orgThumbDir)) fs.mkdirSync(orgThumbDir, { recursive: true });
+            const thumbFull = path.join(orgThumbDir, thumbName);
             await sharp(finalPath)
                 .resize(320, 180, { fit: 'inside', withoutEnlargement: true })
                 .webp({ quality: 75 })
@@ -200,7 +208,7 @@ export async function uploadMedia(
             organizationId,
             filePath: finalPath,
             mimeType: file.mimetype,
-            outputDir: mediaDir,
+            outputDir: orgMediaDir,
         });
         logger.info('Video transcoding job enqueued', { mediaId: rows[0].id });
     } else {

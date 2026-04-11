@@ -96,6 +96,7 @@ export const createDeviceSchema = z.object({
         location: z.string().max(200).optional(),
         timezone: z.string().max(50).optional(),
         settings: z.record(z.unknown()).optional(),
+        siteId: z.string().uuid().optional().nullable(),
     }),
 });
 

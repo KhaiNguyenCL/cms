@@ -18,11 +18,11 @@ export const sitesApi = {
         apiClient.get<{ data: Site }>(`/sites/${id}`)
             .then(r => r.data.data),
 
-    create: (body: { name: string; description?: string; address?: string; contact?: string; timezone?: string; timeOn?: string; timeOff?: string; deployDate?: string; endDate?: string; playlistId?: string }) =>
+    create: (body: { name: string; description?: string; address?: string; contact?: string; timezone?: string; timeOn?: string; timeOff?: string; deployDate?: string; endDate?: string; playlistId?: string; alarmToleranceMin?: number }) =>
         apiClient.post<{ data: Site }>('/sites', body)
             .then(r => r.data.data),
 
-    update: (id: string, body: { name?: string; description?: string | null; address?: string | null; contact?: string | null; timezone?: string | null; timeOn?: string | null; timeOff?: string | null; deployDate?: string | null; endDate?: string | null; playlistId?: string | null }) =>
+    update: (id: string, body: { name?: string; description?: string | null; address?: string | null; contact?: string | null; timezone?: string | null; timeOn?: string | null; timeOff?: string | null; deployDate?: string | null; endDate?: string | null; playlistId?: string | null; alarmToleranceMin?: number }) =>
         apiClient.patch<{ data: Site }>(`/sites/${id}`, body)
             .then(r => r.data.data),
 

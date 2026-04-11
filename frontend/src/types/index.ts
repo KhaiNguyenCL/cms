@@ -103,8 +103,9 @@ export interface Site {
     address: string | null;
     contact: string | null;
     timezone: string | null;      // IANA timezone — inherited by devices when device.timezone is null
-    timeOn: string | null;        // HH:MM — screen-on time
-    timeOff: string | null;       // HH:MM — screen-off time
+    timeOn: string | null;         // HH:MM — screen-on time
+    timeOff: string | null;        // HH:MM — screen-off time
+    alarmToleranceMin: number;     // minutes of grace around timeOn/timeOff before alerting
     deployDate: string | null;    // ISO date — deployment start
     endDate: string | null;       // ISO date — deployment end
     playlistId: string | null;
@@ -139,6 +140,8 @@ export interface DeviceHealth {
     networkConnected: boolean | null;
     processCpuPercent: number | null;
     wanIp: string | null;
+    subnet: string | null;
+    ipProtocol: string | null;
     reportedAt: string | null;
 }
 

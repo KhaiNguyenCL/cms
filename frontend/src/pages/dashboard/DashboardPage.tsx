@@ -142,7 +142,7 @@ function PieCard({ title, data, colors, loading, total }: {
 
 // ── KPI Card ──────────────────────────────────────────────────────────────────
 
-function KpiCard({ icon, label, value, sub, color = '#6C63FF', loading = false }: {
+function KpiCard({ icon, label, value, sub, color = '#5148fc', loading = false }: {
     icon: React.ReactNode; label: string; value: string | number;
     sub?: string; color?: string; loading?: boolean;
 }) {
@@ -224,6 +224,7 @@ function TypeChip({ type }: { type: string }) {
 // ── Main Dashboard Page ────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
+    const theme = useTheme();
     const [preset, setPreset]     = useState<number>(30);
     const [customFrom, setCustomFrom] = useState('');
     const [customTo, setCustomTo]   = useState('');
@@ -344,10 +345,12 @@ export default function DashboardPage() {
                     </ToggleButtonGroup>
                     <TextField type="date" size="small" label="Từ ngày" value={customFrom}
                         onChange={e => setCustomFrom(e.target.value)}
-                        InputLabelProps={{ shrink: true }} sx={{ width: 148 }} />
+                        InputLabelProps={{ shrink: true }}
+                        sx={{ width: 148, '& input::-webkit-calendar-picker-indicator': { filter: theme.palette.mode === 'dark' ? 'invert(1)' : 'none' } }} />
                     <TextField type="date" size="small" label="Đến ngày" value={customTo}
                         onChange={e => setCustomTo(e.target.value)}
-                        InputLabelProps={{ shrink: true }} sx={{ width: 148 }} />
+                        InputLabelProps={{ shrink: true }}
+                        sx={{ width: 148, '& input::-webkit-calendar-picker-indicator': { filter: theme.palette.mode === 'dark' ? 'invert(1)' : 'none' } }} />
                 </Stack>
             </Stack>
 
@@ -370,22 +373,22 @@ export default function DashboardPage() {
             {/* ── KPI cards ─────────────────────────────────────────────────── */}
             <Box sx={{ display: 'flex', gap: 2, flexWrap: { xs: 'wrap', md: 'nowrap' }, mb: 2.5 }}>
                 {[
-                    { icon: <Tv />,          label: 'Online',     color: '#4CAF82',
+                    { icon: <Tv />,          label: 'Online',     color: '#15c00f',
                       value: loadingOverview ? '…' : `${devOnline}/${devTotal}`,
                       sub: `${onlineRate}% online` },
-                    { icon: <PlayArrow />,   label: 'Lượt phát hôm nay', color: '#6C63FF',
+                    { icon: <PlayArrow />,   label: 'Lượt phát hôm nay', color: '#5850f7',
                       value: loadingOverview ? '…' : todayPlays.toLocaleString(),
                       sub: 'lượt trong ngày' },
-                    { icon: <CheckCircle />, label: 'Hoàn thành', color: '#29B6F6',
+                    { icon: <CheckCircle />, label: 'Hoàn thành', color: '#0498dd',
                       value: loadingOverview ? '…' : `${overview?.playback.completionRate ?? 0}%`,
-                      sub: 'tỷ lệ xem hết' },
-                    { icon: <BarChartIcon />, label: 'Media',     color: '#FF6584',
+                      sub: 'tỉ lệ playlist chạy hoàn thành' },
+                    { icon: <BarChartIcon />, label: 'Media',     color: '#e7113c',
                       value: loadingOverview ? '…' : (overview?.media.count ?? 0),
                       sub: fmtBytes(overview?.media.totalSizeBytes ?? 0) },
-                    { icon: <QueueMusic />,  label: 'Playlist',   color: '#FFA726',
+                    { icon: <QueueMusic />,  label: 'Playlist',   color: '#e08c0d',
                       value: loadingOverview ? '…' : (overview?.playlists.total ?? 0),
                       sub: 'danh sách phát' },
-                    { icon: <CalendarMonth />, label: 'Schedule', color: '#AB47BC',
+                    { icon: <CalendarMonth />, label: 'Schedule', color: '#a830bd',
                       value: loadingOverview ? '…' : `${overview?.schedules.active ?? 0}/${overview?.schedules.total ?? 0}`,
                       sub: 'đang kích hoạt' },
                     { icon: <VerifiedUser />, label: 'License active', color: '#4CAF50',

@@ -68,7 +68,8 @@
       "Bash(openssl rand:*)",
       "Bash(npx --yes bcrypt-cli hash 'Admin@123456' 12)",
       "Read(//tmp/**)",
-      "Bash(xargs wc:*)"
+      "Bash(xargs wc:*)",
+      "Bash(awk '{print $NF}')"
     ],
     "additionalDirectories": [
       "E:\\player"

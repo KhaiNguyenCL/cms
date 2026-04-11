@@ -1,6 +1,6 @@
-import { useState, useEffect, type ReactNode } from 'react';
+import { useState, useEffect, useRef, type ReactNode } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { useQueryClient, useQuery } from '@tanstack/react-query';
+import { useQueryClient, useQuery, useMutation } from '@tanstack/react-query';
 import { useSocket } from '@hooks/useSocket';
 import {
     Box, Drawer, AppBar, Toolbar, Typography, IconButton, Avatar,
@@ -8,6 +8,7 @@ import {
     Divider, Menu, MenuItem, Badge, useTheme, useMediaQuery,
     Dialog, DialogTitle, DialogContent, DialogActions, Button,
     Chip, alpha, Collapse, TextField, InputAdornment,
+    Popover, Stack, CircularProgress,
 } from '@mui/material';
 import {
     Dashboard, PermMedia, QueueMusic, CalendarMonth, BarChart,
@@ -24,6 +25,7 @@ import { logout, setManagingOrg } from '@store/slices/authSlice';
 import { authApi } from '@api/auth.api';
 import { platformAuthApi } from '@api/platform-auth.api';
 import { organizationsApi, type OrgWithStats } from '@api/organizations.api';
+import { notificationsApi, NOTIF_META, type AppNotification } from '@api/notifications.api';
 
 const DRAWER_WIDTH = 240;
 const COLLAPSED_WIDTH = 72;
@@ -97,6 +99,145 @@ function findLabel(entries: NavEntry[], pathname: string): string {
     return 'Dashboard';
 }
 
+// ── Notification helpers ──────────────────────────────────────────────────────
+
+function timeAgo(iso: string): string {
+    const diff = Date.now() - new Date(iso).getTime();
+    const m = Math.floor(diff / 60_000);
+    if (m < 1)  return 'vừa xong';
+    if (m < 60) return `${m} phút trước`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h} giờ trước`;
+    return `${Math.floor(h / 24)} ngày trước`;
+}
+
+const NOTIF_ICON_COLOR: Record<string, string> = {
+    error: '#EF4444', warning: '#F59E0B', success: '#10B981', info: '#3B82F6',
+};
+
+function NotificationItem({ n, onRead, onDelete }: {
+    n: AppNotification;
+    onRead: (id: string) => void;
+    onDelete: (id: string) => void;
+}) {
+    const meta = NOTIF_META[n.type] ?? { label: n.type, color: 'info' as const };
+    const dotColor = NOTIF_ICON_COLOR[meta.color];
+    return (
+        <Box
+            onClick={() => !n.read && onRead(n.id)}
+            sx={{
+                px: 2, py: 1.5, display: 'flex', alignItems: 'flex-start', gap: 1.5,
+                cursor: n.read ? 'default' : 'pointer',
+                bgcolor: n.read ? 'transparent' : theme => alpha(theme.palette.primary.main, 0.05),
+                borderBottom: '1px solid', borderColor: 'divider',
+                '&:hover': { bgcolor: 'action.hover' },
+                transition: 'background 0.15s',
+            }}
+        >
+            <Box sx={{ mt: 0.5, width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+                bgcolor: n.read ? 'transparent' : dotColor, border: `2px solid ${dotColor}` }} />
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+                <Typography variant="body2" fontWeight={n.read ? 400 : 600} noWrap>{n.title}</Typography>
+                {n.body && (
+                    <Typography variant="caption" color="text.secondary" display="block" sx={{
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>{n.body}</Typography>
+                )}
+                <Stack direction="row" alignItems="center" justifyContent="space-between" mt={0.3}>
+                    <Chip label={meta.label} size="small" color={meta.color}
+                        sx={{ height: 16, fontSize: '0.6rem', '& .MuiChip-label': { px: 0.8 } }} />
+                    <Typography variant="caption" color="text.disabled">{timeAgo(n.createdAt)}</Typography>
+                </Stack>
+            </Box>
+            <IconButton size="small" sx={{ mt: -0.5, opacity: 0.4, '&:hover': { opacity: 1 } }}
+                onClick={e => { e.stopPropagation(); onDelete(n.id); }}>
+                <Close sx={{ fontSize: 14 }} />
+            </IconButton>
+        </Box>
+    );
+}
+
+function NotificationPanel({ anchorEl, onClose }: {
+    anchorEl: HTMLElement | null;
+    onClose: () => void;
+}) {
+    const qc = useQueryClient();
+    const dispatch = useAppDispatch();
+
+    const { data, isLoading } = useQuery({
+        queryKey: ['notifications'],
+        queryFn: () => notificationsApi.list({ limit: 50 }),
+        enabled: Boolean(anchorEl),
+        refetchInterval: anchorEl ? 30_000 : false,
+    });
+
+    const notifications = data?.data ?? [];
+    const unread = notifications.filter(n => !n.read).length;
+
+    const readMut = useMutation({
+        mutationFn: notificationsApi.markRead,
+        onSuccess: () => qc.invalidateQueries({ queryKey: ['notifications'] }),
+    });
+    const readAllMut = useMutation({
+        mutationFn: notificationsApi.markAllRead,
+        onSuccess: () => qc.invalidateQueries({ queryKey: ['notifications'] }),
+    });
+    const deleteMut = useMutation({
+        mutationFn: notificationsApi.delete,
+        onSuccess: () => qc.invalidateQueries({ queryKey: ['notifications'] }),
+    });
+
+    return (
+        <Popover
+            open={Boolean(anchorEl)}
+            anchorEl={anchorEl}
+            onClose={onClose}
+            anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+            transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+            PaperProps={{ sx: { width: 380, maxHeight: 520, display: 'flex', flexDirection: 'column',
+                borderRadius: 2, boxShadow: 6 } }}
+        >
+            {/* Header */}
+            <Box sx={{ px: 2, py: 1.5, borderBottom: '1px solid', borderColor: 'divider',
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Stack direction="row" alignItems="center" gap={1}>
+                    <Typography variant="subtitle1" fontWeight={700}>Thông báo</Typography>
+                    {unread > 0 && (
+                        <Chip label={unread} size="small" color="error"
+                            sx={{ height: 18, fontSize: '0.65rem', '& .MuiChip-label': { px: 0.8 } }} />
+                    )}
+                </Stack>
+                {unread > 0 && (
+                    <Button size="small" onClick={() => readAllMut.mutate()} disabled={readAllMut.isPending}
+                        sx={{ fontSize: '0.72rem' }}>
+                        Đọc tất cả
+                    </Button>
+                )}
+            </Box>
+
+            {/* List */}
+            <Box sx={{ flex: 1, overflowY: 'auto' }}>
+                {isLoading ? (
+                    <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+                        <CircularProgress size={28} />
+                    </Box>
+                ) : notifications.length === 0 ? (
+                    <Box sx={{ py: 6, textAlign: 'center' }}>
+                        <NotificationsNone sx={{ fontSize: 40, color: 'text.disabled', mb: 1 }} />
+                        <Typography variant="body2" color="text.secondary">Không có thông báo</Typography>
+                    </Box>
+                ) : (
+                    notifications.map(n => (
+                        <NotificationItem key={n.id} n={n}
+                            onRead={id => readMut.mutate(id)}
+                            onDelete={id => deleteMut.mutate(id)} />
+                    ))
+                )}
+            </Box>
+        </Popover>
+    );
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function DashboardLayout() {
@@ -116,6 +257,7 @@ export default function DashboardLayout() {
     const isSwitched = !!managingOrgId && managingOrgId !== user?.organizationId;
 
     const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+    const [notifAnchor, setNotifAnchor] = useState<null | HTMLElement>(null);
     const [orgPickerOpen, setOrgPickerOpen] = useState(false);
     const [orgSearch, setOrgSearch] = useState('');
 
@@ -148,8 +290,8 @@ export default function DashboardLayout() {
     });
     const licenseNeedsAttention = (licenseStats?.expiredDevices ?? 0) > 0 || (licenseStats?.expiringIn7 ?? 0) > 0;
 
-    // Pending purchase requests badge for SUPER_ADMIN
-    const { data: pendingRequestCount = 0 } = useQuery({
+    // Pending purchase requests badge for SUPER_ADMIN (license + storage combined)
+    const { data: pendingLicenseCount = 0 } = useQuery({
         queryKey: ['license-requests-pending'],
         queryFn: () => import('@api/license.api').then(m =>
             m.default.getPurchaseRequests().then(list => list.filter(r => r.status === 'PENDING').length),
@@ -157,6 +299,23 @@ export default function DashboardLayout() {
         enabled: user?.role === 'SUPER_ADMIN',
         staleTime: 2 * 60_000,
     });
+    const { data: pendingStorageCount = 0 } = useQuery({
+        queryKey: ['storage-pending-count'],
+        queryFn: () => import('@api/storage-quota.api').then(m =>
+            m.storageQuotaApi.listAllRequests('PENDING').then(list => list.length),
+        ),
+        enabled: user?.role === 'SUPER_ADMIN',
+        staleTime: 2 * 60_000,
+    });
+    const pendingRequestCount = pendingLicenseCount + pendingStorageCount;
+
+    const { data: notifData } = useQuery({
+        queryKey: ['notifications'],
+        queryFn: () => notificationsApi.list({ limit: 50 }),
+        refetchInterval: 60_000,
+        enabled: !isPlatformAdmin,
+    });
+    const unreadCount = notifData?.unreadCount ?? 0;
 
     const queryClient = useQueryClient();
     const { socket } = useSocket();
@@ -201,11 +360,34 @@ export default function DashboardLayout() {
             }));
         };
 
+        const handleNewNotification = (data: AppNotification) => {
+            queryClient.invalidateQueries({ queryKey: ['notifications'] });
+
+            // Invalidate relevant data queries so lists refresh immediately
+            if (data.type === 'LICENSE_REQUEST_NEW') {
+                queryClient.invalidateQueries({ queryKey: ['license-requests'] });
+                queryClient.invalidateQueries({ queryKey: ['license-requests-pending'] });
+            }
+            if (data.type === 'STORAGE_REQUEST_NEW') {
+                queryClient.invalidateQueries({ queryKey: ['storage-requests-all'] });
+                queryClient.invalidateQueries({ queryKey: ['storage-pending-count'] });
+            }
+
+            const meta = NOTIF_META[data.type];
+            dispatch(pushToast({
+                severity: meta?.color === 'error' ? 'error'
+                    : meta?.color === 'warning' ? 'warning'
+                    : meta?.color === 'success' ? 'success' : 'info',
+                message: data.title,
+            }));
+        };
+
         socket.on('content.update', invalidateContent);
         socket.on('schedule.update', invalidateContent);
         socket.on('device.status', handleDeviceStatus);
         socket.on('device.screenshot', handleScreenshot);
         socket.on('device.error', handleDeviceError);
+        socket.on('notification:new', handleNewNotification);
 
         return () => {
             socket.off('content.update', invalidateContent);
@@ -213,6 +395,7 @@ export default function DashboardLayout() {
             socket.off('device.status', handleDeviceStatus);
             socket.off('device.screenshot', handleScreenshot);
             socket.off('device.error', handleDeviceError);
+            socket.off('notification:new', handleNewNotification);
         };
     }, [socket, queryClient]);
 
@@ -253,11 +436,11 @@ export default function DashboardLayout() {
 
     const renderItem = (item: NavLeaf, indented = false) => {
         if (item.roles && !(user?.role && item.roles.includes(user.role))) return null;
-        const active = location.pathname.startsWith(item.path);
+        const active = location.pathname === item.path || location.pathname.startsWith(item.path + '/');
         const isLicenseItem = item.path === '/license';
         const isLicenseMgmtItem = item.path === '/license-management';
         const showBadge = (isLicenseItem && licenseNeedsAttention) || (isLicenseMgmtItem && pendingRequestCount > 0);
-        const badgeColor = isLicenseMgmtItem ? 'warning'
+        const badgeColor: 'error' | 'warning' = isLicenseMgmtItem ? 'error'
             : (licenseStats?.expiringIn7 ?? 0) > 0 ? 'warning' : 'error';
 
         return (
@@ -283,8 +466,8 @@ export default function DashboardLayout() {
                 >
                     <ListItemIcon sx={{ minWidth: sidebarOpen ? 40 : 0 }}>
                         <Badge
-                            badgeContent={isLicenseMgmtItem && sidebarOpen ? (pendingRequestCount || undefined) : undefined}
-                            variant={isLicenseMgmtItem && sidebarOpen ? 'standard' : 'dot'}
+                            badgeContent={!isLicenseMgmtItem && sidebarOpen ? (pendingRequestCount || undefined) : undefined}
+                            variant="dot"
                             color={badgeColor}
                             invisible={!showBadge}
                         >
@@ -488,7 +671,7 @@ export default function DashboardLayout() {
             {isSwitched && (
                 <>
                     <Divider />
-                    <DialogActions sx={{ px: 3, pb: 2 }}>
+                    <DialogActions sx={{ px: 3, pb: 2 , pt:2}}>
                         <Button
                             size="small"
                             color="warning"
@@ -576,7 +759,9 @@ export default function DashboardLayout() {
                             </Typography>
                         )}
                         {superAdminItems.map((item) => {
-                            const active = location.pathname.startsWith(item.path);
+                            const active = location.pathname === item.path || location.pathname.startsWith(item.path + '/');
+                            const isLicenseMgmt = item.path === '/license-management';
+                            const showPendingBadge = isLicenseMgmt && pendingRequestCount > 0;
                             return (
                                 <Tooltip key={item.path} title={!sidebarOpen ? item.label : ''} placement="right">
                                     <ListItemButton
@@ -599,12 +784,20 @@ export default function DashboardLayout() {
                                             minWidth: sidebarOpen ? 40 : 0,
                                             color: active ? 'error.main' : 'text.secondary',
                                         }}>
-                                            {item.icon}
+                                            <Badge
+                                                badgeContent={!sidebarOpen && showPendingBadge ? pendingRequestCount : undefined}
+                                                color="error"
+                                                invisible={sidebarOpen || !showPendingBadge}
+                                            >
+                                                {item.icon}
+                                            </Badge>
                                         </ListItemIcon>
                                         {sidebarOpen && (
                                             <ListItemText
                                                 primary={item.label}
                                                 primaryTypographyProps={{ fontWeight: active ? 600 : 400 }}
+                                                secondary={showPendingBadge ? `${pendingRequestCount} chờ duyệt` : undefined}
+                                                secondaryTypographyProps={{ color: 'error.main', fontSize: '0.7rem', fontWeight: 600 }}
                                             />
                                         )}
                                     </ListItemButton>
@@ -768,14 +961,16 @@ export default function DashboardLayout() {
                             </IconButton>
                         </Tooltip>
 
-                        {/* Notifications (placeholder) */}
-                        <Tooltip title="Notifications">
-                            <IconButton>
-                                <Badge badgeContent={0} color="error">
-                                    <NotificationsNone />
-                                </Badge>
-                            </IconButton>
-                        </Tooltip>
+                        {/* Notifications */}
+                        {!isPlatformAdmin && (
+                            <Tooltip title="Thông báo">
+                                <IconButton onClick={e => setNotifAnchor(e.currentTarget)}>
+                                    <Badge badgeContent={unreadCount || undefined} color="error" max={99}>
+                                        {unreadCount > 0 ? <NotificationsActive /> : <NotificationsNone />}
+                                    </Badge>
+                                </IconButton>
+                            </Tooltip>
+                        )}
                     </Toolbar>
                 </AppBar>
 
@@ -791,6 +986,9 @@ export default function DashboardLayout() {
 
         {/* Org switcher dialog (SUPER_ADMIN only) */}
         {orgPickerDialog}
+
+        {/* Notification panel */}
+        <NotificationPanel anchorEl={notifAnchor} onClose={() => setNotifAnchor(null)} />
 
         {/* Screenshot dialog */}
         <Dialog open={Boolean(screenshot)} onClose={() => setScreenshot(null)} maxWidth="md" fullWidth>

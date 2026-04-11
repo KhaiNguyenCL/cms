@@ -117,6 +117,13 @@ export async function createUser(
     );
 
     logger.info('User created', { createdBy: createdById, newUserId: rows[0].id });
+    import('../../modules/notifications/notifications.service')
+        .then(({ createNotification, NOTIF_TYPES }) =>
+            createNotification(organizationId, NOTIF_TYPES.USER_CREATED,
+                `Người dùng mới: ${data.email}`,
+                `Vai trò: ${data.role}`,
+                rows[0].id, 'user')
+        ).catch(() => {});
     return rows[0];
 }
 

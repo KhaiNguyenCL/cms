@@ -5,11 +5,15 @@ import {
     Dialog, DialogTitle, DialogContent, DialogActions, CircularProgress,
     Alert, Tooltip, Autocomplete, InputAdornment, Stack,
     Popover, FormControlLabel, Checkbox, Divider,
-    Card, CardContent, Skeleton, Pagination, Select, MenuItem, TableSortLabel,
+    Card, CardContent, Skeleton, TablePagination, Select, MenuItem, TableSortLabel, useTheme,
+    Slider,
 } from '@mui/material';
 import {
     Add, Edit, Delete, Search, Close, PersonAdd, ViewColumn, SwapHoriz,
     StoreMallDirectory,
+    AddAPhoto,
+    AddToHomeScreen,
+    AddToQueue,
 } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { sitesApi } from '@/api/sites.api';
@@ -76,14 +80,12 @@ function TimezoneAutocomplete({ value, onChange, label = 'Timezone', helperText 
 
 const ALL_COLUMNS = [
     { id: 'name',       label: 'Tên Site' },
-    { id: 'id',         label: 'Mã' },
     { id: 'address',    label: 'Địa chỉ' },
     { id: 'contact',    label: 'Liên hệ' },
     { id: 'timezone',   label: 'Timezone' },
     { id: 'timeOn',     label: 'Time ON' },
     { id: 'timeOff',    label: 'Time OFF' },
     { id: 'deployDate', label: 'Triển khai' },
-    { id: 'endDate',    label: 'Kết thúc' },
     { id: 'devices',    label: 'Devices' },
     { id: 'actions',    label: 'Thao tác' },
 ] as const;
@@ -188,22 +190,28 @@ interface AddSiteDialogProps {
     onClose: () => void;
 }
 
+function pickerSx(dark: boolean) {
+    return { '& input::-webkit-calendar-picker-indicator': { filter: dark ? 'invert(1)' : 'none' } };
+}
+
 function AddSiteDialog({ open, onClose }: AddSiteDialogProps) {
+    const theme = useTheme();
+    const dark  = theme.palette.mode === 'dark';
     const qc = useQueryClient();
-    const emptyForm = { name: '', address: '', contact: '', timezone: 'Asia/Bangkok', timeOn: '', timeOff: '', deployDate: '', endDate: '' };
+    const emptyForm = { name: '', address: '', contact: '', timezone: 'Asia/Bangkok', timeOn: '', timeOff: '', deployDate: '', alarmToleranceMin: 60 };
     const [form, setForm] = useState(emptyForm);
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
     const createMutation = useMutation({
         mutationFn: () => sitesApi.create({
-            name:        form.name.trim(),
-            address:     form.address.trim()    || undefined,
-            contact:     form.contact.trim()    || undefined,
-            timezone:    form.timezone          || undefined,
-            timeOn:      form.timeOn            || undefined,
-            timeOff:     form.timeOff           || undefined,
-            deployDate:  form.deployDate        || undefined,
-            endDate:     form.endDate           || undefined,
+            name:               form.name.trim(),
+            address:            form.address.trim()    || undefined,
+            contact:            form.contact.trim()    || undefined,
+            timezone:           form.timezone          || undefined,
+            timeOn:             form.timeOn            || undefined,
+            timeOff:            form.timeOff           || undefined,
+            deployDate:         form.deployDate        || undefined,
+            alarmToleranceMin:  form.alarmToleranceMin,
         }),
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: ['sites'] });
@@ -231,12 +239,25 @@ function AddSiteDialog({ open, onClose }: AddSiteDialogProps) {
                     <TextField label="Liên hệ" value={form.contact} onChange={e => setForm(f => ({ ...f, contact: e.target.value }))} fullWidth size="small" />
                     <TimezoneAutocomplete value={form.timezone} onChange={tz => setForm(f => ({ ...f, timezone: tz }))} helperText="Múi giờ — devices trong site kế thừa nếu chưa set" />
                     <Box sx={{ display: 'flex', gap: 2 }}>
-                        <TextField label="Time ON" type="time" value={form.timeOn} onChange={e => setForm(f => ({ ...f, timeOn: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} helperText="Giờ bật màn hình" size="small" />
-                        <TextField label="Time OFF" type="time" value={form.timeOff} onChange={e => setForm(f => ({ ...f, timeOff: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} helperText="Giờ tắt màn hình" size="small" />
+                        <TextField label="Time ON" type="time" value={form.timeOn} onChange={e => setForm(f => ({ ...f, timeOn: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} helperText="Giờ bật màn hình" size="small" sx={pickerSx(dark)} />
+                        <TextField label="Time OFF" type="time" value={form.timeOff} onChange={e => setForm(f => ({ ...f, timeOff: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} helperText="Giờ tắt màn hình" size="small" sx={pickerSx(dark)} />
+                        <TextField label="Triển khai" type="date" value={form.deployDate} onChange={e => setForm(f => ({ ...f, deployDate: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} helperText="Ngày bắt đầu triển khai" size="small" sx={pickerSx(dark)} />
                     </Box>
-                    <Box sx={{ display: 'flex', gap: 2 }}>
-                        <TextField label="Thời gian triển khai" type="date" value={form.deployDate} onChange={e => setForm(f => ({ ...f, deployDate: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} helperText="Ngày bắt đầu triển khai" size="small" />
-                        <TextField label="Thời gian kết thúc" type="date" value={form.endDate} onChange={e => setForm(f => ({ ...f, endDate: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} helperText="Ngày kết thúc" size="small" />
+                    <Box>
+                        <Typography variant="body2" gutterBottom>
+                            Độ lệch cảnh báo: <strong>{form.alarmToleranceMin} phút</strong>
+                        </Typography>
+                        <Slider
+                            value={form.alarmToleranceMin}
+                            onChange={(_, v) => setForm(f => ({ ...f, alarmToleranceMin: v as number }))}
+                            min={0} max={180} step={15}
+                            marks={[{ value: 0, label: '0' }, { value: 60, label: '1h' }, { value: 120, label: '2h' }, { value: 180, label: '3h' }]}
+                            disabled={!form.timeOn && !form.timeOff}
+                            size="small"
+                        />
+                        <Typography variant="caption" color="text.secondary">
+                            Thiết bị offline trong giờ hoạt động ± {form.alarmToleranceMin} phút mới gửi thông báo
+                        </Typography>
                     </Box>
                     {errorMsg && <Alert severity="error">{errorMsg}</Alert>}
                 </Box>
@@ -324,16 +345,18 @@ interface EditSiteDialogProps {
 }
 
 function EditSiteDialog({ site, open, onClose }: EditSiteDialogProps) {
+    const theme = useTheme();
+    const dark  = theme.palette.mode === 'dark';
     const qc = useQueryClient();
     const [form, setForm] = useState({
-        name:        site.name,
-        address:     site.address    ?? '',
-        contact:     site.contact    ?? '',
-        timezone:    site.timezone   ?? '',
-        timeOn:      site.timeOn     ?? '',
-        timeOff:     site.timeOff    ?? '',
-        deployDate:  site.deployDate ? site.deployDate.slice(0, 10) : '',
-        endDate:     site.endDate    ? site.endDate.slice(0, 10)    : '',
+        name:               site.name,
+        address:            site.address    ?? '',
+        contact:            site.contact    ?? '',
+        timezone:           site.timezone   ?? '',
+        timeOn:             site.timeOn     ?? '',
+        timeOff:            site.timeOff    ?? '',
+        deployDate:         site.deployDate ? site.deployDate.slice(0, 10) : '',
+        alarmToleranceMin:  site.alarmToleranceMin ?? 60,
     });
     const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
     const [addDeviceError, setAddDeviceError] = useState<string | null>(null);
@@ -360,14 +383,14 @@ function EditSiteDialog({ site, open, onClose }: EditSiteDialogProps) {
 
     const updateMutation = useMutation({
         mutationFn: () => sitesApi.update(site.id, {
-            name:        form.name.trim(),
-            address:     form.address.trim()    || null,
-            contact:     form.contact.trim()    || null,
-            timezone:    form.timezone          || null,
-            timeOn:      form.timeOn            || null,
-            timeOff:     form.timeOff           || null,
-            deployDate:  form.deployDate        || null,
-            endDate:     form.endDate           || null,
+            name:               form.name.trim(),
+            address:            form.address.trim()    || null,
+            contact:            form.contact.trim()    || null,
+            timezone:           form.timezone          || null,
+            timeOn:             form.timeOn            || null,
+            timeOff:            form.timeOff           || null,
+            deployDate:         form.deployDate        || null,
+            alarmToleranceMin:  form.alarmToleranceMin,
         }),
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: ['sites'] });
@@ -426,12 +449,25 @@ function EditSiteDialog({ site, open, onClose }: EditSiteDialogProps) {
                     <TextField label="Liên hệ" value={form.contact} onChange={e => setForm(f => ({ ...f, contact: e.target.value }))} fullWidth size="small" />
                     <TimezoneAutocomplete value={form.timezone} onChange={tz => setForm(f => ({ ...f, timezone: tz }))} helperText="Múi giờ — devices trong site kế thừa nếu chưa set" />
                     <Box sx={{ display: 'flex', gap: 2 }}>
-                        <TextField label="Time ON" type="time" value={form.timeOn} onChange={e => setForm(f => ({ ...f, timeOn: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} helperText="Giờ bật màn hình" size="small" />
-                        <TextField label="Time OFF" type="time" value={form.timeOff} onChange={e => setForm(f => ({ ...f, timeOff: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} helperText="Giờ tắt màn hình" size="small" />
+                        <TextField label="Time ON" type="time" value={form.timeOn} onChange={e => setForm(f => ({ ...f, timeOn: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} helperText="Giờ bật màn hình" size="small" sx={pickerSx(dark)} />
+                        <TextField label="Time OFF" type="time" value={form.timeOff} onChange={e => setForm(f => ({ ...f, timeOff: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} helperText="Giờ tắt màn hình" size="small" sx={pickerSx(dark)} />
+                        <TextField label="Triển khai" type="date" value={form.deployDate} onChange={e => setForm(f => ({ ...f, deployDate: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} helperText="Ngày bắt đầu triển khai" size="small" sx={pickerSx(dark)} />
                     </Box>
-                    <Box sx={{ display: 'flex', gap: 2 }}>
-                        <TextField label="Thời gian triển khai" type="date" value={form.deployDate} onChange={e => setForm(f => ({ ...f, deployDate: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} helperText="Ngày bắt đầu triển khai" size="small" />
-                        <TextField label="Thời gian kết thúc" type="date" value={form.endDate} onChange={e => setForm(f => ({ ...f, endDate: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} helperText="Ngày kết thúc" size="small" />
+                    <Box>
+                        <Typography variant="body2" gutterBottom>
+                            Độ lệch cảnh báo: <strong>{form.alarmToleranceMin} phút</strong>
+                        </Typography>
+                        <Slider
+                            value={form.alarmToleranceMin}
+                            onChange={(_, v) => setForm(f => ({ ...f, alarmToleranceMin: v as number }))}
+                            min={0} max={180} step={15}
+                            marks={[{ value: 0, label: '0' }, { value: 60, label: '1h' }, { value: 120, label: '2h' }, { value: 180, label: '3h' }]}
+                            disabled={!form.timeOn && !form.timeOff}
+                            size="small"
+                        />
+                        <Typography variant="caption" color="text.secondary">
+                            Thiết bị offline trong giờ hoạt động ± {form.alarmToleranceMin} phút mới gửi thông báo
+                        </Typography>
                     </Box>
 
                     <Divider />
@@ -458,7 +494,7 @@ function EditSiteDialog({ site, open, onClose }: EditSiteDialogProps) {
                         <Button
                             variant="outlined"
                             size="small"
-                            startIcon={addDeviceMutation.isPending ? <CircularProgress size={14} /> : <PersonAdd />}
+                            startIcon={addDeviceMutation.isPending ? <CircularProgress size={14} /> : <AddToQueue />}
                             disabled={!selectedDevice || addDeviceMutation.isPending}
                             onClick={() => selectedDevice && addDeviceMutation.mutate(selectedDevice.id)}
                             sx={{ whiteSpace: 'nowrap' }}
@@ -552,7 +588,7 @@ function EditSiteDialog({ site, open, onClose }: EditSiteDialogProps) {
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
-type SortCol = 'timeOn' | 'timeOff' | 'deployDate' | 'endDate';
+type SortCol = 'timeOn' | 'timeOff' | 'deployDate';
 
 export default function SitePage() {
     const [search, setSearch]           = useState('');
@@ -641,7 +677,6 @@ export default function SitePage() {
                                 <TableHead>
                                     <TableRow>
                                         {show('name')       && <TableCell sx={{ ...TH_SX, pl: 2 }}>Tên Site</TableCell>}
-                                        {show('id')         && <TableCell sx={TH_SX}>Mã</TableCell>}
                                         {show('address')    && <TableCell sx={TH_SX}>Địa chỉ</TableCell>}
                                         {show('contact')    && <TableCell sx={TH_SX}>Liên hệ</TableCell>}
                                         {show('timezone')   && <TableCell sx={TH_SX}>Timezone</TableCell>}
@@ -663,13 +698,6 @@ export default function SitePage() {
                                             <TableCell sx={TH_SX}>
                                                 <TableSortLabel active={sortBy === 'deployDate'} direction={sortBy === 'deployDate' ? sortDir : 'asc'} onClick={() => handleSort('deployDate')}>
                                                     Triển khai
-                                                </TableSortLabel>
-                                            </TableCell>
-                                        )}
-                                        {show('endDate')    && (
-                                            <TableCell sx={TH_SX}>
-                                                <TableSortLabel active={sortBy === 'endDate'} direction={sortBy === 'endDate' ? sortDir : 'asc'} onClick={() => handleSort('endDate')}>
-                                                    Kết thúc
                                                 </TableSortLabel>
                                             </TableCell>
                                         )}
@@ -716,25 +744,16 @@ export default function SitePage() {
                                                         </Stack>
                                                     </TableCell>
                                                 )}
-                                                {show('id') && (
-                                                    <TableCell sx={{ py: 1.25 }}>
-                                                        <Tooltip title={site.id} placement="top">
-                                                            <Typography variant="caption" fontFamily="monospace" color="text.secondary" sx={{ cursor: 'default', letterSpacing: 0.5 }}>
-                                                                {shortId(site.id)}
-                                                            </Typography>
-                                                        </Tooltip>
-                                                    </TableCell>
-                                                )}
                                                 {show('address')  && (
-                                                    <TableCell sx={{ py: 1.25 }}>
-                                                        <Typography variant="body2" color={site.address ? 'text.primary' : 'text.disabled'}>
+                                                    <TableCell sx={{ py: 1.25, maxWidth: 200 }}>
+                                                        <Typography variant="caption" color={site.address ? 'text.secondary' : 'text.disabled'} noWrap title={site.address ?? ''}>
                                                             {site.address ?? '—'}
                                                         </Typography>
                                                     </TableCell>
                                                 )}
                                                 {show('contact')  && (
-                                                    <TableCell sx={{ py: 1.25 }}>
-                                                        <Typography variant="body2" color={site.contact ? 'text.primary' : 'text.disabled'}>
+                                                    <TableCell sx={{ py: 1.25, maxWidth: 160 }}>
+                                                        <Typography variant="caption" color={site.contact ? 'text.secondary' : 'text.disabled'} noWrap title={site.contact ?? ''}>
                                                             {site.contact ?? '—'}
                                                         </Typography>
                                                     </TableCell>
@@ -765,13 +784,6 @@ export default function SitePage() {
                                                     <TableCell sx={{ py: 1.25 }}>
                                                         <Typography variant="body2" color={site.deployDate ? 'text.primary' : 'text.disabled'}>
                                                             {fmtDate(site.deployDate)}
-                                                        </Typography>
-                                                    </TableCell>
-                                                )}
-                                                {show('endDate') && (
-                                                    <TableCell sx={{ py: 1.25 }}>
-                                                        <Typography variant="body2" color={site.endDate ? 'text.primary' : 'text.disabled'}>
-                                                            {fmtDate(site.endDate)}
                                                         </Typography>
                                                     </TableCell>
                                                 )}
@@ -817,37 +829,18 @@ export default function SitePage() {
                         </TableContainer>
                     )}
 
-                    {/* ── Pagination ── */}
                     {data && (
-                        <Stack
-                            direction="row"
-                            alignItems="center"
-                            justifyContent="space-between"
-                            sx={{ px: 2, py: 1.25, borderTop: '1px solid', borderColor: 'divider' }}
-                        >
-                            <Stack direction="row" alignItems="center" spacing={1}>
-                                <Typography variant="caption" color="text.secondary">{data.total ?? 0} site</Typography>
-                                <Select
-                                    size="small"
-                                    value={limit}
-                                    onChange={e => { setLimit(Number(e.target.value)); setPage(1); }}
-                                    sx={{ fontSize: '0.75rem', height: 28 }}
-                                >
-                                    {[10, 20, 50, 100].map(n => (
-                                        <MenuItem key={n} value={n} sx={{ fontSize: '0.75rem' }}>{n} / trang</MenuItem>
-                                    ))}
-                                    <MenuItem value={0} sx={{ fontSize: '0.75rem' }}>Tất cả</MenuItem>
-                                </Select>
-                            </Stack>
-                            <Pagination
-                                count={limit === 0 ? 1 : (data.totalPages || 1)}
-                                page={page}
-                                onChange={(_, p) => setPage(p)}
-                                variant="outlined"
-                                shape="rounded"
-                                size="small"
-                            />
-                        </Stack>
+                        <TablePagination
+                            component="div"
+                            count={data.total ?? 0}
+                            page={page - 1}
+                            onPageChange={(_, p) => setPage(p + 1)}
+                            rowsPerPage={limit}
+                            onRowsPerPageChange={e => { setLimit(Number(e.target.value)); setPage(1); }}
+                            rowsPerPageOptions={[10, 25, 50, 100]}
+                            labelRowsPerPage="Mỗi trang:"
+                            labelDisplayedRows={({ from, to, count }) => `${from}–${to} / ${count}`}
+                        />
                     )}
                 </CardContent>
             </Card>

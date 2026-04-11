@@ -27,7 +27,11 @@ CREATE TABLE "organizations" (
     "isActive"          BOOLEAN     NOT NULL DEFAULT true,
     "maxDevices"        INTEGER     NOT NULL DEFAULT 10,
     "maxUsers"          INTEGER     NOT NULL DEFAULT 5,
-    "storageQuotaBytes" BIGINT      NOT NULL DEFAULT 10737418240,
+    "storageQuotaBytes" BIGINT      NOT NULL DEFAULT 10737418240, -- legacy, replaced by pool columns below
+    "storageBaseMb"    INTEGER     NOT NULL DEFAULT 100,
+    "ext50mb"          INTEGER     NOT NULL DEFAULT 0,
+    "ext100mb"         INTEGER     NOT NULL DEFAULT 0,
+    "ext200mb"         INTEGER     NOT NULL DEFAULT 0,
     "pointsTotal"       INTEGER     NOT NULL DEFAULT 30,
     "pointsUsed"        INTEGER     NOT NULL DEFAULT 0,
     "licenseStatus"     TEXT        NOT NULL DEFAULT 'TRIAL',
@@ -53,6 +57,24 @@ CREATE TABLE IF NOT EXISTS "platform_admins" (
     CONSTRAINT "platform_admins_pkey" PRIMARY KEY ("id")
 );
 CREATE UNIQUE INDEX IF NOT EXISTS "platform_admins_email_key" ON "platform_admins"("email");
+
+-- ─── Mail Configs ─────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS "mail_configs" (
+    "id"          TEXT        NOT NULL DEFAULT gen_random_uuid()::text,
+    "name"        TEXT        NOT NULL,
+    "host"        TEXT        NOT NULL,
+    "port"        INTEGER     NOT NULL DEFAULT 587,
+    "secure"      BOOLEAN     NOT NULL DEFAULT false,
+    "username"    TEXT        NOT NULL,
+    "password"    TEXT        NOT NULL,
+    "fromName"    TEXT        NOT NULL,
+    "fromAddress" TEXT        NOT NULL,
+    "isActive"    BOOLEAN     NOT NULL DEFAULT false,
+    "createdAt"   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    "updatedAt"   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT "mail_configs_pkey" PRIMARY KEY ("id")
+);
 
 -- ─── Users ────────────────────────────────────────────────────────────────────
 
@@ -228,6 +250,10 @@ CREATE TABLE "device_health" (
     "macAddress"       TEXT,
     "heapMemory"       BIGINT,
     "networkConnected" BOOLEAN,
+    "processCpuPercent" DOUBLE PRECISION,
+    "wanIp"            TEXT,
+    "subnet"           TEXT,
+    "ipProtocol"       TEXT,
     "reportedAt"       TIMESTAMP(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "device_health_pkey" PRIMARY KEY ("id")
 );
@@ -461,6 +487,42 @@ CREATE UNIQUE INDEX IF NOT EXISTS "stores_org_name_unique" ON stores("organizati
 -- ─── Site timezone (2026-03-17) ───────────────────────────────────────────────
 -- Run on existing DB:
 -- ALTER TABLE stores ADD COLUMN IF NOT EXISTS timezone TEXT DEFAULT NULL;
+
+-- ─── Storage quota pool (2026-04-10) ─────────────────────────────────────────
+-- Run on existing DB:
+-- ALTER TABLE organizations ADD COLUMN IF NOT EXISTS "storageBaseMb" INTEGER NOT NULL DEFAULT 100;
+-- ALTER TABLE organizations ADD COLUMN IF NOT EXISTS "ext50mb"       INTEGER NOT NULL DEFAULT 0;
+-- ALTER TABLE organizations ADD COLUMN IF NOT EXISTS "ext100mb"      INTEGER NOT NULL DEFAULT 0;
+-- ALTER TABLE organizations ADD COLUMN IF NOT EXISTS "ext200mb"      INTEGER NOT NULL DEFAULT 0;
+
+CREATE TABLE IF NOT EXISTS "storage_purchase_requests" (
+    "id"              TEXT        NOT NULL,
+    "organizationId"  TEXT        NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    "packageMb"       INTEGER     NOT NULL,   -- 50 | 100 | 200
+    "quantity"        INTEGER     NOT NULL DEFAULT 1,
+    "status"          TEXT        NOT NULL DEFAULT 'PENDING',  -- PENDING | APPROVED | REJECTED
+    "note"            TEXT,
+    "adminNote"       TEXT,
+    "requestedById"   TEXT,
+    "requestedByName" TEXT,
+    "resolvedById"    TEXT,
+    "resolvedAt"      TIMESTAMPTZ,
+    "createdAt"       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT "storage_purchase_requests_pkey" PRIMARY KEY ("id")
+);
+CREATE INDEX IF NOT EXISTS "spr_orgId_idx" ON storage_purchase_requests("organizationId");
+CREATE INDEX IF NOT EXISTS "spr_status_idx" ON storage_purchase_requests("status");
+
+CREATE TABLE IF NOT EXISTS "storage_history" (
+    "id"              TEXT        NOT NULL,
+    "organizationId"  TEXT        NOT NULL,
+    "action"          TEXT        NOT NULL,  -- ADJUST_POOL | PURCHASE_APPROVED
+    "performedById"   TEXT,
+    "performedByName" TEXT,
+    "detail"          JSONB,
+    "createdAt"       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT "storage_history_pkey" PRIMARY KEY ("id")
+);
 
 -- =============================================================================
 --  Seed: Super Admin account (chạy 1 lần khi khởi tạo DB)

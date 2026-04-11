@@ -221,11 +221,13 @@ function SortableRow({
     index,
     onDelete,
     deleting,
+    inheritedFromSite,
 }: {
     assignment: ScheduleAssignment;
     index: number;
     onDelete: (id: string) => void;
     deleting: boolean;
+    inheritedFromSite?: boolean;
 }) {
     const {
         attributes, listeners, setNodeRef, transform, transition, isDragging,
@@ -257,10 +259,18 @@ function SortableRow({
                     <FiberManualRecord sx={{
                         fontSize: 10,
                         color: assignment.scheduleIsActive ? 'success.main' : 'text.disabled',
+                        flexShrink: 0,
                     }} />
-                    <Typography variant="body2" fontWeight={600} noWrap>
-                        {assignment.scheduleName}
-                    </Typography>
+                    <Box>
+                        <Typography variant="body2" fontWeight={600} noWrap>
+                            {assignment.scheduleName}
+                        </Typography>
+                        {inheritedFromSite && (
+                            <Typography variant="caption" color="text.disabled" sx={{ fontStyle: 'italic' }}>
+                                kế thừa từ site
+                            </Typography>
+                        )}
+                    </Box>
                 </Stack>
             </TableCell>
             <TableCell sx={{ minWidth: 110 }}>
@@ -288,14 +298,16 @@ function SortableRow({
                 )}
             </TableCell>
             <TableCell sx={{ width: 44, px: 0.5 }}>
-                <Tooltip title="Xóa">
-                    <span>
-                        <IconButton size="small" color="error" disabled={deleting}
-                            onClick={() => onDelete(assignment.id)}>
-                            <Delete fontSize="small" />
-                        </IconButton>
-                    </span>
-                </Tooltip>
+                {!inheritedFromSite && (
+                    <Tooltip title="Xóa">
+                        <span>
+                            <IconButton size="small" color="error" disabled={deleting}
+                                onClick={() => onDelete(assignment.id)}>
+                                <Delete fontSize="small" />
+                            </IconButton>
+                        </span>
+                    </Tooltip>
+                )}
             </TableCell>
         </TableRow>
     );
@@ -342,18 +354,17 @@ function ScheduleListPanel({
     const [saving, setSaving] = useState(false);
 
     // ── Draft state: buffered changes before Save ─────────────────────────────
-    // null = no unsaved changes (showing server state)
     type DraftState = {
-        order: string[];                   // mix of real IDs + temp IDs (for pending adds)
-        adds: Map<string, Schedule>;       // tempId → Schedule (pending adds)
-        deletes: Set<string>;              // real assignment IDs to delete on Save
+        combinedOrder: string[];         // all IDs (device + site inherited) + temp IDs
+        adds: Map<string, Schedule>;     // tempId → Schedule (pending adds, device-level only)
+        deletes: Set<string>;            // real assignment IDs to delete on Save
     } | null;
     const [draft, setDraft] = useState<DraftState>(null);
     const isDirty = draft !== null;
 
     const queryKey = ['schedule-assignments', targetType, targetId];
 
-    // Server state
+    // Server state — device-level assignments for this target
     const { data: assignments = [], isLoading } = useQuery({
         queryKey,
         queryFn: () => scheduleAssignmentsApi.list({ targetType, targetId }),
@@ -375,16 +386,38 @@ function ScheduleListPanel({
         enabled: targetType === 'DEVICE' && !!siteId,
     });
 
+    // Site items that don't duplicate a device-level schedule
+    const deviceScheduleIds = useMemo(
+        () => new Set(assignments.map(a => a.scheduleId)),
+        [assignments],
+    );
+    const siteItemsToShow = useMemo(
+        () => siteInheritedAssignments.filter(a => !deviceScheduleIds.has(a.scheduleId)),
+        [siteInheritedAssignments, deviceScheduleIds],
+    );
+
+    // Default combined order: device items first, site items at bottom
+    const defaultCombinedOrder = useMemo(
+        () => [...assignments.map(a => a.id), ...siteItemsToShow.map(a => a.id)],
+        [assignments, siteItemsToShow],
+    );
+
+    // All server items with inheritedFromSite flag
+    type DisplayItem = ScheduleAssignment & { inheritedFromSite?: boolean };
+    const allServerItems = useMemo((): DisplayItem[] => [
+        ...assignments,
+        ...siteItemsToShow.map(a => ({ ...a, inheritedFromSite: true as const })),
+    ], [assignments, siteItemsToShow]);
+
     // Reset draft when target changes
     useEffect(() => { setDraft(null); }, [targetId]);
 
     // Build display items from draft or server state
-    const items: ScheduleAssignment[] = useMemo(() => {
-        if (!draft) return assignments;
-        return draft.order.map(id => {
+    const displayItems: DisplayItem[] = useMemo(() => {
+        if (!draft) return allServerItems;
+        return draft.combinedOrder.map(id => {
             const pending = draft.adds.get(id);
             if (pending) {
-                // Build a display-compatible ScheduleAssignment from Schedule
                 return {
                     id,
                     organizationId: '',
@@ -404,11 +437,11 @@ function ScheduleListPanel({
                     sortOrder: 0,
                 } satisfies ScheduleAssignment;
             }
-            return assignments.find(a => a.id === id);
-        }).filter((a): a is ScheduleAssignment => a !== undefined);
-    }, [draft, assignments, targetType, targetId]);
+            return allServerItems.find(a => a.id === id);
+        }).filter((a): a is DisplayItem => a !== undefined);
+    }, [draft, allServerItems, targetType, targetId]);
 
-    // Map: scheduleId → list of devices that already have it (for Add dialog)
+    // Map: scheduleId → list of devices that already have it (for Add dialog — SITE view only)
     const deviceConflicts = useMemo(() => {
         const map = new Map<string, DeviceConflict[]>();
         for (const a of devAssignments) {
@@ -421,7 +454,7 @@ function ScheduleListPanel({
         return map;
     }, [devAssignments]);
 
-    // Group device assignments by device (for display)
+    // Group device assignments by device (for SITE view)
     const deviceGroups = useMemo(() => {
         const groups = new Map<string, { deviceName: string; rows: ScheduleAssignment[] }>();
         for (const a of devAssignments) {
@@ -432,10 +465,10 @@ function ScheduleListPanel({
         return [...groups.values()];
     }, [devAssignments]);
 
-    // Schedule IDs already in the draft (to disable in Add dialog)
+    // All schedule IDs already shown (to disable in Add dialog)
     const existingSiteScheduleIds = useMemo(
-        () => new Set(items.map(a => a.scheduleId)),
-        [items],
+        () => new Set(displayItems.map(a => a.scheduleId)),
+        [displayItems],
     );
 
     // ── Draft handlers ────────────────────────────────────────────────────────
@@ -443,40 +476,40 @@ function ScheduleListPanel({
     const handleAdd = useCallback((schedule: Schedule) => {
         const tempId = `temp_${Date.now()}_${Math.random().toString(36).slice(2)}`;
         setDraft(prev => {
-            const base = prev ?? { order: assignments.map(a => a.id), adds: new Map(), deletes: new Set() };
+            const base = prev ?? { combinedOrder: defaultCombinedOrder, adds: new Map(), deletes: new Set() };
             return {
-                order: [...base.order, tempId],
+                combinedOrder: [...base.combinedOrder, tempId],
                 adds: new Map([...base.adds, [tempId, schedule]]),
                 deletes: base.deletes,
             };
         });
-    }, [assignments]);
+    }, [defaultCombinedOrder]);
 
     const handleDelete = useCallback((id: string) => {
         setDraft(prev => {
-            const base = prev ?? { order: assignments.map(a => a.id), adds: new Map(), deletes: new Set() };
+            const base = prev ?? { combinedOrder: defaultCombinedOrder, adds: new Map(), deletes: new Set() };
             const newAdds = new Map(base.adds);
             const newDeletes = new Set(base.deletes);
             if (newAdds.has(id)) {
-                newAdds.delete(id);  // pending add → just remove, no server call needed
+                newAdds.delete(id);
             } else {
-                newDeletes.add(id);  // real assignment → mark for deletion
+                newDeletes.add(id);
             }
-            return { order: base.order.filter(x => x !== id), adds: newAdds, deletes: newDeletes };
+            return { combinedOrder: base.combinedOrder.filter(x => x !== id), adds: newAdds, deletes: newDeletes };
         });
-    }, [assignments]);
+    }, [defaultCombinedOrder]);
 
     const handleDragEnd = useCallback((event: DragEndEvent) => {
         const { active, over } = event;
         if (!over || active.id === over.id) return;
         setDraft(prev => {
-            const base = prev ?? { order: assignments.map(a => a.id), adds: new Map(), deletes: new Set() };
-            const oldIdx = base.order.indexOf(String(active.id));
-            const newIdx = base.order.indexOf(String(over.id));
+            const base = prev ?? { combinedOrder: defaultCombinedOrder, adds: new Map(), deletes: new Set() };
+            const oldIdx = base.combinedOrder.indexOf(String(active.id));
+            const newIdx = base.combinedOrder.indexOf(String(over.id));
             if (oldIdx === -1 || newIdx === -1) return base;
-            return { ...base, order: arrayMove(base.order, oldIdx, newIdx) };
+            return { ...base, combinedOrder: arrayMove(base.combinedOrder, oldIdx, newIdx) };
         });
-    }, [assignments]);
+    }, [defaultCombinedOrder]);
 
     const handleDiscard = useCallback(() => setDraft(null), []);
 
@@ -484,30 +517,34 @@ function ScheduleListPanel({
         if (!draft) return;
         setSaving(true);
         try {
-            // 1. Execute all pending adds, collect real IDs in order
+            // 1. Execute all pending adds (device-level), collect real IDs
             const tempToReal = new Map<string, string>();
-            await Promise.all(
-                [...draft.adds.entries()].map(async ([tempId, schedule]) => {
-                    const result = await scheduleAssignmentsApi.bulkAssign(
-                        schedule.id, [{ targetType, targetId }]
-                    );
-                    // bulkAssign returns { created, skipped } but we need the new assignment ID
-                    // Fetch the new assignment to get its real ID
-                    const fresh = await scheduleAssignmentsApi.list({ targetType, targetId });
-                    const newAssign = fresh.find(a => a.scheduleId === schedule.id && !assignments.find(ex => ex.id === a.id));
-                    if (newAssign) tempToReal.set(tempId, newAssign.id);
-                })
-            );
+            for (const [tempId, schedule] of draft.adds.entries()) {
+                await scheduleAssignmentsApi.bulkAssign(schedule.id, [{ targetType, targetId }]);
+                const fresh = await scheduleAssignmentsApi.list({ targetType, targetId });
+                const newAssign = fresh.find(a => a.scheduleId === schedule.id && !assignments.find(ex => ex.id === a.id));
+                if (newAssign) tempToReal.set(tempId, newAssign.id);
+            }
 
             // 2. Execute all deletes
             await Promise.all([...draft.deletes].map(id => scheduleAssignmentsApi.unassignOne(id)));
 
-            // 3. Reorder: map tempIds to real IDs, drop unknown
-            const finalOrder = draft.order
+            // 3. Resolve combined order (temp → real, remove deleted)
+            const resolvedOrder = draft.combinedOrder
                 .map(id => tempToReal.get(id) ?? id)
                 .filter(id => !draft.deletes.has(id));
-            if (finalOrder.length > 1) {
-                await scheduleAssignmentsApi.reorder(targetType, targetId, finalOrder);
+
+            // 4. Separate device order and site order, reorder each independently
+            const siteItemIdSet = new Set(siteItemsToShow.map(a => a.id));
+            const deviceOrder = resolvedOrder.filter(id => !siteItemIdSet.has(id));
+            const siteOrder   = resolvedOrder.filter(id => siteItemIdSet.has(id));
+
+            if (deviceOrder.length > 1) {
+                await scheduleAssignmentsApi.reorder(targetType, targetId, deviceOrder);
+            }
+            if (siteId && siteOrder.length > 1) {
+                await scheduleAssignmentsApi.reorder('SITE', siteId, siteOrder);
+                qc.invalidateQueries({ queryKey: ['schedule-assignments', 'SITE', siteId] });
             }
 
             setDraft(null);
@@ -518,7 +555,7 @@ function ScheduleListPanel({
         } finally {
             setSaving(false);
         }
-    }, [draft, assignments, targetType, targetId, queryKey, qc, dispatch]);
+    }, [draft, siteItemsToShow, siteId, assignments, targetType, targetId, queryKey, qc, dispatch]);
 
     const sensors = useSensors(
         useSensor(PointerSensor),
@@ -568,35 +605,14 @@ function ScheduleListPanel({
             </Box>
 
             <Box sx={{ flex: 1, overflowY: 'auto' }}>
-                {/* ── Site Schedules section ─────────────────────────────── */}
-                <Box sx={{ px: 2, pt: 1.5, pb: 0.5 }}>
-                    <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 0.5 }}>
-                        <Typography variant="caption" fontWeight={700}
-                            color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: 1 }}>
-                            {isSite ? 'Site Schedules' : 'Schedules'}
-                        </Typography>
-                        {isSite && (
-                            <Tooltip title="Schedule gán cho site áp dụng cho tất cả devices trong site. Độ ưu tiên thấp hơn schedule gán trực tiếp cho device.">
-                                <InfoOutlined sx={{ fontSize: 14, color: 'text.disabled' }} />
-                            </Tooltip>
-                        )}
-                        {items.length > 0 && (
-                            <Chip label={items.length} size="small"
-                                sx={{ height: 18, fontSize: '0.65rem' }} />
-                        )}
-                    </Stack>
-                </Box>
-
-                {isLoading ? (
-                    <Box sx={{ px: 2 }}>
+                {(isLoading || siteInheritedLoading) ? (
+                    <Box sx={{ px: 2, pt: 1 }}>
                         {Array.from({ length: 3 }).map((_, i) => (
-                            <Skeleton key={i} variant="rectangular" height={40}
-                                sx={{ mb: 1, borderRadius: 1 }} />
+                            <Skeleton key={i} variant="rectangular" height={40} sx={{ mb: 1, borderRadius: 1 }} />
                         ))}
                     </Box>
-                ) : items.length === 0 ? (
-                    <Stack alignItems="center" spacing={1}
-                        sx={{ py: 4, color: 'text.disabled' }}>
+                ) : displayItems.length === 0 ? (
+                    <Stack alignItems="center" spacing={1} sx={{ py: 4, color: 'text.disabled' }}>
                         <CalendarMonth sx={{ fontSize: 40 }} />
                         <Typography variant="body2">Chưa có schedule nào</Typography>
                         <Button variant="outlined" size="small" startIcon={<Add />}
@@ -605,101 +621,28 @@ function ScheduleListPanel({
                         </Button>
                     </Stack>
                 ) : (
-                    <DndContext
-                        sensors={sensors}
-                        collisionDetection={closestCenter}
-                        onDragEnd={handleDragEnd}
-                    >
+                    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
                         <SortableContext
-                            items={items.map(a => a.id)}
+                            items={displayItems.map(a => a.id)}
                             strategy={verticalListSortingStrategy}
                         >
                             <Table size="small" stickyHeader>
                                 <ScheduleTableHeader />
                                 <TableBody>
-                                    {items.map((a, i) => (
+                                    {displayItems.map((a, i) => (
                                         <SortableRow
                                             key={a.id}
                                             assignment={a}
                                             index={i}
-                                            onDelete={handleDelete}
+                                            onDelete={a.inheritedFromSite ? () => {} : handleDelete}
                                             deleting={saving}
+                                            inheritedFromSite={a.inheritedFromSite}
                                         />
                                     ))}
                                 </TableBody>
                             </Table>
                         </SortableContext>
                     </DndContext>
-                )}
-
-                {/* ── Site Inherited section (device only, when device belongs to a site) ── */}
-                {!isSite && siteId && (
-                    <Box sx={{ px: 2, pt: 2, pb: 1 }}>
-                        <Divider sx={{ mb: 1.5 }} />
-                        <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
-                            <Storefront fontSize="small" sx={{ color: 'text.secondary' }} />
-                            <Typography variant="caption" fontWeight={700} color="text.secondary"
-                                sx={{ textTransform: 'uppercase', letterSpacing: 1 }}>
-                                Kế thừa từ Site
-                            </Typography>
-                            {siteName && (
-                                <Chip label={siteName} size="small" color="secondary" variant="outlined"
-                                    sx={{ height: 18, fontSize: '0.6rem' }} />
-                            )}
-                            <Tooltip title="Schedule gán cho site sẽ áp dụng cho thiết bị này. Schedule gán trực tiếp cho device có độ ưu tiên CAO HƠN.">
-                                <InfoOutlined sx={{ fontSize: 14, color: 'text.disabled' }} />
-                            </Tooltip>
-                        </Stack>
-
-                        {siteInheritedLoading ? (
-                            Array.from({ length: 2 }).map((_, i) => (
-                                <Skeleton key={i} variant="rectangular" height={36} sx={{ mb: 1, borderRadius: 1 }} />
-                            ))
-                        ) : siteInheritedAssignments.length === 0 ? (
-                            <Typography variant="caption" color="text.disabled" sx={{ display: 'block', py: 1 }}>
-                                Site chưa có schedule nào
-                            </Typography>
-                        ) : (
-                            <Table size="small">
-                                <ScheduleTableHeader showDrag={false} />
-                                <TableBody>
-                                    {siteInheritedAssignments.map((a, i) => (
-                                        <TableRow key={a.id} hover sx={{ opacity: 0.85 }}>
-                                            <TableCell sx={{ width: 52, textAlign: 'center' }}>
-                                                <Chip label={i + 1} size="small"
-                                                    color={i === 0 ? 'error' : i === 1 ? 'warning' : 'default'}
-                                                    sx={{ fontWeight: 700, minWidth: 28 }} />
-                                            </TableCell>
-                                            <TableCell>
-                                                <Stack direction="row" spacing={0.75} alignItems="center">
-                                                    <FiberManualRecord sx={{
-                                                        fontSize: 10,
-                                                        color: a.scheduleIsActive ? 'success.main' : 'text.disabled',
-                                                    }} />
-                                                    <Typography variant="body2" fontWeight={600} noWrap>
-                                                        {a.scheduleName}
-                                                    </Typography>
-                                                </Stack>
-                                            </TableCell>
-                                            <TableCell><TimeRange start={a.scheduleStartTime} end={a.scheduleEndTime} /></TableCell>
-                                            <TableCell><DaysChips days={a.scheduleDaysOfWeek} /></TableCell>
-                                            <TableCell>
-                                                {a.scheduleStartDate || a.scheduleEndDate ? (
-                                                    <Typography variant="caption" color="text.secondary" noWrap>
-                                                        {a.scheduleStartDate ? new Date(a.scheduleStartDate).toLocaleDateString('vi-VN') : '—'}
-                                                        {' – '}
-                                                        {a.scheduleEndDate ? new Date(a.scheduleEndDate).toLocaleDateString('vi-VN') : '—'}
-                                                    </Typography>
-                                                ) : (
-                                                    <Typography variant="caption" color="text.disabled">—</Typography>
-                                                )}
-                                            </TableCell>
-                                        </TableRow>
-                                    ))}
-                                </TableBody>
-                            </Table>
-                        )}
-                    </Box>
                 )}
 
                 {/* ── Device Override section (site only) ───────────────── */}

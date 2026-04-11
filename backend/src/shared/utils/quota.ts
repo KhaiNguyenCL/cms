@@ -34,16 +34,36 @@ export async function checkUserQuota(organizationId: string): Promise<void> {
 }
 
 export async function checkStorageQuota(organizationId: string, incomingBytes: number): Promise<void> {
-    const res = await queryOne<{ used: string; quota: string }>(
-        `SELECT (SELECT COALESCE(SUM("fileSize"), 0) FROM media WHERE "organizationId" = $1) AS used,
-                "storageQuotaBytes" AS quota
+    const res = await queryOne<{ used: string; baseMb: number; ext50: number; ext100: number; ext200: number }>(
+        `SELECT (SELECT COALESCE(SUM("fileSize"), 0) FROM media WHERE "organizationId" = $1)::text AS used,
+                "storageBaseMb" AS "baseMb", "ext50mb" AS "ext50", "ext100mb" AS "ext100", "ext200mb" AS "ext200"
          FROM organizations WHERE id = $1`,
         [organizationId]
     );
     if (!res) return;
     const used = parseInt(res.used);
-    const quota = parseInt(res.quota);
+    const totalQuotaMb = res.baseMb + res.ext50 * 50 + res.ext100 * 100 + res.ext200 * 200;
+    const quota = totalQuotaMb * 1024 * 1024;
     if (used + incomingBytes > quota) {
         throw new AppError(413, `Không đủ dung lượng. Đã dùng ${fmtBytes(used)} / ${fmtBytes(quota)}.`);
+    }
+    // Fire storage warning notifications (non-blocking, dedupe via 24h cooldown)
+    const pctAfter = quota > 0 ? ((used + incomingBytes) / quota) * 100 : 0;
+    if (pctAfter >= 100) {
+        import('../../modules/notifications/notifications.service')
+            .then(({ createNotification, NOTIF_TYPES }) =>
+                createNotification(organizationId, NOTIF_TYPES.STORAGE_FULL,
+                    'Dung lượng đã đầy',
+                    `Đã dùng ${fmtBytes(used + incomingBytes)} / ${fmtBytes(quota)}`,
+                    organizationId, 'storage')
+            ).catch(() => {});
+    } else if (pctAfter >= 80) {
+        import('../../modules/notifications/notifications.service')
+            .then(({ createNotification, NOTIF_TYPES }) =>
+                createNotification(organizationId, NOTIF_TYPES.STORAGE_NEARLY_FULL,
+                    `Dung lượng sắp đầy (${Math.round(pctAfter)}%)`,
+                    `Đã dùng ${fmtBytes(used + incomingBytes)} / ${fmtBytes(quota)}`,
+                    organizationId, 'storage')
+            ).catch(() => {});
     }
 }

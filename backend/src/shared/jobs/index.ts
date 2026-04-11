@@ -12,6 +12,7 @@ import './workers/device-notification.worker';
 import './workers/cleanup-logs.worker';
 import './workers/generate-reports.worker';
 import './workers/license-deduction.worker';
+import './workers/mail-notification.worker';
 
 // ─── Export scheduler helper for use in server.ts ─────────────────────────────
 export { setupScheduledJobs, setupQueueEvents } from './scheduler';
@@ -24,12 +25,14 @@ export {
     enqueueCleanupLogs,
     enqueueGenerateReport,
     enqueueLicenseDeduction,
+    enqueueMailNotification,
     videoTranscodingQueue,
     thumbnailGenerationQueue,
     deviceNotificationQueue,
     cleanupLogsQueue,
     generateReportsQueue,
     licenseDeductionQueue,
+    mailNotificationQueue,
     QUEUE_NAMES,
 } from './queues';
 
@@ -40,4 +43,5 @@ export type {
     CleanupLogsJobData,
     GenerateReportsJobData,
     LicenseDeductionJobData,
+    MailNotificationJobData,
 } from './queues';

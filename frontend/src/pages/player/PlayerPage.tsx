@@ -56,7 +56,6 @@ interface NativeBridgeAPI {
     getDeviceInfo(): string;
     reloadContent(): void;
     restartApp(): void;
-    clearCache(): void;
     clearCredentialsAndRepair?(): void;
     // Offline cache
     enqueueMediaDownloads?(itemsJson: string): void;

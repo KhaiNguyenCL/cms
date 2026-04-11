@@ -20,7 +20,7 @@ export const devicesApi = {
         return data.data;
     },
 
-    create: async (payload: { name: string; location?: string; timezone?: string }) => {
+    create: async (payload: { name: string; location?: string; timezone?: string; siteId?: string | null }) => {
         const { data } = await apiClient.post<ApiResponse<Device>>('/devices', payload);
         return data.data;
     },

@@ -7,7 +7,7 @@
  *  - generate-reports:   daily at 04:00 (yesterday's daily report for all orgs)
  */
 import { QueueEvents } from 'bullmq';
-import { cleanupLogsQueue, generateReportsQueue, licenseDeductionQueue } from './queues';
+import { cleanupLogsQueue, generateReportsQueue, licenseDeductionQueue, mailNotificationQueue } from './queues';
 import { query } from '../database/db';
 import bullmqConnection from './bullmq.connection';
 import logger from '../utils/logger';
@@ -70,6 +70,17 @@ export async function setupScheduledJobs(): Promise<void> {
         }
     );
     logger.info('Scheduled: license-deduction daily at 17:01 UTC (00:01 UTC+7)');
+
+    // ── 6. License expiry check — daily at 08:00 UTC+7 (01:00 UTC) ──────────────
+    await mailNotificationQueue.add(
+        'license-expiry-check',
+        { eventType: '__LICENSE_EXPIRY_CHECK__', orgId: '__ALL__', vars: {} },
+        {
+            repeat: { pattern: '0 1 * * *' },    // 01:00 UTC = 08:00 UTC+7
+            jobId: 'license-expiry-check-daily',
+        }
+    );
+    logger.info('Scheduled: license-expiry-check daily at 01:00 UTC (08:00 UTC+7)');
 
     logger.info('All scheduled jobs registered');
 }

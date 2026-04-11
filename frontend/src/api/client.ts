@@ -73,14 +73,43 @@ function processQueue(error: unknown, token: string | null = null) {
     failedQueue = [];
 }
 
+// ─── Cross-tab token coordination via BroadcastChannel ───────────────────────
+
+const _refreshChannel = typeof BroadcastChannel !== 'undefined'
+    ? new BroadcastChannel('cms_token_refresh')
+    : null;
+
+if (_refreshChannel) {
+    _refreshChannel.onmessage = (event: MessageEvent) => {
+        if (event.data?.type === 'TOKEN_REFRESHED') {
+            // Another tab successfully refreshed — adopt its token and unblock any queued requests
+            setAccessToken(event.data.token);
+            if (isRefreshing) {
+                processQueue(null, event.data.token);
+                isRefreshing = false;
+            }
+        } else if (event.data?.type === 'TOKEN_REFRESH_FAILED') {
+            // Another tab failed to refresh — propagate logout here too
+            if (isRefreshing) {
+                processQueue(event.data.error, null);
+                isRefreshing = false;
+            }
+            setAccessToken(null);
+            window.dispatchEvent(new CustomEvent('auth:logout'));
+        }
+    };
+}
+
 apiClient.interceptors.response.use(
     (response) => response,
     async (error: AxiosError) => {
         const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
 
-        if (error.response?.status === 401 && !originalRequest._retry) {
+        const reqUrl = originalRequest.url ?? '';
+        const isRefreshEndpoint = reqUrl.includes('refresh-token') || reqUrl.includes('platform/refresh');
+        if (error.response?.status === 401 && !originalRequest._retry && !isRefreshEndpoint) {
             if (isRefreshing) {
-                // Queue lại request trong khi đang refresh
+                // Queue lại request trong khi đang refresh (same-tab or cross-tab)
                 return new Promise((resolve, reject) => {
                     failedQueue.push({ resolve, reject });
                 }).then((token) => {
@@ -93,23 +122,24 @@ apiClient.interceptors.response.use(
             isRefreshing = true;
 
             try {
-                // Pick refresh endpoint based on session type
                 const refreshUrl = _isPlatformAdmin
                     ? '/api/platform/refresh'
                     : '/api/auth/refresh-token';
                 const { data } = await axios.post(refreshUrl, {}, { withCredentials: true });
-                const newToken: string = _isPlatformAdmin
-                    ? data.data.accessToken
-                    : data.data.accessToken;
+                const newToken: string = data.data.accessToken;
 
                 setAccessToken(newToken);
                 processQueue(null, newToken);
+
+                // Broadcast to other tabs so they don't trigger their own refresh
+                _refreshChannel?.postMessage({ type: 'TOKEN_REFRESHED', token: newToken });
 
                 originalRequest.headers.Authorization = `Bearer ${newToken}`;
                 return apiClient(originalRequest);
             } catch (refreshError) {
                 processQueue(refreshError, null);
                 setAccessToken(null);
+                _refreshChannel?.postMessage({ type: 'TOKEN_REFRESH_FAILED', error: 'refresh_failed' });
                 window.dispatchEvent(new CustomEvent('auth:logout'));
                 return Promise.reject(refreshError);
             } finally {

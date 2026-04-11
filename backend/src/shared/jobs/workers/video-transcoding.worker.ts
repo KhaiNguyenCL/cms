@@ -57,10 +57,12 @@ export const videoTranscodingWorker = new Worker<VideoTranscodingJobData>(
             [mediaId]
         );
 
-        // Construct output paths
+        // Construct output paths (outputDir is already org-specific)
         const baseName = path.basename(filePath, path.extname(filePath));
         const outputMp4 = path.join(outputDir, `${baseName}_transcoded.mp4`);
-        const thumbPath = path.join(config.storage.thumbnailDir, `${baseName}_thumb.webp`);
+        const orgThumbDir = path.join(config.storage.thumbnailDir, job.data.organizationId);
+        if (!fs.existsSync(orgThumbDir)) fs.mkdirSync(orgThumbDir, { recursive: true });
+        const thumbPath = path.join(orgThumbDir, `${baseName}_thumb.webp`);
 
         // Report progress: 10%
         await job.updateProgress(10);
@@ -130,6 +132,15 @@ export const videoTranscodingWorker = new Worker<VideoTranscodingJobData>(
         // Invalidate content hash so connected devices get push notification
         invalidateContentHashForOrg(job.data.organizationId).catch(() => {});
 
+        // In-app notification
+        const title = await query<{ title: string }>(`SELECT title FROM media WHERE id = $1`, [mediaId])
+            .then(r => r[0]?.title ?? mediaId).catch(() => mediaId);
+        import('../../../modules/notifications/notifications.service')
+            .then(({ createNotification, NOTIF_TYPES }) =>
+                createNotification(job.data.organizationId, NOTIF_TYPES.MEDIA_READY,
+                    `Video đã xử lý xong: ${title}`, undefined, mediaId, 'media')
+            ).catch(() => {});
+
         return { mediaId, outputMp4, thumbnailPath: thumbPath, ...meta };
     },
     {
@@ -149,5 +160,12 @@ videoTranscodingWorker.on('failed', async (job, err) => {
             `UPDATE media SET status = 'ERROR', "updatedAt" = NOW() WHERE id = $1`,
             [job.data.mediaId]
         ).catch(() => { });
+        const title = await query<{ title: string }>(`SELECT title FROM media WHERE id = $1`, [job.data.mediaId])
+            .then(r => r[0]?.title ?? job.data.mediaId).catch(() => job.data.mediaId);
+        import('../../../modules/notifications/notifications.service')
+            .then(({ createNotification, NOTIF_TYPES }) =>
+                createNotification(job.data.organizationId, NOTIF_TYPES.MEDIA_ERROR,
+                    `Video xử lý thất bại: ${title}`, err.message, job.data.mediaId, 'media')
+            ).catch(() => {});
     }
 });

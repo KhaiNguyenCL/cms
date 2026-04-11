@@ -37,6 +37,7 @@ export async function getPlaylistById(req: Request, res: Response, next: NextFun
             displayOrder: item.position,
             duration: item.durationOverride ?? item.mediaDuration ?? 30,
             transition: item.transition ?? null,
+            transitionDuration: item.transitionDuration ?? null,
             media: {
                 id: item.mediaId,
                 title: item.mediaTitle ?? '',

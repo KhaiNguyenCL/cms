@@ -22,6 +22,7 @@ export interface SiteRow {
     timezone: string | null;      // IANA timezone — all devices in site inherit if device.timezone is null
     timeOn: string | null;        // HH:MM — screen-on time
     timeOff: string | null;       // HH:MM — screen-off time
+    alarmToleranceMin: number;    // minutes of grace period around timeOn/timeOff
     deployDate: string | null;    // ISO date — deployment start
     endDate: string | null;       // ISO date — deployment end
     playlistId: string | null;
@@ -70,7 +71,8 @@ export async function listSites(
         query<SiteRow>(
             `SELECT s.id, s."organizationId", s.name, s.description,
                     s.address, s.contact, s.timezone,
-                    s."timeOn", s."timeOff", s."deployDate", s."endDate",
+                    s."timeOn", s."timeOff", s."alarmToleranceMin",
+                    s."deployDate", s."endDate",
                     s."playlistId", p.name AS "playlistName",
                     s."startEpoch", s."totalDurationMs",
                     s."createdAt", s."updatedAt",
@@ -98,7 +100,8 @@ export async function getSiteById(id: string, organizationId: string) {
     const site = await queryOne<SiteRow>(
         `SELECT s.id, s."organizationId", s.name, s.description,
                 s.address, s.contact, s.timezone,
-                s."timeOn", s."timeOff", s."deployDate", s."endDate",
+                s."timeOn", s."timeOff", s."alarmToleranceMin",
+                s."deployDate", s."endDate",
                 s."playlistId", p.name AS "playlistName",
                 s."startEpoch", s."totalDurationMs",
                 s."createdAt", s."updatedAt",
@@ -140,10 +143,10 @@ export async function createSite(
     try {
         row = await queryOne<SiteRow>(
             `INSERT INTO stores (id, "organizationId", name, description, address, contact, timezone,
-                                 "timeOn", "timeOff", "deployDate", "endDate", "playlistId", "createdAt", "updatedAt")
-             VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW())
+                                 "timeOn", "timeOff", "alarmToleranceMin", "deployDate", "endDate", "playlistId", "createdAt", "updatedAt")
+             VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW())
              RETURNING id, "organizationId", name, description, address, contact, timezone,
-                       "timeOn", "timeOff", "deployDate", "endDate", "playlistId",
+                       "timeOn", "timeOff", "alarmToleranceMin", "deployDate", "endDate", "playlistId",
                        NULL AS "playlistName", "startEpoch", "totalDurationMs",
                        0::int AS "deviceCount", 0::int AS "onlineCount",
                        "createdAt", "updatedAt"`,
@@ -152,6 +155,7 @@ export async function createSite(
                 data.address ?? null, data.contact ?? null,
                 data.timezone ?? null,
                 data.timeOn ?? null, data.timeOff ?? null,
+                data.alarmToleranceMin ?? 60,
                 data.deployDate ?? null, data.endDate ?? null,
                 data.playlistId ?? null,
             ],
@@ -185,9 +189,10 @@ export async function updateSite(
     if (data.address !== undefined)     { fields.push(`address = $${idx++}`);           values.push(data.address); }
     if (data.contact !== undefined)     { fields.push(`contact = $${idx++}`);           values.push(data.contact); }
     if (data.timezone !== undefined)    { fields.push(`timezone = $${idx++}`);          values.push(data.timezone); }
-    if (data.timeOn !== undefined)      { fields.push(`"timeOn" = $${idx++}`);          values.push(data.timeOn); }
-    if (data.timeOff !== undefined)     { fields.push(`"timeOff" = $${idx++}`);         values.push(data.timeOff); }
-    if (data.deployDate !== undefined)  { fields.push(`"deployDate" = $${idx++}`);      values.push(data.deployDate); }
+    if (data.timeOn !== undefined)            { fields.push(`"timeOn" = $${idx++}`);             values.push(data.timeOn); }
+    if (data.timeOff !== undefined)           { fields.push(`"timeOff" = $${idx++}`);            values.push(data.timeOff); }
+    if (data.alarmToleranceMin !== undefined) { fields.push(`"alarmToleranceMin" = $${idx++}`);  values.push(data.alarmToleranceMin); }
+    if (data.deployDate !== undefined)        { fields.push(`"deployDate" = $${idx++}`);          values.push(data.deployDate); }
     if (data.endDate !== undefined)     { fields.push(`"endDate" = $${idx++}`);         values.push(data.endDate); }
     if (data.playlistId !== undefined)  { fields.push(`"playlistId" = $${idx++}`);      values.push(data.playlistId); }
 
