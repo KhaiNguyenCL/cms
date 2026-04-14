@@ -22,7 +22,6 @@ import deviceSyncRoutes from '../modules/device-sync/device-sync.routes';
 import deviceGroupRoutes from '../modules/device-groups/device-groups.routes';
 import siteRoutes from '../modules/sites/sites.routes';
 import scheduleAssignmentRoutes from '../modules/schedule-assignments/schedule-assignments.routes';
-import platformAuthRoutes from '../modules/platform-auth/platform-auth.routes';
 import alarmRoutes from '../modules/alarm/alarm.routes';
 import contentHistoryRoutes from '../modules/content-history/content-history.routes';
 import softwareHistoryRoutes from '../modules/software-history/software-history.routes';
@@ -106,7 +105,6 @@ app.get('/health', async (_req, res) => {
 
 // ── Public routes (no auth needed) ───────────────────────────
 app.use('/api/auth', authRoutes);
-app.use('/api/platform', platformAuthRoutes); // Platform admin auth + CRUD
 app.use('/api/device', deviceSyncRoutes); // Device player sync (uses device JWT)
 
 // ── Admin routes (requires user auth) ────────────────────────

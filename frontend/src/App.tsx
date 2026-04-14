@@ -66,8 +66,6 @@ const ContentHistoryPage   = lazy(() => import('@pages/history/ContentHistoryPag
 const SoftwareHistoryPage  = lazy(() => import('@pages/history/SoftwareHistoryPage'));
 const ActionHistoryPage    = lazy(() => import('@pages/history/ActionHistoryPage'));
 const ScheduleAssignmentPage = lazy(() => import('@pages/schedule-assignment/ScheduleAssignmentPage'));
-const PlatformLoginPage = lazy(() => import('@pages/platform/PlatformLoginPage'));
-
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -98,7 +96,6 @@ function AppRoutes() {
           <Routes>
             {/* Public */}
             <Route path="/login" element={<LoginPage />} />
-            <Route path="/platform/login" element={<PlatformLoginPage />} />
             {/* Android TV WebView player — device JWT, no admin auth */}
             <Route path="/player" element={
                 <PlayerErrorBoundary><PlayerPage /></PlayerErrorBoundary>

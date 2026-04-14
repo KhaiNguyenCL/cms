@@ -25,7 +25,6 @@ import { useAppDispatch, useAppSelector } from '@store/hooks';
 import { toggleColorMode, setSidebarOpen, pushToast } from '@store/slices/uiSlice';
 import { logout, setManagingOrg } from '@store/slices/authSlice';
 import { authApi } from '@api/auth.api';
-import { platformAuthApi } from '@api/platform-auth.api';
 import { organizationsApi, type OrgWithStats } from '@api/organizations.api';
 import { notificationsApi, NOTIF_META, type AppNotification } from '@api/notifications.api';
 
@@ -263,8 +262,6 @@ export default function DashboardLayout() {
     const sidebarOpen = useAppSelector((s) => s.ui.sidebarOpen);
     const colorMode = useAppSelector((s) => s.ui.colorMode);
     const user = useAppSelector((s) => s.auth.user);
-    const isPlatformAdmin = useAppSelector((s) => s.auth.isPlatformAdmin);
-    const platformAdmin = useAppSelector((s) => s.auth.platformAdmin);
     const managingOrgId = useAppSelector((s) => s.auth.managingOrgId);
     const managingOrgName = useAppSelector((s) => s.auth.managingOrgName);
     const isSwitched = !!managingOrgId && managingOrgId !== user?.organizationId;
@@ -326,7 +323,6 @@ export default function DashboardLayout() {
         queryKey: ['notifications'],
         queryFn: () => notificationsApi.list({ limit: 50 }),
         refetchInterval: 60_000,
-        enabled: !isPlatformAdmin,
     });
     const unreadCount = notifData?.unreadCount ?? 0;
 
@@ -343,7 +339,7 @@ export default function DashboardLayout() {
     const { data: allOrgs = [] } = useQuery({
         queryKey: ['super-admin-orgs'],
         queryFn: organizationsApi.listAll,
-        enabled: user?.role === 'SUPER_ADMIN' || isPlatformAdmin,
+        enabled: user?.role === 'SUPER_ADMIN',
         staleTime: 2 * 60_000,
     });
 
@@ -416,15 +412,11 @@ export default function DashboardLayout() {
 
     const handleLogout = async () => {
         try {
-            if (isPlatformAdmin) {
-                await platformAuthApi.logout();
-            } else {
-                await authApi.logout();
-            }
+            await authApi.logout();
         } catch { /* ignore */ }
         dispatch(logout());
         queryClient.clear();
-        navigate(isPlatformAdmin ? '/platform/login' : '/login', { replace: true, state: {} });
+        navigate('/login', { replace: true, state: {} });
     };
 
     const handleSwitchOrg = (org: OrgWithStats) => {
@@ -760,7 +752,7 @@ export default function DashboardLayout() {
                 })}
 
                 {/* Super Admin section */}
-                {(user?.role === 'SUPER_ADMIN' || isPlatformAdmin) && (
+                {user?.role === 'SUPER_ADMIN' && (
                     <>
                         <Divider sx={{ my: 1 }} />
                         {sidebarOpen && (
@@ -831,23 +823,20 @@ export default function DashboardLayout() {
                 <Avatar
                     sx={{
                         width: 36, height: 36, minWidth: 36, minHeight: 36,
-                        bgcolor: isPlatformAdmin ? '#c0392b' : 'primary.main',
+                        bgcolor: 'primary.main',
                         cursor: 'pointer', fontSize: '0.875rem', flexShrink: 0,
                     }}
                     onClick={(e) => setAnchorEl(e.currentTarget)}
                 >
-                    {isPlatformAdmin
-                        ? (platformAdmin?.name?.[0] ?? 'P').toUpperCase()
-                        : user?.email?.[0]?.toUpperCase()}
+                    {user?.email?.[0]?.toUpperCase()}
                 </Avatar>
                 {sidebarOpen && (
                     <Box sx={{ overflow: 'hidden', flex: 1 }}>
                         <Typography variant="body2" fontWeight={600} noWrap>
-                            {isPlatformAdmin ? platformAdmin?.name : user?.email}
+                            {user?.email}
                         </Typography>
-                        <Typography variant="caption" noWrap
-                            sx={{ color: isPlatformAdmin ? 'error.main' : 'text.secondary', fontWeight: isPlatformAdmin ? 700 : 400 }}>
-                            {isPlatformAdmin ? 'PLATFORM ADMIN' : user?.role}
+                        <Typography variant="caption" noWrap sx={{ color: 'text.secondary' }}>
+                            {user?.role}
                         </Typography>
                     </Box>
                 )}
@@ -987,15 +976,13 @@ export default function DashboardLayout() {
                         </Tooltip>
 
                         {/* Notifications */}
-                        {!isPlatformAdmin && (
-                            <Tooltip title={t('layout.notifications')}>
-                                <IconButton onClick={e => setNotifAnchor(e.currentTarget)}>
-                                    <Badge badgeContent={unreadCount || undefined} color="error" max={99}>
-                                        {unreadCount > 0 ? <NotificationsActive /> : <NotificationsNone />}
-                                    </Badge>
-                                </IconButton>
-                            </Tooltip>
-                        )}
+                        <Tooltip title={t('layout.notifications')}>
+                            <IconButton onClick={e => setNotifAnchor(e.currentTarget)}>
+                                <Badge badgeContent={unreadCount || undefined} color="error" max={99}>
+                                    {unreadCount > 0 ? <NotificationsActive /> : <NotificationsNone />}
+                                </Badge>
+                            </IconButton>
+                        </Tooltip>
                     </Toolbar>
                 </AppBar>
 

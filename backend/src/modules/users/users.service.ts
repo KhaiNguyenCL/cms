@@ -239,6 +239,97 @@ export async function deleteUser(
     return { email: target.email };
 }
 
+// ─── Super-admin management (isRoot only) ────────────────────────────────────
+
+const SYSTEM_ORG_ID = 'org-system-001';
+
+export interface SuperAdminRow {
+    id: string;
+    email: string;
+    status: string;
+    isRoot: boolean;
+    createdAt: string;
+    updatedAt: string;
+}
+
+export async function listSuperAdmins(): Promise<SuperAdminRow[]> {
+    return query<SuperAdminRow>(
+        `SELECT id, email, status, "isRoot", "createdAt", "updatedAt"
+         FROM users WHERE role = 'SUPER_ADMIN'
+         ORDER BY "isRoot" DESC, "createdAt" ASC`,
+        []
+    );
+}
+
+export async function createSuperAdmin(email: string, password: string): Promise<SuperAdminRow> {
+    const existing = await queryOne(`SELECT id FROM users WHERE email = $1`, [email]);
+    if (existing) throw new AppError(409, 'Email đã được sử dụng');
+
+    const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+    const result = await queryOne<SuperAdminRow>(
+        `INSERT INTO users (id, "organizationId", email, "passwordHash", role, status, "createdAt", "updatedAt")
+         VALUES (gen_random_uuid()::text, $1, $2, $3, 'SUPER_ADMIN', 'ACTIVE', NOW(), NOW())
+         RETURNING id, email, status, "isRoot", "createdAt", "updatedAt"`,
+        [SYSTEM_ORG_ID, email, passwordHash]
+    );
+    if (!result) throw new AppError(500, 'Tạo thất bại');
+    logger.info('Super admin created', { email });
+    return result;
+}
+
+export async function updateSuperAdmin(
+    id: string,
+    requesterId: string,
+    data: { password?: string; status?: string }
+): Promise<SuperAdminRow> {
+    const target = await queryOne<{ isRoot: boolean }>(
+        `SELECT "isRoot" FROM users WHERE id = $1 AND role = 'SUPER_ADMIN'`,
+        [id]
+    );
+    if (!target) throw new AppError(404, 'Super admin không tồn tại');
+    if (target.isRoot && id !== requesterId) throw new AppError(403, 'Không thể chỉnh sửa tài khoản root');
+    if (data.status === 'INACTIVE' && id === requesterId) throw new AppError(400, 'Không thể tự vô hiệu hoá tài khoản của mình');
+
+    const fields: string[] = [];
+    const values: unknown[] = [];
+    let idx = 1;
+
+    if (data.password !== undefined) {
+        fields.push(`"passwordHash" = $${idx++}`);
+        values.push(await bcrypt.hash(data.password, BCRYPT_ROUNDS));
+    }
+    if (data.status !== undefined) {
+        fields.push(`status = $${idx++}`);
+        values.push(data.status);
+    }
+    if (fields.length === 0) throw new AppError(400, 'Không có dữ liệu để cập nhật');
+
+    fields.push(`"updatedAt" = NOW()`);
+    values.push(id);
+
+    const result = await queryOne<SuperAdminRow>(
+        `UPDATE users SET ${fields.join(', ')} WHERE id = $${idx} AND role = 'SUPER_ADMIN'
+         RETURNING id, email, status, "isRoot", "createdAt", "updatedAt"`,
+        values
+    );
+    if (!result) throw new AppError(404, 'Super admin không tồn tại');
+    logger.info('Super admin updated', { id });
+    return result;
+}
+
+export async function deleteSuperAdmin(id: string, requesterId: string): Promise<void> {
+    if (id === requesterId) throw new AppError(400, 'Không thể tự xoá tài khoản của mình');
+    const target = await queryOne<{ isRoot: boolean }>(
+        `SELECT "isRoot" FROM users WHERE id = $1 AND role = 'SUPER_ADMIN'`,
+        [id]
+    );
+    if (!target) throw new AppError(404, 'Super admin không tồn tại');
+    if (target.isRoot) throw new AppError(400, 'Không thể xoá tài khoản root');
+
+    await query(`DELETE FROM users WHERE id = $1`, [id]);
+    logger.info('Super admin deleted', { id, by: requesterId });
+}
+
 // ─── Hard delete user ──────────────────────────────────────────────────────────
 
 export async function hardDeleteUser(

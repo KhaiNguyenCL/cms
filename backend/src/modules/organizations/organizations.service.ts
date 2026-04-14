@@ -119,6 +119,7 @@ export async function listAllOrganizations(): Promise<OrgListRow[]> {
             (SELECT COUNT(*) FROM schedules s WHERE s."organizationId" = o.id)                           AS total_schedules,
             (SELECT COUNT(*) FROM devices d WHERE d."organizationId" = o.id AND d."isLicensed" = true)   AS licensed_devices
          FROM organizations o
+         WHERE o."isSystem" = false
          ORDER BY o."createdAt" DESC`,
         []
     );
@@ -181,11 +182,12 @@ export async function deleteOrganization(orgId: string, requesterId: string): Pr
         throw new AppError(400, 'Không thể xóa tổ chức của chính mình');
     }
 
-    const org = await queryOne<{ id: string }>(
-        `SELECT id FROM organizations WHERE id = $1`,
+    const org = await queryOne<{ id: string; isSystem: boolean }>(
+        `SELECT id, "isSystem" FROM organizations WHERE id = $1`,
         [orgId]
     );
     if (!org) throw new AppError(404, 'Organization không tồn tại');
+    if (org.isSystem) throw new AppError(400, 'Không thể xóa tổ chức hệ thống');
 
     // Cascade delete — all child tables have ON DELETE CASCADE
     await query(`DELETE FROM organizations WHERE id = $1`, [orgId]);

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import * as usersController from './users.controller';
-import { authenticate, authorize } from '../../shared/middleware/auth.middleware';
+import { authenticate, authorize, authorizeRoot } from '../../shared/middleware/auth.middleware';
 import { validate } from '../../shared/middleware/validate.middleware';
 import { createUserSchema, updateUserSchema, listUsersSchema } from './users.schema';
 
@@ -8,6 +8,12 @@ const router = Router();
 
 // Tất cả routes đều cần auth
 router.use(authenticate);
+
+// ─── Super-admin management (isRoot only) ────────────────────────────────────
+router.get('/super-admins', authorizeRoot, usersController.listSuperAdmins);
+router.post('/super-admins', authorizeRoot, usersController.createSuperAdmin);
+router.put('/super-admins/:id', authorizeRoot, usersController.updateSuperAdmin);
+router.delete('/super-admins/:id', authorizeRoot, usersController.deleteSuperAdmin);
 
 /**
  * @route   GET /api/users

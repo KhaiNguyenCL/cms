@@ -79,6 +79,43 @@ export async function deleteUser(req: Request, res: Response, next: NextFunction
     }
 }
 
+// GET /api/users/super-admins
+export async function listSuperAdmins(req: Request, res: Response, next: NextFunction) {
+    try {
+        const admins = await userService.listSuperAdmins();
+        res.json({ success: true, data: admins });
+    } catch (err) { next(err); }
+}
+
+// POST /api/users/super-admins
+export async function createSuperAdmin(req: Request, res: Response, next: NextFunction) {
+    try {
+        const { email, password } = req.body as { email: string; password: string };
+        const admin = await userService.createSuperAdmin(email, password);
+        res.status(201).json({ success: true, data: admin });
+    } catch (err) { next(err); }
+}
+
+// PUT /api/users/super-admins/:id
+export async function updateSuperAdmin(req: Request, res: Response, next: NextFunction) {
+    try {
+        const admin = await userService.updateSuperAdmin(
+            req.params.id as string,
+            req.user!.userId,
+            req.body
+        );
+        res.json({ success: true, data: admin });
+    } catch (err) { next(err); }
+}
+
+// DELETE /api/users/super-admins/:id
+export async function deleteSuperAdmin(req: Request, res: Response, next: NextFunction) {
+    try {
+        await userService.deleteSuperAdmin(req.params.id as string, req.user!.userId);
+        res.json({ success: true, message: 'Super admin đã bị xoá' });
+    } catch (err) { next(err); }
+}
+
 // DELETE /api/users/:id/permanent  (hard — xoá thật)
 export async function hardDeleteUser(req: Request, res: Response, next: NextFunction) {
     try {

@@ -25,7 +25,7 @@ import { pushToast } from '@store/slices/uiSlice';
 import { setManagingOrg } from '@store/slices/authSlice';
 import { organizationsApi, type OrgWithStats } from '@api/organizations.api';
 import { authApi } from '@api/auth.api';
-import { platformAuthApi, type PlatformAdmin } from '@api/platform-auth.api';
+import apiClient from '@api/client';
 import {
     mailConfigApi, mailTemplateApi, mailSettingsApi,
     type MailConfig, type MailConfigPayload,
@@ -33,6 +33,35 @@ import {
     type MailSetting, type EventTypeInfo,
 } from '@api/mail-config.api';
 import { storageQuotaApi, type OrgStorageStat, type StoragePurchaseRequest } from '@api/storage-quota.api';
+
+// ── Super-admin API ───────────────────────────────────────────────────────────
+
+interface SuperAdminUser {
+    id: string;
+    email: string;
+    status: string;
+    isRoot: boolean;
+    createdAt: string;
+    updatedAt: string;
+}
+
+const superAdminsApi = {
+    list: async () => {
+        const { data } = await apiClient.get<{ data: SuperAdminUser[] }>('/users/super-admins');
+        return data.data;
+    },
+    create: async (email: string, password: string) => {
+        const { data } = await apiClient.post<{ data: SuperAdminUser }>('/users/super-admins', { email, password });
+        return data.data;
+    },
+    update: async (id: string, payload: { password?: string; status?: string }) => {
+        const { data } = await apiClient.put<{ data: SuperAdminUser }>(`/users/super-admins/${id}`, payload);
+        return data.data;
+    },
+    delete: async (id: string) => {
+        await apiClient.delete(`/users/super-admins/${id}`);
+    },
+};
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -568,30 +597,29 @@ function OrgRow({ org, onToggle, onManage, onDelete, currentOrgId }: {
     );
 }
 
-// ── Platform Admins section ───────────────────────────────────────────────────
+// ── Super Admins management section (root only) ───────────────────────────────
 
-function CreatePlatformAdminDialog({ onClose }: { onClose: () => void }) {
+function CreateSuperAdminDialog({ onClose }: { onClose: () => void }) {
     const { t } = useTranslation();
     const qc = useQueryClient();
     const dispatch = useAppDispatch();
-    const [name, setName] = useState('');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [showPw, setShowPw] = useState(false);
 
     const mutation = useMutation({
-        mutationFn: () => platformAuthApi.createAdmin({ name: name.trim(), email: email.trim(), password }),
+        mutationFn: () => superAdminsApi.create(email.trim(), password),
         onSuccess: () => {
-            qc.invalidateQueries({ queryKey: ['platform-admins'] });
-            dispatch(pushToast({ severity: 'success', message: t('superAdmin.createAdminSuccess', { name: name.trim() }) }));
+            qc.invalidateQueries({ queryKey: ['super-admins'] });
+            dispatch(pushToast({ severity: 'success', message: t('superAdmin.createAdminSuccess', { name: email.trim() }) }));
             onClose();
         },
         onError: (e: any) => {
-            dispatch(pushToast({ severity: 'error', message: e?.response?.data?.message ?? t('common.failedAction') }));
+            dispatch(pushToast({ severity: 'error', message: e?.response?.data?.error ?? t('common.failedAction') }));
         },
     });
 
-    const canSubmit = name.trim().length >= 2 && email.includes('@') && password.length >= 8 && !mutation.isPending;
+    const canSubmit = email.includes('@') && password.length >= 8 && !mutation.isPending;
 
     return (
         <Dialog open onClose={onClose} maxWidth="xs" fullWidth>
@@ -603,8 +631,7 @@ function CreatePlatformAdminDialog({ onClose }: { onClose: () => void }) {
             </DialogTitle>
             <DialogContent dividers>
                 <Stack spacing={2.5} pt={0.5}>
-                    <TextField label={t('common.name')} value={name} onChange={e => setName(e.target.value)} fullWidth autoFocus size="small" required />
-                    <TextField label="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} fullWidth size="small" required />
+                    <TextField label="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} fullWidth autoFocus size="small" required />
                     <TextField
                         label={t('auth.password')} type={showPw ? 'text' : 'password'}
                         value={password} onChange={e => setPassword(e.target.value)}
@@ -632,7 +659,7 @@ function CreatePlatformAdminDialog({ onClose }: { onClose: () => void }) {
     );
 }
 
-function ChangePasswordDialog({ admin, onClose }: { admin: PlatformAdmin; onClose: () => void }) {
+function ChangePasswordDialog({ admin, onClose }: { admin: SuperAdminUser; onClose: () => void }) {
     const { t } = useTranslation();
     const dispatch = useAppDispatch();
     const qc = useQueryClient();
@@ -641,13 +668,13 @@ function ChangePasswordDialog({ admin, onClose }: { admin: PlatformAdmin; onClos
     const [show, setShow] = useState(false);
 
     const mutation = useMutation({
-        mutationFn: () => platformAuthApi.updateAdmin(admin.id, { password: pw }),
+        mutationFn: () => superAdminsApi.update(admin.id, { password: pw }),
         onSuccess: () => {
-            qc.invalidateQueries({ queryKey: ['platform-admins'] });
-            dispatch(pushToast({ severity: 'success', message: t('superAdmin.changePwSuccess', { name: admin.name }) }));
+            qc.invalidateQueries({ queryKey: ['super-admins'] });
+            dispatch(pushToast({ severity: 'success', message: t('superAdmin.changePwSuccess', { name: admin.email }) }));
             onClose();
         },
-        onError: (e: any) => dispatch(pushToast({ severity: 'error', message: e?.response?.data?.message ?? t('common.failedAction') })),
+        onError: (e: any) => dispatch(pushToast({ severity: 'error', message: e?.response?.data?.error ?? t('common.failedAction') })),
     });
 
     const valid = pw.length >= 8 && pw === confirm;
@@ -657,7 +684,7 @@ function ChangePasswordDialog({ admin, onClose }: { admin: PlatformAdmin; onClos
             <DialogTitle fontWeight={700}>
                 <Stack direction="row" alignItems="center" gap={1}>
                     <Lock color="warning" />
-                    {t('superAdmin.changePwTitle', { name: admin.name })}
+                    {t('superAdmin.changePwTitle', { name: admin.email })}
                 </Stack>
             </DialogTitle>
             <DialogContent dividers>
@@ -702,49 +729,49 @@ function PlatformAdminsSection({ currentAdminId }: { currentAdminId?: string }) 
     const qc = useQueryClient();
     const dispatch = useAppDispatch();
     const [createOpen, setCreateOpen] = useState(false);
-    const [changePwTarget, setChangePwTarget] = useState<PlatformAdmin | null>(null);
+    const [changePwTarget, setChangePwTarget] = useState<SuperAdminUser | null>(null);
 
     const { data: admins = [], isLoading } = useQuery({
-        queryKey: ['platform-admins'],
-        queryFn: platformAuthApi.listAdmins,
+        queryKey: ['super-admins'],
+        queryFn: superAdminsApi.list,
         staleTime: 60_000,
     });
 
-    const currentAdmin = admins.find(a => a.id === currentAdminId);
-    const iCurrentRoot = currentAdmin?.isRoot ?? false;
-
     const toggleMutation = useMutation({
-        mutationFn: (admin: PlatformAdmin) => platformAuthApi.updateAdmin(admin.id, { isActive: !admin.isActive }),
+        mutationFn: (admin: SuperAdminUser) => superAdminsApi.update(admin.id, {
+            status: admin.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE',
+        }),
         onSuccess: (_, admin) => {
-            qc.invalidateQueries({ queryKey: ['platform-admins'] });
-            dispatch(pushToast({ severity: 'success', message: `${admin.isActive ? t('superAdmin.actionOff') : t('superAdmin.actionOn')}: "${admin.name}"` }));
+            qc.invalidateQueries({ queryKey: ['super-admins'] });
+            const action = admin.status === 'ACTIVE' ? t('superAdmin.actionOff') : t('superAdmin.actionOn');
+            dispatch(pushToast({ severity: 'success', message: `${action}: "${admin.email}"` }));
         },
         onError: (e: any) => {
-            dispatch(pushToast({ severity: 'error', message: e?.response?.data?.message ?? t('common.failedAction') }));
+            dispatch(pushToast({ severity: 'error', message: e?.response?.data?.error ?? t('common.failedAction') }));
         },
     });
 
     const deleteMutation = useMutation({
-        mutationFn: (id: string) => platformAuthApi.deleteAdmin(id),
+        mutationFn: (id: string) => superAdminsApi.delete(id),
         onSuccess: () => {
-            qc.invalidateQueries({ queryKey: ['platform-admins'] });
+            qc.invalidateQueries({ queryKey: ['super-admins'] });
             dispatch(pushToast({ severity: 'success', message: t('common.delete') }));
         },
         onError: (e: any) => {
-            dispatch(pushToast({ severity: 'error', message: e?.response?.data?.message ?? t('common.failedAction') }));
+            dispatch(pushToast({ severity: 'error', message: e?.response?.data?.error ?? t('common.failedAction') }));
         },
     });
 
-    const canChangePassword = (target: PlatformAdmin) => {
-        if (target.id === currentAdminId) return true;          // can change own password
-        if (target.isRoot) return false;                         // cannot change root's password
-        return true;                                             // can change others' password
+    const canChangePassword = (target: SuperAdminUser) => {
+        if (target.id === currentAdminId) return true;
+        if (target.isRoot) return false;
+        return true;
     };
 
-    const canToggleActive = (target: PlatformAdmin) =>
+    const canToggleActive = (target: SuperAdminUser) =>
         target.id !== currentAdminId && !target.isRoot;
 
-    const canDelete = (target: PlatformAdmin) =>
+    const canDelete = (target: SuperAdminUser) =>
         target.id !== currentAdminId && !target.isRoot;
 
     return (
@@ -753,7 +780,7 @@ function PlatformAdminsSection({ currentAdminId }: { currentAdminId?: string }) 
                 <Stack direction="row" alignItems="center" gap={1.5}>
                     <AdminPanelSettings sx={{ color: 'error.main' }} />
                     <Box>
-                        <Typography variant="h6" fontWeight={700}>Platform Admins</Typography>
+                        <Typography variant="h6" fontWeight={700}>Super Admins</Typography>
                         <Typography variant="caption" color="text.secondary">
                             {t('superAdmin.platformAdminsDesc')}
                         </Typography>
@@ -769,10 +796,8 @@ function PlatformAdminsSection({ currentAdminId }: { currentAdminId?: string }) 
                     <Table size="small">
                         <TableHead>
                             <TableRow>
-                                <TableCell sx={{ fontWeight: 700 }}>{t('common.name')}</TableCell>
                                 <TableCell sx={{ fontWeight: 700 }}>Email</TableCell>
                                 <TableCell sx={{ fontWeight: 700 }}>{t('common.status')}</TableCell>
-                                <TableCell sx={{ fontWeight: 700 }}>{t('users.lastLogin')}</TableCell>
                                 <TableCell sx={{ fontWeight: 700 }}>{t('common.createdAt')}</TableCell>
                                 <TableCell />
                             </TableRow>
@@ -781,13 +806,13 @@ function PlatformAdminsSection({ currentAdminId }: { currentAdminId?: string }) 
                             {isLoading
                                 ? [...Array(2)].map((_, i) => (
                                     <TableRow key={i}>
-                                        {[...Array(6)].map((__, j) => <TableCell key={j}><Skeleton height={28} /></TableCell>)}
+                                        {[...Array(4)].map((__, j) => <TableCell key={j}><Skeleton height={28} /></TableCell>)}
                                     </TableRow>
                                 ))
                                 : admins.length === 0
                                     ? (
                                         <TableRow>
-                                            <TableCell colSpan={6} align="center" sx={{ py: 4 }}>
+                                            <TableCell colSpan={4} align="center" sx={{ py: 4 }}>
                                                 <Typography color="text.secondary">{t('superAdmin.noPlatformAdmins')}</Typography>
                                             </TableCell>
                                         </TableRow>
@@ -805,10 +830,10 @@ function PlatformAdminsSection({ currentAdminId }: { currentAdminId?: string }) 
                                                     }}>
                                                         {admin.isRoot
                                                             ? <Shield sx={{ fontSize: 16 }} />
-                                                            : admin.name[0]?.toUpperCase()
+                                                            : admin.email[0]?.toUpperCase()
                                                         }
                                                     </Box>
-                                                    <Typography variant="body2" fontWeight={600}>{admin.name}</Typography>
+                                                    <Typography variant="body2" fontWeight={600}>{admin.email}</Typography>
                                                     {admin.isRoot && (
                                                         <Chip label="Root" size="small" color="error" variant="filled"
                                                             sx={{ height: 18, fontSize: '0.62rem', fontWeight: 700 }} />
@@ -820,29 +845,20 @@ function PlatformAdminsSection({ currentAdminId }: { currentAdminId?: string }) 
                                                 </Stack>
                                             </TableCell>
                                             <TableCell>
-                                                <Typography variant="body2" color="text.secondary">{admin.email}</Typography>
-                                            </TableCell>
-                                            <TableCell>
                                                 <Chip
                                                     size="small"
-                                                    label={admin.isRoot ? 'Root · Active' : admin.isActive ? 'Active' : 'Inactive'}
-                                                    color={admin.isActive ? 'success' : 'default'}
-                                                    icon={admin.isActive
+                                                    label={admin.isRoot ? 'Root · Active' : admin.status === 'ACTIVE' ? 'Active' : 'Inactive'}
+                                                    color={admin.status === 'ACTIVE' ? 'success' : 'default'}
+                                                    icon={admin.status === 'ACTIVE'
                                                         ? <CheckCircle sx={{ fontSize: '12px !important' }} />
                                                         : <Cancel sx={{ fontSize: '12px !important' }} />}
                                                 />
-                                            </TableCell>
-                                            <TableCell>
-                                                <Typography variant="caption" color="text.secondary">
-                                                    {admin.lastLoginAt ? fmtDate(admin.lastLoginAt) : '—'}
-                                                </Typography>
                                             </TableCell>
                                             <TableCell>
                                                 <Typography variant="caption" color="text.secondary">{fmtDate(admin.createdAt)}</Typography>
                                             </TableCell>
                                             <TableCell align="right">
                                                 <Stack direction="row" gap={0.5} justifyContent="flex-end">
-                                                    {/* Change password */}
                                                     <Tooltip title={
                                                         !canChangePassword(admin)
                                                             ? t('superAdmin.cantChangePwRoot')
@@ -856,22 +872,20 @@ function PlatformAdminsSection({ currentAdminId }: { currentAdminId?: string }) 
                                                             </IconButton>
                                                         </span>
                                                     </Tooltip>
-                                                    {/* Toggle active */}
                                                     <Tooltip title={
                                                         admin.isRoot ? t('superAdmin.rootCantDeactivate') :
                                                         admin.id === currentAdminId ? t('superAdmin.cantDeactivateSelf') :
-                                                        admin.isActive ? t('superAdmin.actionOff') : t('superAdmin.actionOn')
+                                                        admin.status === 'ACTIVE' ? t('superAdmin.actionOff') : t('superAdmin.actionOn')
                                                     }>
                                                         <span>
                                                             <IconButton size="small"
-                                                                color={admin.isActive ? 'error' : 'success'}
+                                                                color={admin.status === 'ACTIVE' ? 'error' : 'success'}
                                                                 onClick={() => toggleMutation.mutate(admin)}
                                                                 disabled={!canToggleActive(admin)}>
-                                                                {admin.isActive ? <Block fontSize="small" /> : <CheckCircleOutline fontSize="small" />}
+                                                                {admin.status === 'ACTIVE' ? <Block fontSize="small" /> : <CheckCircleOutline fontSize="small" />}
                                                             </IconButton>
                                                         </span>
                                                     </Tooltip>
-                                                    {/* Delete */}
                                                     <Tooltip title={
                                                         admin.isRoot ? t('superAdmin.rootCantDelete') :
                                                         admin.id === currentAdminId ? t('superAdmin.cantDeleteSelf') :
@@ -880,7 +894,7 @@ function PlatformAdminsSection({ currentAdminId }: { currentAdminId?: string }) 
                                                         <span>
                                                             <IconButton size="small" color="error"
                                                                 onClick={() => {
-                                                                    if (!window.confirm(`${t('common.delete')} admin "${admin.name}"?`)) return;
+                                                                    if (!window.confirm(`${t('common.delete')} "${admin.email}"?`)) return;
                                                                     deleteMutation.mutate(admin.id);
                                                                 }}
                                                                 disabled={!canDelete(admin) || deleteMutation.isPending}>
@@ -898,7 +912,7 @@ function PlatformAdminsSection({ currentAdminId }: { currentAdminId?: string }) 
                 </TableContainer>
             </Card>
 
-            {createOpen && <CreatePlatformAdminDialog onClose={() => setCreateOpen(false)} />}
+            {createOpen && <CreateSuperAdminDialog onClose={() => setCreateOpen(false)} />}
             {changePwTarget && <ChangePasswordDialog admin={changePwTarget} onClose={() => setChangePwTarget(null)} />}
         </Box>
     );
@@ -2172,8 +2186,6 @@ export default function SuperAdminPage() {
     const qc = useQueryClient();
     const { t } = useTranslation();
     const currentUser = useAppSelector(s => s.auth.user);
-    const isPlatformAdmin = useAppSelector(s => s.auth.isPlatformAdmin);
-    const platformAdmin = useAppSelector(s => s.auth.platformAdmin);
     const [confirmOrg, setConfirmOrg] = useState<OrgWithStats | null>(null);
     const [deleteOrg, setDeleteOrg] = useState<OrgWithStats | null>(null);
     const [createOrgOpen, setCreateOrgOpen] = useState(false);
@@ -2225,10 +2237,10 @@ export default function SuperAdminPage() {
                     <Box>
                         <Stack direction="row" alignItems="center" gap={1.5} mb={0.5}>
                             <Typography variant="h4" fontWeight={700}>
-                                {isPlatformAdmin ? 'Platform Admin' : 'Super Admin'}
+                                Super Admin
                             </Typography>
                             <Chip
-                                label={isPlatformAdmin ? 'PLATFORM ADMIN' : 'SUPER_ADMIN'}
+                                label="SUPER_ADMIN"
                                 color="error" size="small" sx={{ fontWeight: 700 }}
                             />
                         </Stack>

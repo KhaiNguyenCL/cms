@@ -22,7 +22,6 @@ export const apiClient = axios.create({
 // ─── In-memory access token ───────────────────────────────────────────────────
 
 let _accessToken: string | null = null;
-let _isPlatformAdmin = false;
 
 export function setAccessToken(token: string | null): void {
     _accessToken = token;
@@ -30,10 +29,6 @@ export function setAccessToken(token: string | null): void {
 
 export function getAccessToken(): string | null {
     return _accessToken;
-}
-
-export function setIsPlatformAdmin(value: boolean): void {
-    _isPlatformAdmin = value;
 }
 
 const MANAGING_ORG_ID_KEY = 'cms_managing_org_id';
@@ -82,14 +77,12 @@ const _refreshChannel = typeof BroadcastChannel !== 'undefined'
 if (_refreshChannel) {
     _refreshChannel.onmessage = (event: MessageEvent) => {
         if (event.data?.type === 'TOKEN_REFRESHED') {
-            // Another tab successfully refreshed — adopt its token and unblock any queued requests
             setAccessToken(event.data.token);
             if (isRefreshing) {
                 processQueue(null, event.data.token);
                 isRefreshing = false;
             }
         } else if (event.data?.type === 'TOKEN_REFRESH_FAILED') {
-            // Another tab failed to refresh — propagate logout here too
             if (isRefreshing) {
                 processQueue(event.data.error, null);
                 isRefreshing = false;
@@ -106,10 +99,9 @@ apiClient.interceptors.response.use(
         const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
 
         const reqUrl = originalRequest.url ?? '';
-        const isRefreshEndpoint = reqUrl.includes('refresh-token') || reqUrl.includes('platform/refresh');
+        const isRefreshEndpoint = reqUrl.includes('refresh-token');
         if (error.response?.status === 401 && !originalRequest._retry && !isRefreshEndpoint) {
             if (isRefreshing) {
-                // Queue lại request trong khi đang refresh (same-tab or cross-tab)
                 return new Promise((resolve, reject) => {
                     failedQueue.push({ resolve, reject });
                 }).then((token) => {
@@ -122,16 +114,11 @@ apiClient.interceptors.response.use(
             isRefreshing = true;
 
             try {
-                const refreshUrl = _isPlatformAdmin
-                    ? '/api/platform/refresh'
-                    : '/api/auth/refresh-token';
-                const { data } = await axios.post(refreshUrl, {}, { withCredentials: true });
+                const { data } = await axios.post('/api/auth/refresh-token', {}, { withCredentials: true });
                 const newToken: string = data.data.accessToken;
 
                 setAccessToken(newToken);
                 processQueue(null, newToken);
-
-                // Broadcast to other tabs so they don't trigger their own refresh
                 _refreshChannel?.postMessage({ type: 'TOKEN_REFRESHED', token: newToken });
 
                 originalRequest.headers.Authorization = `Bearer ${newToken}`;
@@ -153,10 +140,6 @@ apiClient.interceptors.response.use(
 
 /**
  * Extract a human-readable error message from an Axios error.
- * Falls back to `fallback` if the server didn't send a specific message.
- *
- * Usage in React Query onError:
- *   onError: (err) => dispatch(pushToast({ severity: 'error', message: getApiError(err, 'Tạo thất bại') }))
  */
 export function getApiError(err: unknown, fallback: string): string {
     const data = (err as { response?: { data?: { error?: string } } })?.response?.data;
