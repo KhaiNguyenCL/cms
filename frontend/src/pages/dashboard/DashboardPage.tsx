@@ -14,7 +14,7 @@ import {
 } from 'recharts';
 import {
     Tv, PlayArrow, CheckCircle, BarChart as BarChartIcon,
-    Image, VideoFile, Language,
+    Image, VideoFile, Language, GifBox,
     QueueMusic, CalendarMonth, VerifiedUser,
 } from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
@@ -210,6 +210,7 @@ function TypeChip({ type }: { type: string }) {
     const cfg: Record<string, { icon: React.ReactNode; color: string }> = {
         VIDEO: { icon: <VideoFile sx={{ fontSize: 12 }} />, color: '#FF6584' },
         IMAGE: { icon: <Image sx={{ fontSize: 12 }} />, color: '#4CAF82' },
+        GIF:   { icon: <GifBox sx={{ fontSize: 12 }} />, color: '#FF9800' },
         HTML:  { icon: <Language sx={{ fontSize: 12 }} />, color: '#29B6F6' },
     };
     const c = cfg[type] ?? cfg.IMAGE;
@@ -376,9 +377,9 @@ export default function DashboardPage() {
             {/* ── KPI cards ─────────────────────────────────────────────────── */}
             <Box sx={{ display: 'flex', gap: 2, flexWrap: { xs: 'wrap', md: 'nowrap' }, mb: 2.5 }}>
                 {[
-                    { icon: <Tv />,          label: 'Online',     color: '#15c00f',
+                    { icon: <Tv />,          label: t('dashboard2.online'),     color: '#15c00f',
                       value: loadingOverview ? '…' : `${devOnline}/${devTotal}`,
-                      sub: `${onlineRate}% online` },
+                      sub: t('dashboard2.onlineRate', { rate: onlineRate }) },
                     { icon: <PlayArrow />,   label: t('dashboard2.todayPlays'), color: '#5850f7',
                       value: loadingOverview ? '…' : todayPlays.toLocaleString(),
                       sub: t('dashboard2.todayPlaysSub') },
@@ -388,13 +389,13 @@ export default function DashboardPage() {
                     { icon: <BarChartIcon />, label: 'Media',     color: '#e7113c',
                       value: loadingOverview ? '…' : (overview?.media.count ?? 0),
                       sub: fmtBytes(overview?.media.totalSizeBytes ?? 0) },
-                    { icon: <QueueMusic />,  label: 'Playlist',   color: '#e08c0d',
+                    { icon: <QueueMusic />,  label: t('dashboard2.kpiPlaylist'),   color: '#e08c0d',
                       value: loadingOverview ? '…' : (overview?.playlists.total ?? 0),
                       sub: t('nav.playlists') },
-                    { icon: <CalendarMonth />, label: 'Schedule', color: '#a830bd',
+                    { icon: <CalendarMonth />, label: t('dashboard2.kpiSchedule'), color: '#a830bd',
                       value: loadingOverview ? '…' : `${overview?.schedules.active ?? 0}/${overview?.schedules.total ?? 0}`,
                       sub: t('dashboard2.activeSub') },
-                    { icon: <VerifiedUser />, label: 'License active', color: '#4CAF50',
+                    { icon: <VerifiedUser />, label: t('dashboard2.licenseActive'), color: '#4CAF50',
                       value: loadingCharts ? '…' : `${licensedCount}/${totalDevices}`,
                       sub: totalDevices > 0 ? `${Math.round(licensedCount / totalDevices * 100)}% ${t('nav.devices').toLowerCase()}` : '—' },
                 ].map((card, i) => (

@@ -273,7 +273,7 @@ export default function ActionHistoryPage() {
                             <TableCell>{t('common.timestamp')}</TableCell>
                             <TableCell>{t('common.actionCol')}</TableCell>
                             <TableCell>{t('common.type')}</TableCell>
-                            <TableCell>Resource</TableCell>
+                            <TableCell>{t('history.action.resource')}</TableCell>
                             <TableCell>{t('common.performer')}</TableCell>
                             <TableCell />
                         </TableRow>

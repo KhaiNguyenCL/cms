@@ -59,7 +59,8 @@ export interface PaginatedDevices {
 
 export async function listDevices(
     organizationId: string,
-    q: ListDevicesQuery
+    q: ListDevicesQuery,
+    restrictToSiteId?: string | null
 ): Promise<PaginatedDevices> {
     const { page, limit, status, search } = q;
     const offset = (page - 1) * limit;
@@ -68,6 +69,7 @@ export async function listDevices(
     const values: unknown[] = [organizationId];
     let idx = 2;
 
+    if (restrictToSiteId) { conditions.push(`d."storeId" = $${idx++}`); values.push(restrictToSiteId); }
     if (status) { conditions.push(`d.status = $${idx++}`); values.push(status); }
     if (search) { conditions.push(`d.name ILIKE $${idx++}`); values.push(`%${search}%`); }
 
@@ -101,15 +103,19 @@ export async function listDevices(
 
 // ─── Get single device ────────────────────────────────────────────────────────
 
-export async function getDeviceById(deviceId: string, organizationId: string): Promise<DeviceRow> {
+export async function getDeviceById(deviceId: string, organizationId: string, restrictToSiteId?: string | null): Promise<DeviceRow> {
+    const conditions = [`id = $1`, `"organizationId" = $2`];
+    const values: unknown[] = [deviceId, organizationId];
+    if (restrictToSiteId) { conditions.push(`"storeId" = $3`); values.push(restrictToSiteId); }
+
     const device = await queryOne<DeviceRow>(
         `SELECT id, "organizationId", name, "pairingCode", "androidId", model, "osVersion", "appVersion",
                 status, "isLicensed", "licenseStartDate", "licenseEndDate",
                 "lastSeen", "lastOnlineAt", "lastOfflineAt",
                 location, timezone, settings, "createdAt", "updatedAt"
          FROM devices
-         WHERE id = $1 AND "organizationId" = $2`,
-        [deviceId, organizationId]
+         WHERE ${conditions.join(' AND ')}`,
+        values
     );
     if (!device) throw new AppError(404, 'Device không tồn tại');
     return device;
@@ -164,7 +170,8 @@ export async function createDevice(
 export async function updateDevice(
     deviceId: string,
     organizationId: string,
-    data: UpdateDeviceBody
+    data: UpdateDeviceBody,
+    restrictToSiteId?: string | null
 ): Promise<DeviceRow> {
     const fields: string[] = [];
     const values: unknown[] = [];
@@ -182,12 +189,15 @@ export async function updateDevice(
     fields.push(`"updatedAt" = NOW()`);
     values.push(deviceId, organizationId);
 
+    let whereClause = `id = $${idx++} AND "organizationId" = $${idx++}`;
+    if (restrictToSiteId) { whereClause += ` AND "storeId" = $${idx++}`; values.push(restrictToSiteId); }
+
     let rows: DeviceRow[];
     try {
         rows = await query<DeviceRow>(
             `UPDATE devices
              SET ${fields.join(', ')}
-             WHERE id = $${idx++} AND "organizationId" = $${idx++}
+             WHERE ${whereClause}
              RETURNING id, "organizationId", name, "pairingCode", "androidId", model, "osVersion", "appVersion",
                        status, "isLicensed", "licenseStartDate", "licenseEndDate",
                        "lastSeen", "lastOnlineAt", "lastOfflineAt",
@@ -321,12 +331,15 @@ export interface CommandResult {
 export async function sendDeviceCommand(
     deviceId: string,
     organizationId: string,
-    data: DeviceCommandBody
+    data: DeviceCommandBody,
+    restrictToSiteId?: string | null
 ): Promise<CommandResult> {
-    // Verify device exists and belongs to org
+    // Verify device exists and belongs to org (and site if restricted)
+    const siteClause = restrictToSiteId ? ` AND "storeId" = $3` : '';
+    const siteValues = restrictToSiteId ? [deviceId, organizationId, restrictToSiteId] : [deviceId, organizationId];
     const device = await queryOne<{ id: string; status: string }>(
-        `SELECT id, status FROM devices WHERE id = $1 AND "organizationId" = $2`,
-        [deviceId, organizationId]
+        `SELECT id, status FROM devices WHERE id = $1 AND "organizationId" = $2${siteClause}`,
+        siteValues
     );
     if (!device) throw new AppError(404, 'Device không tồn tại');
 

@@ -192,6 +192,32 @@ export async function deleteOrganization(orgId: string, requesterId: string): Pr
     logger.info('Organization deleted', { orgId, by: requesterId });
 }
 
+// ─── SUPER_ADMIN: update org settings ────────────────────────────────────────
+
+export async function updateOrgSettings(
+    orgId: string,
+    settings: Record<string, unknown>
+): Promise<OrganizationRow> {
+    // Merge with existing settings
+    const existing = await queryOne<{ settings: Record<string, unknown> }>(
+        `SELECT settings FROM organizations WHERE id = $1`,
+        [orgId]
+    );
+    if (!existing) throw new AppError(404, 'Organization không tồn tại');
+
+    const merged = { ...(existing.settings ?? {}), ...settings };
+    const rows = await query<OrganizationRow>(
+        `UPDATE organizations
+         SET settings = $1, "updatedAt" = NOW()
+         WHERE id = $2
+         RETURNING ${ORG_FIELDS}`,
+        [JSON.stringify(merged), orgId]
+    );
+    if (!rows[0]) throw new AppError(404, 'Organization không tồn tại');
+    logger.info('Org settings updated by super admin', { orgId });
+    return rows[0];
+}
+
 // ─── Update device admin PIN ──────────────────────────────────────────────────
 
 export async function updateDevicePin(organizationId: string, pin: string): Promise<void> {

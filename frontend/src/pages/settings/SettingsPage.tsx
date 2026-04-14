@@ -179,7 +179,7 @@ export default function SettingsPage() {
 
                                     {isAdmin && (
                                         <Button
-                                           
+
                                             startIcon={<Save />}
                                             disabled={!nameChanged || !nameValid || saveMutation.isPending}
                                             onClick={() => saveMutation.mutate()}
@@ -256,7 +256,7 @@ export default function SettingsPage() {
                                             {showPin ? t('settings.hidePin') : t('settings.showPin')}
                                         </Button>
                                         <Button
-                                           
+
                                             disabled={!pinValid || pinMutation.isPending}
                                             onClick={() => pinMutation.mutate()}
                                             sx={{ mt: 0.5 }}
@@ -319,7 +319,7 @@ export default function SettingsPage() {
                         </Section>
 
                         {/* System info */}
-                        <Card sx={{ bgcolor: alpha('#FF6584', 0.05), border: '1px solid', borderColor: alpha('#FF6584', 0.15) }}>
+                        {/* <Card sx={{ bgcolor: alpha('#FF6584', 0.05), border: '1px solid', borderColor: alpha('#FF6584', 0.15) }}>
                             <CardContent sx={{ p: 2.5 }}>
                                 <Typography variant="subtitle2" fontWeight={700} color="error.main" mb={1.5}>
                                     {t('settings.sysInfo')}
@@ -340,7 +340,7 @@ export default function SettingsPage() {
                                     ))}
                                 </Stack>
                             </CardContent>
-                        </Card>
+                        </Card> */}
 
                     </Stack>
                 </Grid>

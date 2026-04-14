@@ -11,9 +11,11 @@ import { logAction } from '../action-history/action-history.service';
 
 export async function listSites(req: Request, res: Response, next: NextFunction) {
     try {
+        const siteFilter = req.user!.role === 'SITE_MANAGER' ? req.user!.siteId : null;
         const result = await svc.listSites(
             req.user!.organizationId,
             req.query as unknown as ListSitesQuery,
+            siteFilter,
         );
         res.json({ data: result });
     } catch (err) { next(err); }
@@ -21,7 +23,8 @@ export async function listSites(req: Request, res: Response, next: NextFunction)
 
 export async function getSite(req: Request, res: Response, next: NextFunction) {
     try {
-        const site = await svc.getSiteById(String(req.params.id), req.user!.organizationId);
+        const siteFilter = req.user!.role === 'SITE_MANAGER' ? req.user!.siteId : null;
+        const site = await svc.getSiteById(String(req.params.id), req.user!.organizationId, siteFilter);
         res.json({ data: site });
     } catch (err) { next(err); }
 }
@@ -39,6 +42,9 @@ export async function createSite(req: Request, res: Response, next: NextFunction
 
 export async function updateSite(req: Request, res: Response, next: NextFunction) {
     try {
+        const siteFilter = req.user!.role === 'SITE_MANAGER' ? req.user!.siteId : null;
+        if (siteFilter && String(req.params.id) !== siteFilter)
+            throw { status: 403, message: 'Không có quyền chỉnh sửa site này' };
         const site = await svc.updateSite(
             String(req.params.id),
             req.user!.organizationId,
@@ -66,6 +72,9 @@ export async function deleteSite(req: Request, res: Response, next: NextFunction
 
 export async function startSite(req: Request, res: Response, next: NextFunction) {
     try {
+        const siteFilter = req.user!.role === 'SITE_MANAGER' ? req.user!.siteId : null;
+        if (siteFilter && String(req.params.id) !== siteFilter)
+            throw { status: 403, message: 'Không có quyền thao tác site này' };
         const result = await svc.startSite(String(req.params.id), req.user!.organizationId);
         broadcastSyncState(req.user!.organizationId, {
             storeId: result.id,
@@ -79,6 +88,9 @@ export async function startSite(req: Request, res: Response, next: NextFunction)
 
 export async function restartSite(req: Request, res: Response, next: NextFunction) {
     try {
+        const siteFilter = req.user!.role === 'SITE_MANAGER' ? req.user!.siteId : null;
+        if (siteFilter && String(req.params.id) !== siteFilter)
+            throw { status: 403, message: 'Không có quyền thao tác site này' };
         const result = await svc.startSite(String(req.params.id), req.user!.organizationId);
         broadcastSyncState(req.user!.organizationId, {
             storeId: result.id,
@@ -93,6 +105,9 @@ export async function restartSite(req: Request, res: Response, next: NextFunctio
 export async function stopSite(req: Request, res: Response, next: NextFunction) {
     try {
         const id = String(req.params.id);
+        const siteFilter = req.user!.role === 'SITE_MANAGER' ? req.user!.siteId : null;
+        if (siteFilter && id !== siteFilter)
+            throw { status: 403, message: 'Không có quyền thao tác site này' };
         await svc.stopSite(id, req.user!.organizationId);
         broadcastSyncState(req.user!.organizationId, {
             storeId: id,

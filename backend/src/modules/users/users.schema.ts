@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 // Roles khớp với DB ENUM
-export const USER_ROLES = ['ADMIN', 'MANAGER', 'VIEWER'] as const;
+export const USER_ROLES = ['ADMIN', 'MANAGER', 'VIEWER', 'CONTENT_MANAGER', 'SITE_MANAGER'] as const;
 export const USER_STATUSES = ['ACTIVE', 'INACTIVE'] as const;
 
 /**
@@ -17,7 +17,11 @@ export const createUserSchema = z.object({
             .regex(/[0-9]/, 'Mật khẩu phải chứa ít nhất 1 số')
             .regex(/[^a-zA-Z0-9]/, 'Mật khẩu phải chứa ít nhất 1 ký tự đặc biệt'),
         role: z.enum(USER_ROLES).default('VIEWER'),
-    }),
+        siteId: z.string().uuid().optional().nullable(),
+    }).refine(
+        (data) => data.role !== 'SITE_MANAGER' || !!data.siteId,
+        { message: 'SITE_MANAGER phải được gán vào một site', path: ['siteId'] }
+    ),
 });
 
 /**
@@ -31,6 +35,7 @@ export const updateUserSchema = z.object({
         status: z.enum(USER_STATUSES).optional(),
         email: z.string().email().optional(),
         password: z.string().min(6).optional(),
+        siteId: z.string().uuid().optional().nullable(),
     }).refine(
         (data) => Object.keys(data).length > 0,
         { message: 'Phải cung cấp ít nhất một trường để cập nhật' }

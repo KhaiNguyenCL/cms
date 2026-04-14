@@ -65,6 +65,11 @@ export const organizationsApi = {
         return data;
     },
 
+    updateSettings: async (id: string, settings: Record<string, unknown>) => {
+        const { data } = await apiClient.patch<ApiResponse<Organization>>(`/organizations/${id}/settings`, { settings });
+        return data.data;
+    },
+
     delete: async (id: string) => {
         await apiClient.delete(`/organizations/${id}`);
     },

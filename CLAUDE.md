@@ -112,6 +112,12 @@ device_content_logs   — playlist sync history per device (used by content-hist
 software_history      — device app version snapshots
 action_history        — admin action audit log
 alarm_events          — device offline/online events
+org_backups           — per-org JSONB snapshots for backup/restore (PLANNED)
+```
+
+Planned schema changes:
+```
+Media         — ADD COLUMN deletedAt TIMESTAMPTZ (soft delete — PLANNED)
 ```
 
 ---
@@ -415,6 +421,154 @@ NTP Sync Groups (Stores):
 | `frontend/src/types/index.ts` | All shared types |
 | `backend/prisma/schema.prisma` | Canonical DB schema (use for migrations) |
 | `docker/postgres/init.sql` | Full DB init with all tables incl. non-Prisma ones |
+
+---
+
+## Backup & Restore System (Planned — Not Yet Implemented)
+
+Tính năng lớn, chia 2 phần phụ thuộc nhau. **Phải implement Part 1 trước Part 2.**
+
+---
+
+### Part 1: Media Soft Delete
+
+**Mục tiêu:** Khi user "xóa" media, file vật lý vẫn còn trên disk — chỉ ẩn khỏi UI. Đây là điều kiện tiên quyết để restore hoạt động đúng (snapshot restore trỏ về file vẫn còn).
+
+#### DB Migration
+```sql
+ALTER TABLE media ADD COLUMN "deletedAt" TIMESTAMPTZ DEFAULT NULL;
+CREATE INDEX ON media ("organizationId", "deletedAt");
+```
+
+#### Backend changes
+- `media.service.ts` `deleteMedia()` → thay hard delete bằng `UPDATE media SET "deletedAt" = NOW()` (KHÔNG xóa file vật lý)
+- Tất cả query `listMedia`, `getMediaById` → thêm `AND "deletedAt" IS NULL`
+- `checkStorageQuota` → không tính media có `deletedAt IS NOT NULL`
+- Thêm endpoints:
+  - `GET  /api/media/trash` — danh sách media đã xóa mềm (ADMIN, MANAGER, CONTENT_MANAGER)
+  - `POST /api/media/:id/restore` — khôi phục media (ADMIN, MANAGER, CONTENT_MANAGER)
+  - `DELETE /api/media/:id/permanent` — xóa hẳn file vật lý (ADMIN only)
+
+#### BullMQ Worker mới: `media-purge`
+- Chạy nightly (cùng với `cleanup-logs`)
+- Xóa hẳn media có `deletedAt < NOW() - 30 days`: xóa file + thumbnail trên disk, sau đó DELETE DB row
+- Retention mặc định: 30 ngày (configurable qua env `MEDIA_TRASH_RETENTION_DAYS`)
+
+#### Frontend changes
+- `MediaPage.tsx`: thêm tab "Thùng rác" (icon: `DeleteOutline`)
+- Tab trash: hiển thị media đã xóa + nút Restore + nút Xóa vĩnh viễn (ADMIN only)
+- Nút delete hiện tại → đổi thành soft delete (không cần thay đổi API call, chỉ thay đổi toast message)
+
+---
+
+### Part 2: Per-Org Snapshot Backup & Restore
+
+**Mục tiêu:** ADMIN/SUPER_ADMIN có thể tạo snapshot toàn bộ data của org dưới dạng JSONB, và restore về bất kỳ snapshot nào. Vì media soft delete đảm bảo file còn trên disk, restore metadata là đủ.
+
+#### DB Migration (raw SQL — không dùng Prisma)
+```sql
+CREATE TABLE org_backups (
+    id          TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    "organizationId" TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    label       TEXT NOT NULL,
+    type        TEXT NOT NULL DEFAULT 'MANUAL',  -- 'MANUAL' | 'AUTO'
+    snapshot    JSONB NOT NULL,
+    "createdBy" TEXT,                            -- userId, NULL nếu AUTO
+    "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX ON org_backups ("organizationId", "createdAt" DESC);
+```
+
+#### Snapshot JSONB structure (version 1)
+```json
+{
+  "version": 1,
+  "snapshotAt": "<ISO timestamp>",
+  "sites": [...],
+  "deviceGroups": [...],
+  "devices": [...],
+  "media": [...],
+  "playlists": [...],
+  "playlistItems": [...],
+  "schedules": [...],
+  "scheduleAssignments": [...]
+}
+```
+- **Không** snapshot: `users`, `playback_logs`, `action_history`, `device_health`, `alarm_events` (telemetry/audit — không restore)
+- Media snapshot bao gồm cả rows có `deletedAt IS NOT NULL` (để restore về đúng trạng thái)
+
+#### New module: `backup` (4-file pattern)
+```
+backend/src/modules/backup/
+├── backup.routes.ts
+├── backup.controller.ts
+├── backup.service.ts
+└── backup.schema.ts
+```
+
+#### API Routes
+```
+GET    /api/backup            — list snapshots của org (ADMIN, SUPER_ADMIN)
+POST   /api/backup            — tạo manual snapshot (ADMIN, SUPER_ADMIN)
+DELETE /api/backup/:id        — xóa snapshot (ADMIN, SUPER_ADMIN)
+POST   /api/backup/:id/restore — restore từ snapshot (ADMIN, SUPER_ADMIN)
+```
+
+#### Restore logic (`withTransaction`)
+Thứ tự DELETE (tôn trọng FK constraints):
+1. `schedule_assignments` WHERE `"organizationId"` (via join)
+2. `schedules`
+3. `playlist_items` (via playlist FK)
+4. `playlists`
+5. `media` — soft-delete tất cả hiện tại (`deletedAt = NOW()`) thay vì DELETE, để file không mất
+6. `device_group_members` → `device_groups`
+7. `devices`
+8. `stores` (sites)
+
+Sau đó INSERT lại từ snapshot theo thứ tự ngược lại. Cuối cùng: gọi `invalidateContentHashForOrg()` để device re-sync.
+
+#### BullMQ Worker mới: `backup-snapshot`
+- AUTO: chạy daily lúc 02:00 UTC cho **tất cả org active**
+- Sau khi tạo: gọi worker `backup-cleanup` để giữ tối đa 7 AUTO snapshots gần nhất / org
+- MANUAL snapshot: không bị cleanup tự động (chỉ xóa khi user chủ động xóa)
+
+#### Frontend changes
+- `SuperAdminPage.tsx`: section "Backup & Restore" trong `DetailRow` của mỗi org
+- Org settings page (ADMIN): tab "Backup" mới
+  - Danh sách snapshots: date, type (AUTO/MANUAL), actions
+  - Nút "Tạo snapshot"
+  - Nút "Restore" → confirmation dialog: _"Dữ liệu hiện tại (devices, media, playlists, schedules) sẽ bị thay thế bằng snapshot ngày [X]. Tiếp tục?"_
+  - Nút "Xóa snapshot"
+
+---
+
+### Tại sao restore hoạt động được
+
+```
+Org muốn restore về ngày hôm qua
+  → Snapshot ngày hôm qua có metadata media M1, M2, M3
+  → File vật lý M1.mp4, M2.jpg, M3.gif vẫn còn trên disk (soft delete giữ lại)
+  → Restore: DELETE current DB rows → INSERT snapshot rows
+  → Media rows trỏ về đúng filePath đang tồn tại → content sync hoạt động bình thường ✓
+
+Edge case: Media upload SAU snapshot, bị xóa mềm, cron purge đã chạy → file mất hẳn
+  → Nhưng media đó không có trong snapshot (upload sau) → không ảnh hưởng restore ✓
+```
+
+---
+
+### Module table update (khi implement xong)
+Thêm vào bảng Backend Modules:
+```
+| `backup` | `/api/backup` | Per-org JSONB snapshots, manual + auto daily, restore với transaction |
+```
+
+### BullMQ Workers update (khi implement xong)
+Thêm 2 workers:
+```
+| `backup-snapshot` | Daily 02:00 UTC (auto) hoặc manual trigger qua API |
+| `media-purge`     | Nightly — hard delete media có deletedAt > 30 ngày |
+```
 
 ---
 

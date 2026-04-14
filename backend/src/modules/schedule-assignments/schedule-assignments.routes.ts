@@ -6,10 +6,10 @@ const router = Router();
 
 router.use(authenticate);
 
-router.get('/',            authorize('ADMIN', 'MANAGER', 'VIEWER'), ctrl.list);
-router.post('/bulk',       authorize('ADMIN', 'MANAGER'),           ctrl.bulkAssign);
-router.put('/reorder',     authorize('ADMIN', 'MANAGER'),           ctrl.reorder);
-router.delete('/bulk',     authorize('ADMIN', 'MANAGER'),           ctrl.bulkUnassign);
-router.delete('/:id',      authorize('ADMIN', 'MANAGER'),           ctrl.unassignOne);
+router.get('/',            authorize('ADMIN', 'MANAGER', 'VIEWER', 'CONTENT_MANAGER'), ctrl.list);
+router.post('/bulk',       authorize('ADMIN', 'MANAGER', 'CONTENT_MANAGER'),           ctrl.bulkAssign);
+router.put('/reorder',     authorize('ADMIN', 'MANAGER', 'CONTENT_MANAGER'),           ctrl.reorder);
+router.delete('/bulk',     authorize('ADMIN', 'MANAGER', 'CONTENT_MANAGER'),           ctrl.bulkUnassign);
+router.delete('/:id',      authorize('ADMIN', 'MANAGER', 'CONTENT_MANAGER'),           ctrl.unassignOne);
 
 export default router;

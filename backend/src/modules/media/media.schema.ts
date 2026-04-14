@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const MEDIA_TYPES = ['IMAGE', 'VIDEO', 'HTML', 'URL'] as const;
+export const MEDIA_TYPES = ['IMAGE', 'GIF', 'VIDEO', 'HTML', 'URL'] as const;
 export const MEDIA_STATUSES = ['PROCESSING', 'READY', 'ERROR'] as const;
 
 // ─── List / filter ────────────────────────────────────────────────────────────

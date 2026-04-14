@@ -49,6 +49,7 @@ export interface SiteDevice {
 export async function listSites(
     organizationId: string,
     q: ListSitesQuery,
+    restrictToSiteId?: string | null,
 ) {
     const { page, limit, search } = q;
     const offset = (page - 1) * limit;
@@ -57,6 +58,7 @@ export async function listSites(
     const values: unknown[] = [organizationId];
     let idx = 2;
 
+    if (restrictToSiteId) { conditions.push(`s.id = $${idx++}`); values.push(restrictToSiteId); }
     if (search) {
         conditions.push(`s.name ILIKE $${idx++}`);
         values.push(`%${search}%`);
@@ -96,7 +98,8 @@ export async function listSites(
 
 // ─── Get single ───────────────────────────────────────────────────────────────
 
-export async function getSiteById(id: string, organizationId: string) {
+export async function getSiteById(id: string, organizationId: string, restrictToSiteId?: string | null) {
+    if (restrictToSiteId && id !== restrictToSiteId) throw new AppError(403, 'Không có quyền truy cập site này');
     const site = await queryOne<SiteRow>(
         `SELECT s.id, s."organizationId", s.name, s.description,
                 s.address, s.contact, s.timezone,

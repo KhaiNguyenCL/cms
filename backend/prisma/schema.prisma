@@ -77,10 +77,12 @@ model User {
   passwordHash   String
   role           UserRole   @default(MANAGER)
   status         UserStatus @default(ACTIVE)
+  siteId         String?
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  site         Store?       @relation(fields: [siteId], references: [id], onDelete: SetNull)
   media        Media[]
 
   @@index([organizationId])
@@ -92,6 +94,8 @@ enum UserRole {
   ADMIN
   MANAGER
   VIEWER
+  CONTENT_MANAGER
+  SITE_MANAGER
 }
 
 enum UserStatus {
@@ -211,6 +215,7 @@ model Media {
 enum MediaType {
   VIDEO
   IMAGE
+  GIF
   HTML
   URL
 }
@@ -377,6 +382,7 @@ model Store {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   playlist     Playlist?    @relation(fields: [playlistId], references: [id], onDelete: SetNull)
   devices      Device[]
+  users        User[]
 
   @@index([organizationId])
   @@map("stores")

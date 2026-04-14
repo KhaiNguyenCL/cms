@@ -6,7 +6,7 @@ import {
     Paper, IconButton, Tooltip, Collapse, Skeleton, alpha, Divider,
     Dialog, DialogTitle, DialogContent, DialogActions, TextField,
     InputAdornment, LinearProgress, CircularProgress, Badge,
-    Tab, Tabs, Switch, FormControlLabel, Select, MenuItem, FormControl, InputLabel,
+    Tab, Tabs, Switch, FormControlLabel, Select, MenuItem, FormControl, InputLabel, Checkbox,
 } from '@mui/material';
 import {
     Business, Tv, People, PermMedia, QueueMusic, CalendarMonth,
@@ -64,11 +64,46 @@ function StatChip({ icon, value, color }: { icon: React.ReactNode; value: string
 // ── Expanded detail row ───────────────────────────────────────────────────────
 
 
+const ALL_MEDIA_TYPES = ['IMAGE', 'GIF', 'VIDEO', 'HTML', 'URL'] as const;
+type MediaTypeName = typeof ALL_MEDIA_TYPES[number];
+
 function DetailRow({ org }: { org: OrgWithStats }) {
     const { t } = useTranslation();
+    const dispatch = useAppDispatch();
+    const qc = useQueryClient();
+
+    const savedTypes = (org.settings?.allowedMediaTypes as string[] | undefined) ?? [...ALL_MEDIA_TYPES];
+    const [allowedTypes, setAllowedTypes] = useState<string[]>(savedTypes);
+
+    // Reset local state when org data changes (e.g. after save)
+    useEffect(() => {
+        const fresh = (org.settings?.allowedMediaTypes as string[] | undefined) ?? [...ALL_MEDIA_TYPES];
+        setAllowedTypes(fresh);
+    }, [org.settings]);
+
+    const mutation = useMutation({
+        mutationFn: (types: string[]) =>
+            organizationsApi.updateSettings(org.id, { allowedMediaTypes: types }),
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ['super-admin-orgs'] });
+            dispatch(pushToast({ severity: 'success', message: t('superAdmin.mediaTypeSaved') }));
+        },
+        onError: (e: any) => {
+            dispatch(pushToast({ severity: 'error', message: e?.response?.data?.message ?? t('common.failedAction') }));
+        },
+    });
+
+    const toggle = (type: MediaTypeName) => {
+        setAllowedTypes(prev =>
+            prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]
+        );
+    };
+
+    const isDirty = JSON.stringify([...allowedTypes].sort()) !== JSON.stringify([...savedTypes].sort());
+
     return (
         <Box sx={{ px: 3, py: 2, bgcolor: 'action.hover' }}>
-            <Stack direction="row" gap={3} flexWrap="wrap">
+            <Stack direction="row" gap={3} flexWrap="wrap" alignItems="flex-start">
                 <Box>
                     <Typography variant="caption" color="text.secondary" display="block" mb={0.5}>Org ID</Typography>
                     <Typography variant="body2" fontFamily="monospace" fontSize="0.75rem" color="text.secondary">
@@ -86,6 +121,39 @@ function DetailRow({ org }: { org: OrgWithStats }) {
                 <Box>
                     <Typography variant="caption" color="text.secondary" display="block" mb={0.5}>{t('superAdmin.detailLicensedDevices')}</Typography>
                     <Typography variant="body2" fontWeight={600}>{org.licensedDevices ?? 0} / {org.totalDevices}</Typography>
+                </Box>
+                <Box>
+                    <Typography variant="caption" color="text.secondary" display="block" mb={0.5}>
+                        {t('superAdmin.allowedMediaTypes')}
+                    </Typography>
+                    <Stack direction="row" alignItems="center" flexWrap="wrap" sx={{ mt: -0.5 }}>
+                        {ALL_MEDIA_TYPES.map(type => (
+                            <FormControlLabel
+                                key={type}
+                                label={<Typography variant="caption" fontWeight={600}>{type}</Typography>}
+                                control={
+                                    <Checkbox
+                                        size="small"
+                                        checked={allowedTypes.includes(type)}
+                                        onChange={() => toggle(type)}
+                                        sx={{ py: 0.25 }}
+                                    />
+                                }
+                                sx={{ mr: 0.5 }}
+                            />
+                        ))}
+                        {isDirty && (
+                            <Button
+                                size="small"
+                                variant="contained"
+                                disabled={mutation.isPending}
+                                onClick={() => mutation.mutate(allowedTypes)}
+                                sx={{ ml: 1, fontSize: '0.72rem', py: 0.25 }}
+                            >
+                                {mutation.isPending ? <CircularProgress size={14} /> : t('common.save')}
+                            </Button>
+                        )}
+                    </Stack>
                 </Box>
             </Stack>
         </Box>

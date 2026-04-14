@@ -9,6 +9,7 @@ export interface JwtPayload {
     organizationId: string;
     role: string;
     isRoot?: boolean;
+    siteId?: string | null;
     type: 'user' | 'device' | 'platform_admin';
 }
 

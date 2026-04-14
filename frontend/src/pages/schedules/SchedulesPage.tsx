@@ -262,7 +262,7 @@ function ScheduleFormDialog({
             : schedulesApi.create(form),
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: ['schedules'] });
-            dispatch(pushToast({ severity: 'success', message: editing ? 'Schedule updated!' : 'Schedule created!' }));
+            dispatch(pushToast({ severity: 'success', message: editing ? t('schedules.updateSuccess') : t('schedules.createSuccess') }));
             onClose();
         },
         onError: (err) => dispatch(pushToast({ severity: 'error', message: getApiError(err, 'Failed to save schedule') })),
@@ -300,7 +300,7 @@ function ScheduleFormDialog({
     return (
         <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth TransitionProps={{ onEnter: handleOpen }}>
             <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pb: 1 }}>
-                <Typography fontWeight={700}>{editing ? 'Edit Schedule' : 'New Schedule'}</Typography>
+                <Typography fontWeight={700}>{editing ? t('schedules.editTitle') : t('schedules.newTitle')}</Typography>
                 <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
                     <Button size="small" onClick={onClose} disabled={mutation.isPending || deleteMutation.isPending}>
                         {t('common.cancel')}
@@ -319,7 +319,7 @@ function ScheduleFormDialog({
                 <Stack spacing={2.5} sx={{ mt: 0.5 }}>
                     {/* Name */}
                     <TextField
-                        label="Schedule name"
+                        label={t('schedules.scheduleName')}
                         value={form.name}
                         onChange={(e) => field('name')(e.target.value)}
                         fullWidth required
@@ -327,10 +327,10 @@ function ScheduleFormDialog({
 
                     {/* Playlist */}
                     <FormControl fullWidth required>
-                        <InputLabel>Playlist</InputLabel>
+                        <InputLabel>{t('schedules.playlist')}</InputLabel>
                         <Select
                             value={form.playlistId ?? ''}
-                            label="Playlist"
+                            label={t('schedules.playlist')}
                             onChange={(e) => field('playlistId')(e.target.value)}
                         >
                             {playlists.map(p => (
@@ -349,7 +349,7 @@ function ScheduleFormDialog({
                     <Grid container spacing={2}>
                         <Grid size={{ xs: 6 }}>
                             <TextField
-                                label="Start date" type="date"
+                                label={t('schedules.startDate')} type="date"
                                 value={form.startDate}
                                 onChange={(e) => field('startDate')(e.target.value)}
                                 fullWidth required
@@ -358,12 +358,12 @@ function ScheduleFormDialog({
                         </Grid>
                         <Grid size={{ xs: 6 }}>
                             <TextField
-                                label="End date (optional)" type="date"
+                                label={t('schedules.endDate')} type="date"
                                 value={form.endDate ?? ''}
                                 onChange={(e) => field('endDate')(e.target.value || null)}
                                 fullWidth
                                 InputLabelProps={{ shrink: true }}
-                                helperText="Leave empty = no expiry"
+                                helperText={t('schedules.endDateHelper')}
                             />
                         </Grid>
                     </Grid>

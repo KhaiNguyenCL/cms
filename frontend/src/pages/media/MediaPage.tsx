@@ -9,7 +9,7 @@ import {
     Paper, List, ListItem, TablePagination, alpha,
 } from '@mui/material';
 import {
-    Search, VideoFile, Image,
+    Search, VideoFile, Image, GifBox,
     CloudUpload, Delete, CheckCircle, HourglassEmpty, Error as ErrorIcon,
     Close, ArrowUpward, ArrowDownward, ZoomIn, Add, WarningAmber,
 } from '@mui/icons-material';
@@ -574,7 +574,7 @@ function UploadDialog({ open, onClose, storageUsage }: {
                             size="small"
                             startIcon={<Add />}
                             onClick={() => inputRef.current?.click()}
-                            sx={{ alignSelf: 'flex-start' }}
+                            sx={{ alignSelf: 'flex-start'}}
                         >
                             {t('media.addFiles')}
                         </Button>
@@ -780,6 +780,9 @@ export default function MediaPage() {
                         <MuiMenuItem value="">All</MuiMenuItem>
                         <MuiMenuItem value="VIDEO">Video</MuiMenuItem>
                         <MuiMenuItem value="IMAGE">Image</MuiMenuItem>
+                        <MuiMenuItem value="GIF">GIF</MuiMenuItem>
+                        <MuiMenuItem value="HTML">HTML</MuiMenuItem>
+                        <MuiMenuItem value="URL">URL</MuiMenuItem>
                     </Select>
                 </FormControl>
 
@@ -843,6 +846,8 @@ export default function MediaPage() {
                                                         />
                                                     ) : media.type === 'VIDEO'
                                                         ? <VideoFile sx={{ fontSize: 16, color: '#FF6584' }} />
+                                                        : media.type === 'GIF'
+                                                        ? <GifBox sx={{ fontSize: 16, color: '#FF9800' }} />
                                                         : <Image sx={{ fontSize: 16, color: '#4CAF82' }} />
                                                     }
                                                 </Box>
@@ -862,6 +867,8 @@ export default function MediaPage() {
                                                     size="small"
                                                     icon={media.type === 'VIDEO'
                                                         ? <VideoFile sx={{ fontSize: '12px !important', color: '#FF6584 !important' }} />
+                                                        : media.type === 'GIF'
+                                                        ? <GifBox sx={{ fontSize: '12px !important', color: '#FF9800 !important' }} />
                                                         : <Image sx={{ fontSize: '12px !important', color: '#4CAF82 !important' }} />
                                                     }
                                                     sx={{ fontWeight: 600, fontSize: '0.6rem' }}

@@ -500,7 +500,10 @@ export async function heartbeat(deviceId: string, organizationId: string, data: 
     if ((prevDevice?.status === 'OFFLINE' || prevDevice?.status === 'APP_EXIT') && prevDevice.lastOfflineAt) {
         const offlineDurationMs = Date.now() - new Date(prevDevice.lastOfflineAt).getTime();
         const mins = Math.round(offlineDurationMs / 60_000);
-        const msg = `✅ Online trở lại sau ${mins} phút offline`;
+        const durationStr = mins >= 60
+            ? `${Math.floor(mins / 60)}h${mins % 60 > 0 ? `${mins % 60}p` : ''}`
+            : `${mins} phút`;
+        const msg = `✅ Online trở lại sau ${durationStr} offline`;
         import('../devices/devices.service')
             .then(({ autoLogDeviceEvent }) => autoLogDeviceEvent(deviceId, organizationId, msg))
             .catch(() => {});

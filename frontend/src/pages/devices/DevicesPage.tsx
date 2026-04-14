@@ -34,7 +34,7 @@ const ALL_COLUMNS = [
     { id: 'osVersion',       labelKey: 'devices.osVersion' },
     { id: 'site',            labelKey: 'devices.site' },
     { id: 'lastSeen',        labelKey: 'devices.lastSeen' },
-    { id: 'uptime',          labelKey: 'Uptime' },
+    { id: 'uptime',          labelKey: 'devices.uptime' },
     { id: 'location',        labelKey: 'common.note' },
     { id: 'licenseStartDate',labelKey: 'common.registeredAt' },
     { id: 'licenseEndDate',  labelKey: 'common.expiredAt' },
@@ -131,12 +131,13 @@ function LicenseChip({ device }: { device: Device }) {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function StatusChip({ status }: { status: Device['status'] }) {
+    const { t } = useTranslation();
     const map: Record<string, { label: string; color: 'success' | 'warning' | 'default' | 'error' | 'info'; icon: React.ReactElement }> = {
-        ONLINE: { label: 'Online', color: 'success', icon: <CheckCircle sx={{ fontSize: 14 }} /> },
-        SLEEP: { label: 'Sleep', color: 'info', icon: <Bedtime sx={{ fontSize: 14 }} /> },
-        APP_EXIT: { label: 'App Exit', color: 'warning', icon: <ExitToApp sx={{ fontSize: 14 }} /> },
-        OFFLINE: { label: 'Offline', color: 'default', icon: <ErrorOutline sx={{ fontSize: 14 }} /> },
-        ERROR: { label: 'Error', color: 'error', icon: <ErrorOutline sx={{ fontSize: 14 }} /> },
+        ONLINE:   { label: t('devices.online'),  color: 'success', icon: <CheckCircle sx={{ fontSize: 14 }} /> },
+        SLEEP:    { label: t('devices.sleep'),    color: 'info',    icon: <Bedtime sx={{ fontSize: 14 }} /> },
+        APP_EXIT: { label: t('devices.appExit'),  color: 'warning', icon: <ExitToApp sx={{ fontSize: 14 }} /> },
+        OFFLINE:  { label: t('devices.offline'),  color: 'default', icon: <ErrorOutline sx={{ fontSize: 14 }} /> },
+        ERROR:    { label: t('devices.error'),    color: 'error',   icon: <ErrorOutline sx={{ fontSize: 14 }} /> },
     };
     const cfg = map[status] ?? map.OFFLINE;
     return <Chip label={cfg.label} color={cfg.color} size="small" icon={cfg.icon} sx={{ fontWeight: 600, fontSize: '0.7rem' }} />;
@@ -144,7 +145,7 @@ function StatusChip({ status }: { status: Device['status'] }) {
 
 function fmtDate(d: string | null) {
     if (!d) return '—';
-    return new Intl.DateTimeFormat('vi-VN').format(new Date(d));
+    return new Intl.DateTimeFormat().format(new Date(d));
 }
 
 
@@ -250,6 +251,7 @@ function DeviceManageDialog({ device, open, onClose }: { device: Device | null; 
     const qc = useQueryClient();
     const currentUser = useAppSelector(s => s.auth.user);
     const isViewer = currentUser?.role === 'VIEWER';
+    const isAdmin = currentUser?.role === 'ADMIN';
     const [confirmAction, setConfirmAction] = React.useState<'release' | 'delete' | null>(null);
 
     // For VIEWER the "Điều khiển" tab is hidden, so tab index 0 = "Nội dung" (actualTab 1), etc.
@@ -347,7 +349,7 @@ function DeviceManageDialog({ device, open, onClose }: { device: Device | null; 
 
     const [commentText, setCommentText] = React.useState('');
     const addCommentMutation = useMutation({
-        mutationFn: () => devicesApi.addComment(device!.id, commentText),
+        mutationFn: () => devicesApi.addComment(device!.id, commentText, currentUser?.email),
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: ['device-comments', device?.id] });
             setCommentText('');
@@ -484,8 +486,8 @@ function DeviceManageDialog({ device, open, onClose }: { device: Device | null; 
                             </Stack>
                         </Box>
                         <Divider />
-                        {/* Danger zone */}
-                        <Stack direction="row" alignItems="center" gap={1}>
+                        {/* Danger zone — ADMIN only */}
+                        {isAdmin && <Stack direction="row" alignItems="center" gap={1}>
                             <Typography variant="caption" color="error" fontWeight={700} sx={{ textTransform: 'uppercase', letterSpacing: 1, mr: 0.5 }}>
                                 {t('devices.dangerZone')}
                             </Typography>
@@ -535,7 +537,7 @@ function DeviceManageDialog({ device, open, onClose }: { device: Device | null; 
                                     </Button>
                                 </>
                             )}
-                        </Stack>
+                        </Stack>}
 
                     </Stack>
                 )}
@@ -596,7 +598,7 @@ function DeviceManageDialog({ device, open, onClose }: { device: Device | null; 
                                         <Stack direction="row" justifyContent="space-between" mb={0.5}>
                                             <Typography variant="caption" fontWeight={600}>{c.userName ?? 'Unknown'}</Typography>
                                             <Typography variant="caption" color="text.secondary">
-                                                {new Date(c.createdAt).toLocaleString('vi-VN')}
+                                                {new Date(c.createdAt).toLocaleString()}
                                             </Typography>
                                         </Stack>
                                         <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>{c.comment}</Typography>
@@ -620,22 +622,22 @@ function DeviceManageDialog({ device, open, onClose }: { device: Device | null; 
                                 ? <Typography variant="body2" fontFamily="monospace" fontWeight={500} component="span">{device.androidId}</Typography>
                                 : '—'
                         } />
-                        <InfoRow label="OS Version" value={device.osVersion ?? '—'} />
+                        <InfoRow label={t('devices.osVersion')} value={device.osVersion ?? '—'} />
                         <InfoRow label="App Version" value={device.appVersion ?? '—'} />
                         <InfoRow label="IP Address" value={health?.ipAddress ?? '—'} />
                         <InfoRow label="MAC Address" value={health?.macAddress ?? '—'} />
                         <InfoRow label={t('devices.timezoneLabel')} value={device.timezone} />
                         <InfoRow label={t('devices.licenseActivatedAt')} value={fmtDate(device.licenseStartDate)} />
                         <InfoRow label={t('devices.licenseExpiresAt')} value={fmtDate(device.licenseEndDate)} />
-                        <InfoRow label={t('devices.lastOnlineAt')} value={device.lastOnlineAt ? new Date(device.lastOnlineAt).toLocaleString('vi-VN') : '—'} />
-                        <InfoRow label={t('devices.lastOfflineAt')} value={device.lastOfflineAt ? new Date(device.lastOfflineAt).toLocaleString('vi-VN') : '—'} />
-                        <InfoRow label="Pairing Code" value={
+                        <InfoRow label={t('devices.lastOnlineAt')} value={device.lastOnlineAt ? new Date(device.lastOnlineAt).toLocaleString() : '—'} />
+                        <InfoRow label={t('devices.lastOfflineAt')} value={device.lastOfflineAt ? new Date(device.lastOfflineAt).toLocaleString() : '—'} />
+                        <InfoRow label={t('devices.pairingCode')} value={
                             device.pairingCode
                                 ? <Chip label={device.pairingCode} size="small" sx={{ fontFamily: 'monospace', fontWeight: 700, letterSpacing: 2 }} />
                                 : <Typography variant="body2" color="text.disabled" component="span">{t('devices.paired')}</Typography>
                         } />
-                        <InfoRow label={t('devices.createdAt')} value={new Date(device.createdAt).toLocaleString('vi-VN')} />
-                        <InfoRow label="Last Seen" value={device.lastSeen ? new Date(device.lastSeen).toLocaleString('vi-VN') : '—'} />
+                        <InfoRow label={t('devices.createdAt')} value={new Date(device.createdAt).toLocaleString()} />
+                        <InfoRow label="Last Seen" value={device.lastSeen ? new Date(device.lastSeen).toLocaleString() : '—'} />
                     </Stack>
                 )}
 
@@ -801,7 +803,7 @@ function DevicesTab({ onAddDevice }: { onAddDevice: () => void }) {
                                     <TableSortLabel active={sortBy === 'lastSeen'} direction={sortBy === 'lastSeen' ? sortDir : 'asc'} onClick={() => handleSort('lastSeen')}>{t('devices.lastSeen')}</TableSortLabel>
                                 </TableCell>}
                                 {show('uptime') && <TableCell align="center" sx={{ fontWeight: 700 }}>
-                                    <TableSortLabel active={sortBy === 'uptime'} direction={sortBy === 'uptime' ? sortDir : 'asc'} onClick={() => handleSort('uptime')}>Uptime</TableSortLabel>
+                                    <TableSortLabel active={sortBy === 'uptime'} direction={sortBy === 'uptime' ? sortDir : 'asc'} onClick={() => handleSort('uptime')}>{t('devices.uptime')}</TableSortLabel>
                                 </TableCell>}
                                 {show('site') && <TableCell align="center" sx={{ fontWeight: 700 }}>
                                     <TableSortLabel active={sortBy === 'site'} direction={sortBy === 'site' ? sortDir : 'asc'} onClick={() => handleSort('site')}>{t('devices.site')}</TableSortLabel>
@@ -813,7 +815,7 @@ function DevicesTab({ onAddDevice }: { onAddDevice: () => void }) {
                                 {show('licenseEndDate') && <TableCell align="center" sx={{ fontWeight: 700 }}>
                                     <TableSortLabel active={sortBy === 'licenseEndDate'} direction={sortBy === 'licenseEndDate' ? sortDir : 'asc'} onClick={() => handleSort('licenseEndDate')}>{t('common.expiredAt')}</TableSortLabel>
                                 </TableCell>}
-                                {show('pairingCode') && <TableCell align="center" sx={{ fontWeight: 700 }}>Pairing Code</TableCell>}
+                                {show('pairingCode') && <TableCell align="center" sx={{ fontWeight: 700 }}>{t('devices.pairingCode')}</TableCell>}
                                 {show('actions') && <TableCell align="center" sx={{ fontWeight: 700 }}>{t('common.actions')}</TableCell>}
                             </TableRow>
                         </TableHead>
@@ -862,7 +864,7 @@ function DevicesTab({ onAddDevice }: { onAddDevice: () => void }) {
                                         {show('lastSeen') && (
                                             <TableCell align="center">
                                                 <Typography variant="caption" color="text.secondary">
-                                                    {device.lastSeen ? new Date(device.lastSeen).toLocaleString('vi-VN') : '—'}
+                                                    {device.lastSeen ? new Date(device.lastSeen).toLocaleString() : '—'}
                                                 </Typography>
                                             </TableCell>
                                         )}

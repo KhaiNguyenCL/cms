@@ -12,12 +12,16 @@ export interface ListUsersParams {
 export interface CreateUserPayload {
     email: string;
     password: string;
-    role: 'ADMIN' | 'MANAGER' | 'VIEWER';
+    role: 'ADMIN' | 'MANAGER' | 'VIEWER' | 'CONTENT_MANAGER' | 'SITE_MANAGER';
+    siteId?: string | null;
 }
 
 export interface UpdateUserPayload {
-    role?: 'ADMIN' | 'MANAGER' | 'VIEWER';
+    email?: string;
+    password?: string;
+    role?: 'ADMIN' | 'MANAGER' | 'VIEWER' | 'CONTENT_MANAGER' | 'SITE_MANAGER';
     status?: 'ACTIVE' | 'INACTIVE';
+    siteId?: string | null;
 }
 
 export const usersApi = {

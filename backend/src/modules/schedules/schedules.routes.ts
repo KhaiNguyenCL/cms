@@ -22,7 +22,7 @@ router.get('/', validate(listSchedulesSchema), schedulesController.listSchedules
  *          daysOfWeek: [0..6], 0=Sun. Empty array = every day.
  * @access  ADMIN, MANAGER
  */
-router.post('/', authorize('ADMIN', 'MANAGER'), validate(createScheduleSchema), schedulesController.createSchedule);
+router.post('/', authorize('ADMIN', 'MANAGER', 'CONTENT_MANAGER'), validate(createScheduleSchema), schedulesController.createSchedule);
 
 /**
  * @route   GET /api/schedules/:id
@@ -36,13 +36,13 @@ router.get('/:id', schedulesController.getScheduleById);
  * @desc    Cập nhật schedule
  * @access  ADMIN, MANAGER
  */
-router.put('/:id', authorize('ADMIN', 'MANAGER'), validate(updateScheduleSchema), schedulesController.updateSchedule);
+router.put('/:id', authorize('ADMIN', 'MANAGER', 'CONTENT_MANAGER'), validate(updateScheduleSchema), schedulesController.updateSchedule);
 
 /**
  * @route   DELETE /api/schedules/:id
  * @desc    Xoá schedule
  * @access  ADMIN only
  */
-router.delete('/:id', authorize('ADMIN'), schedulesController.deleteSchedule);
+router.delete('/:id', authorize('ADMIN', 'CONTENT_MANAGER'), schedulesController.deleteSchedule);
 
 export default router;

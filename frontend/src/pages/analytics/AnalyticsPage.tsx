@@ -13,7 +13,7 @@ import {
 } from 'recharts';
 import {
     Tv, PlayArrow, CheckCircle, BarChart as BarChartIcon,
-    Storage, Image, VideoFile, Language, FiberManualRecord,
+    Storage, Image, VideoFile, Language, GifBox, FiberManualRecord,
     TrendingUp, MonitorHeart, Memory,
 } from '@mui/icons-material';
 import { analyticsApi } from '@api/analytics.api';
@@ -92,6 +92,7 @@ function TypeChip({ type }: { type: string }) {
     const cfg: Record<string, { icon: React.ReactNode; color: string }> = {
         VIDEO: { icon: <VideoFile sx={{ fontSize: 12 }} />, color: '#FF6584' },
         IMAGE: { icon: <Image sx={{ fontSize: 12 }} />, color: '#4CAF82' },
+        GIF:   { icon: <GifBox sx={{ fontSize: 12 }} />, color: '#FF9800' },
         HTML:  { icon: <Language sx={{ fontSize: 12 }} />, color: '#29B6F6' },
     };
     const c = cfg[type] ?? cfg.IMAGE;

@@ -26,7 +26,8 @@ export interface User {
     id: string;
     organizationId: string;
     email: string;
-    role: 'SUPER_ADMIN' | 'ADMIN' | 'MANAGER' | 'VIEWER';
+    role: 'SUPER_ADMIN' | 'ADMIN' | 'MANAGER' | 'VIEWER' | 'CONTENT_MANAGER' | 'SITE_MANAGER';
+    siteId?: string | null;
     status: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED';
     isRoot?: boolean;
     createdAt: string;
@@ -188,7 +189,7 @@ export interface DeviceGroup {
 
 // ─── Media ────────────────────────────────────────────────────────────────────
 
-export type MediaType = 'IMAGE' | 'VIDEO';
+export type MediaType = 'IMAGE' | 'GIF' | 'VIDEO' | 'HTML' | 'URL';
 export type MediaStatus = 'PROCESSING' | 'READY' | 'ERROR';
 
 export interface Media {

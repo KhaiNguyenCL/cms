@@ -38,7 +38,7 @@ router.get('/', validate(listMediaSchema), mediaController.listMedia);
  */
 router.post(
     '/upload',
-    authorize('ADMIN', 'MANAGER'),
+    authorize('ADMIN', 'MANAGER', 'CONTENT_MANAGER'),
     mediaController.handleUpload
 );
 
@@ -56,7 +56,7 @@ router.get('/:id', mediaController.getMediaById);
  */
 router.put(
     '/:id',
-    authorize('ADMIN', 'MANAGER'),
+    authorize('ADMIN', 'MANAGER', 'CONTENT_MANAGER'),
     validate(updateMediaSchema),
     mediaController.updateMedia
 );
@@ -66,6 +66,6 @@ router.put(
  * @desc    Xoá media (xoá cả file vật lý)
  * @access  Private (ADMIN only)
  */
-router.delete('/:id', authorize('ADMIN'), mediaController.deleteMedia);
+router.delete('/:id', authorize('ADMIN', 'CONTENT_MANAGER'), mediaController.deleteMedia);
 
 export default router;

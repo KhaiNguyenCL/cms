@@ -14,6 +14,8 @@ export interface UserRow {
     email: string;
     role: string;
     status: string;
+    siteId: string | null;
+    siteName: string | null;
     createdAt: string;
     updatedAt: string;
 }
@@ -35,20 +37,20 @@ export async function listUsers(
     const { page, limit, role, status, search } = q;
     const offset = (page - 1) * limit;
 
-    const conditions: string[] = [`"organizationId" = $1`];
+    const conditions: string[] = [`u."organizationId" = $1`];
     const values: unknown[] = [organizationId];
     let idx = 2;
 
     if (role) {
-        conditions.push(`role = $${idx++}`);
+        conditions.push(`u.role = $${idx++}`);
         values.push(role);
     }
     if (status) {
-        conditions.push(`status = $${idx++}`);
+        conditions.push(`u.status = $${idx++}`);
         values.push(status);
     }
     if (search) {
-        conditions.push(`email ILIKE $${idx++}`);
+        conditions.push(`u.email ILIKE $${idx++}`);
         values.push(`%${search}%`);
     }
 
@@ -56,14 +58,17 @@ export async function listUsers(
 
     const [countResult, rows] = await Promise.all([
         queryOne<{ count: string }>(
-            `SELECT COUNT(*) as count FROM users WHERE ${where}`,
+            `SELECT COUNT(*) as count FROM users u WHERE ${where}`,
             values
         ),
         query<UserRow>(
-            `SELECT id, "organizationId", email, role, status, "createdAt", "updatedAt"
-             FROM users
+            `SELECT u.id, u."organizationId", u.email, u.role, u.status,
+                    u."siteId", s.name AS "siteName",
+                    u."createdAt", u."updatedAt"
+             FROM users u
+             LEFT JOIN stores s ON s.id = u."siteId"
              WHERE ${where}
-             ORDER BY "createdAt" DESC
+             ORDER BY u."createdAt" DESC
              LIMIT $${idx++} OFFSET $${idx++}`,
             [...values, limit, offset]
         ),
@@ -84,9 +89,12 @@ export async function listUsers(
 
 export async function getUserById(userId: string, organizationId: string): Promise<UserRow> {
     const user = await queryOne<UserRow>(
-        `SELECT id, "organizationId", email, role, status, "createdAt", "updatedAt"
-         FROM users
-         WHERE id = $1 AND "organizationId" = $2`,
+        `SELECT u.id, u."organizationId", u.email, u.role, u.status,
+                u."siteId", s.name AS "siteName",
+                u."createdAt", u."updatedAt"
+         FROM users u
+         LEFT JOIN stores s ON s.id = u."siteId"
+         WHERE u.id = $1 AND u."organizationId" = $2`,
         [userId, organizationId]
     );
     if (!user) throw new AppError(404, 'User không tồn tại');
@@ -110,10 +118,10 @@ export async function createUser(
     const passwordHash = await bcrypt.hash(data.password, BCRYPT_ROUNDS);
 
     const rows = await query<UserRow>(
-        `INSERT INTO users (id, "organizationId", email, "passwordHash", role, status, "createdAt", "updatedAt")
-         VALUES (gen_random_uuid()::text, $1, $2, $3, $4, 'ACTIVE', NOW(), NOW())
-         RETURNING id, "organizationId", email, role, status, "createdAt", "updatedAt"`,
-        [organizationId, data.email, passwordHash, data.role]
+        `INSERT INTO users (id, "organizationId", email, "passwordHash", role, "siteId", status, "createdAt", "updatedAt")
+         VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, 'ACTIVE', NOW(), NOW())
+         RETURNING id, "organizationId", email, role, "siteId", NULL AS "siteName", status, "createdAt", "updatedAt"`,
+        [organizationId, data.email, passwordHash, data.role, data.siteId ?? null]
     );
 
     logger.info('User created', { createdBy: createdById, newUserId: rows[0].id });
@@ -175,6 +183,10 @@ export async function updateUser(
         fields.push(`status = $${paramIndex++}`);
         values.push(data.status);
     }
+    if (data.siteId !== undefined) {
+        fields.push(`"siteId" = $${paramIndex++}`);
+        values.push(data.siteId ?? null);
+    }
 
     if (fields.length === 0) throw new AppError(400, 'Không có dữ liệu để cập nhật');
 
@@ -185,7 +197,7 @@ export async function updateUser(
         `UPDATE users
          SET ${fields.join(', ')}
          WHERE id = $${paramIndex++} AND "organizationId" = $${paramIndex++}
-         RETURNING id, "organizationId", email, role, status, "createdAt", "updatedAt"`,
+         RETURNING id, "organizationId", email, role, "siteId", NULL AS "siteName", status, "createdAt", "updatedAt"`,
         values
     );
 

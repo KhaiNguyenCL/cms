@@ -133,7 +133,8 @@ export async function batchGeneratePairingCodes(req: Request, res: Response, nex
 export async function listDevices(req: Request, res: Response, next: NextFunction) {
     try {
         const parsed = listDevicesSchema.shape.query.parse(req.query);
-        const result = await devService.listDevices(req.user!.organizationId, parsed);
+        const siteFilter = req.user!.role === 'SITE_MANAGER' ? req.user!.siteId : null;
+        const result = await devService.listDevices(req.user!.organizationId, parsed, siteFilter);
         res.json({ success: true, ...result });
     } catch (err) { next(err); }
 }
@@ -150,7 +151,8 @@ export async function createDevice(req: Request, res: Response, next: NextFuncti
 // GET /api/devices/:id
 export async function getDeviceById(req: Request, res: Response, next: NextFunction) {
     try {
-        const device = await devService.getDeviceById(req.params.id as string, req.user!.organizationId);
+        const siteFilter = req.user!.role === 'SITE_MANAGER' ? req.user!.siteId : null;
+        const device = await devService.getDeviceById(req.params.id as string, req.user!.organizationId, siteFilter);
         res.json({ success: true, data: device });
     } catch (err) { next(err); }
 }
@@ -158,7 +160,8 @@ export async function getDeviceById(req: Request, res: Response, next: NextFunct
 // PUT /api/devices/:id
 export async function updateDevice(req: Request, res: Response, next: NextFunction) {
     try {
-        const device = await devService.updateDevice(req.params.id as string, req.user!.organizationId, req.body);
+        const siteFilter = req.user!.role === 'SITE_MANAGER' ? req.user!.siteId : null;
+        const device = await devService.updateDevice(req.params.id as string, req.user!.organizationId, req.body, siteFilter);
         logAction(req.user!.organizationId, req.user!.userId, 'UPDATE', 'DEVICE', device.id, device.name).catch(() => {});
         res.json({ success: true, message: 'Cập nhật device thành công', data: device });
     } catch (err) { next(err); }
@@ -184,7 +187,8 @@ export async function resetDevice(req: Request, res: Response, next: NextFunctio
 // POST /api/devices/:id/command
 export async function sendCommand(req: Request, res: Response, next: NextFunction) {
     try {
-        const result = await devService.sendDeviceCommand(req.params.id as string, req.user!.organizationId, req.body);
+        const siteFilter = req.user!.role === 'SITE_MANAGER' ? req.user!.siteId : null;
+        const result = await devService.sendDeviceCommand(req.params.id as string, req.user!.organizationId, req.body, siteFilter);
         res.json({ success: true, data: result });
     } catch (err) { next(err); }
 }
@@ -192,9 +196,8 @@ export async function sendCommand(req: Request, res: Response, next: NextFunctio
 // GET /api/devices/:id/screenshot
 export async function getScreenshot(req: Request, res: Response, next: NextFunction) {
     try {
-        // Screenshot được device tự push lên server, không pull trực tiếp
-        // Trigger SCREENSHOT command và return placeholder
-        const result = await devService.sendDeviceCommand(req.params.id as string, req.user!.organizationId, { command: 'SCREENSHOT' });
+        const siteFilter = req.user!.role === 'SITE_MANAGER' ? req.user!.siteId : null;
+        const result = await devService.sendDeviceCommand(req.params.id as string, req.user!.organizationId, { command: 'SCREENSHOT' }, siteFilter);
         res.json({ success: true, message: 'Screenshot command queued', data: result });
     } catch (err) { next(err); }
 }
@@ -257,6 +260,10 @@ export async function addDeviceComment(req: Request, res: Response, next: NextFu
         if (!comment || !comment.trim()) {
             res.status(400).json({ success: false, message: 'Ghi chú không được để trống' });
             return;
+        }
+        // SITE_MANAGER: verify device belongs to their site before inserting
+        if (req.user!.role === 'SITE_MANAGER') {
+            await devService.getDeviceById(req.params.id as string, req.user!.organizationId, req.user!.siteId);
         }
         const result = await devService.addDeviceComment(
             req.params.id as string,

@@ -10,10 +10,7 @@ import {
 } from '@mui/material';
 import {
     Add, Edit, Delete, Search, Close, PersonAdd, ViewColumn, SwapHoriz,
-    StoreMallDirectory,
-    AddAPhoto,
-    AddToHomeScreen,
-    AddToQueue,
+    StoreMallDirectory, AddAPhoto, AddToHomeScreen, AddToQueue, Clear,
 } from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -21,6 +18,7 @@ import { sitesApi } from '@/api/sites.api';
 import { devicesApi } from '@/api/devices.api';
 import { getApiError } from '@/api/client';
 import type { Site, SiteDevice, Device } from '@/types';
+import { useAppSelector } from '@store/hooks';
 
 // ─── Timezone helpers ─────────────────────────────────────────────────────────
 
@@ -50,7 +48,7 @@ interface TimezoneAutocompleteProps {
     helperText?: string;
 }
 
-function TimezoneAutocomplete({ value, onChange, label = 'Timezone', helperText }: TimezoneAutocompleteProps) {
+function TimezoneAutocomplete({ value, onChange, label, helperText }: TimezoneAutocompleteProps) {
     const { t } = useTranslation();
     return (
         <Autocomplete<string>
@@ -61,7 +59,7 @@ function TimezoneAutocomplete({ value, onChange, label = 'Timezone', helperText 
             renderInput={params => (
                 <TextField
                     {...params}
-                    label={label}
+                    label={label ?? t('sites.timezone')}
                     size="small"
                     helperText={helperText}
                     InputLabelProps={{ shrink: true }}
@@ -243,8 +241,30 @@ function AddSiteDialog({ open, onClose }: AddSiteDialogProps) {
                     <TextField label={t('sites.contact')} value={form.contact} onChange={e => setForm(f => ({ ...f, contact: e.target.value }))} fullWidth size="small" />
                     <TimezoneAutocomplete value={form.timezone} onChange={tz => setForm(f => ({ ...f, timezone: tz }))} helperText={t('sites.timezone')} />
                     <Box sx={{ display: 'flex', gap: 2 }}>
-                        <TextField label="Time ON" type="time" value={form.timeOn} onChange={e => setForm(f => ({ ...f, timeOn: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} helperText={t('sites.timeOnHelper')} size="small" sx={pickerSx(dark)} />
-                        <TextField label="Time OFF" type="time" value={form.timeOff} onChange={e => setForm(f => ({ ...f, timeOff: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} helperText={t('sites.timeOffHelper')} size="small" sx={pickerSx(dark)} />
+                        <TextField
+                            label={t('sites.timeOnLabel')} type="time" value={form.timeOn}
+                            onChange={e => setForm(f => ({ ...f, timeOn: e.target.value }))}
+                            fullWidth InputLabelProps={{ shrink: true }} helperText={t('sites.timeOnHelper')} size="small" sx={pickerSx(dark)}
+                            InputProps={{ endAdornment: form.timeOn ? (
+                                <InputAdornment position="end">
+                                    <IconButton size="small" onClick={() => setForm(f => ({ ...f, timeOn: '' }))} edge="end" tabIndex={-1}>
+                                        <Clear sx={{ fontSize: 14 }} />
+                                    </IconButton>
+                                </InputAdornment>
+                            ) : null }}
+                        />
+                        <TextField
+                            label={t('sites.timeOffLabel')} type="time" value={form.timeOff}
+                            onChange={e => setForm(f => ({ ...f, timeOff: e.target.value }))}
+                            fullWidth InputLabelProps={{ shrink: true }} helperText={t('sites.timeOffHelper')} size="small" sx={pickerSx(dark)}
+                            InputProps={{ endAdornment: form.timeOff ? (
+                                <InputAdornment position="end">
+                                    <IconButton size="small" onClick={() => setForm(f => ({ ...f, timeOff: '' }))} edge="end" tabIndex={-1}>
+                                        <Clear sx={{ fontSize: 14 }} />
+                                    </IconButton>
+                                </InputAdornment>
+                            ) : null }}
+                        />
                         <TextField label={t('sites.deployDate')} type="date" value={form.deployDate} onChange={e => setForm(f => ({ ...f, deployDate: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} helperText={t('sites.deployDateHelper')} size="small" sx={pickerSx(dark)} />
                     </Box>
                     <Box>
@@ -354,6 +374,8 @@ function EditSiteDialog({ site, open, onClose }: EditSiteDialogProps) {
     const theme = useTheme();
     const dark  = theme.palette.mode === 'dark';
     const qc = useQueryClient();
+    const currentUser = useAppSelector(s => s.auth.user);
+    const isAdmin = currentUser?.role === 'ADMIN';
     const [form, setForm] = useState({
         name:               site.name,
         address:            site.address    ?? '',
@@ -455,8 +477,30 @@ function EditSiteDialog({ site, open, onClose }: EditSiteDialogProps) {
                     <TextField label={t('sites.contact')} value={form.contact} onChange={e => setForm(f => ({ ...f, contact: e.target.value }))} fullWidth size="small" />
                     <TimezoneAutocomplete value={form.timezone} onChange={tz => setForm(f => ({ ...f, timezone: tz }))} helperText={t('sites.timezone')} />
                     <Box sx={{ display: 'flex', gap: 2 }}>
-                        <TextField label="Time ON" type="time" value={form.timeOn} onChange={e => setForm(f => ({ ...f, timeOn: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} helperText={t('sites.timeOnHelper')} size="small" sx={pickerSx(dark)} />
-                        <TextField label="Time OFF" type="time" value={form.timeOff} onChange={e => setForm(f => ({ ...f, timeOff: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} helperText={t('sites.timeOffHelper')} size="small" sx={pickerSx(dark)} />
+                        <TextField
+                            label={t('sites.timeOnLabel')} type="time" value={form.timeOn}
+                            onChange={e => setForm(f => ({ ...f, timeOn: e.target.value }))}
+                            fullWidth InputLabelProps={{ shrink: true }} helperText={t('sites.timeOnHelper')} size="small" sx={pickerSx(dark)}
+                            InputProps={{ endAdornment: form.timeOn ? (
+                                <InputAdornment position="end">
+                                    <IconButton size="small" onClick={() => setForm(f => ({ ...f, timeOn: '' }))} edge="end" tabIndex={-1}>
+                                        <Clear sx={{ fontSize: 14 }} />
+                                    </IconButton>
+                                </InputAdornment>
+                            ) : null }}
+                        />
+                        <TextField
+                            label={t('sites.timeOffLabel')} type="time" value={form.timeOff}
+                            onChange={e => setForm(f => ({ ...f, timeOff: e.target.value }))}
+                            fullWidth InputLabelProps={{ shrink: true }} helperText={t('sites.timeOffHelper')} size="small" sx={pickerSx(dark)}
+                            InputProps={{ endAdornment: form.timeOff ? (
+                                <InputAdornment position="end">
+                                    <IconButton size="small" onClick={() => setForm(f => ({ ...f, timeOff: '' }))} edge="end" tabIndex={-1}>
+                                        <Clear sx={{ fontSize: 14 }} />
+                                    </IconButton>
+                                </InputAdornment>
+                            ) : null }}
+                        />
                         <TextField label={t('sites.deployDate')} type="date" value={form.deployDate} onChange={e => setForm(f => ({ ...f, deployDate: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} helperText={t('sites.deployDateHelper')} size="small" sx={pickerSx(dark)} />
                     </Box>
                     <Box>
@@ -564,7 +608,7 @@ function EditSiteDialog({ site, open, onClose }: EditSiteDialogProps) {
             </DialogContent>
             <DialogActions sx={{ px: 3, pb: 2, justifyContent: 'space-between' }}>
                 <Box>
-                    {confirmDel ? (
+                    {isAdmin && (confirmDel ? (
                         <Stack direction="row" spacing={1} alignItems="center">
                             <Typography variant="body2" color="error">{t('sites.confirmDeleteSite')}</Typography>
                             <Button size="small" color="error" disabled={deleteSiteMutation.isPending} onClick={() => deleteSiteMutation.mutate()} startIcon={deleteSiteMutation.isPending ? <CircularProgress size={14} color="inherit" /> : undefined}>{t('common.delete')}</Button>
@@ -572,7 +616,7 @@ function EditSiteDialog({ site, open, onClose }: EditSiteDialogProps) {
                         </Stack>
                     ) : (
                         <Button size="small" color="error" startIcon={<Delete />} onClick={() => setConfirmDel(true)}>{t('sites.deleteConfirm').replace('?', '')}</Button>
-                    )}
+                    ))}
                 </Box>
                 <Box sx={{ display: 'flex', gap: 1 }}>
                     <Button size="small" onClick={onClose} disabled={updateMutation.isPending}>{t('common.cancel')}</Button>
@@ -686,18 +730,18 @@ export default function SitePage() {
                                         {show('name')       && <TableCell sx={{ ...TH_SX, pl: 2 }}>{t('common.siteName')}</TableCell>}
                                         {show('address')    && <TableCell sx={TH_SX}>{t('sites.address')}</TableCell>}
                                         {show('contact')    && <TableCell sx={TH_SX}>{t('sites.contact')}</TableCell>}
-                                        {show('timezone')   && <TableCell sx={TH_SX}>Timezone</TableCell>}
+                                        {show('timezone')   && <TableCell sx={TH_SX}>{t('sites.timezone')}</TableCell>}
                                         {show('timeOn')     && (
                                             <TableCell sx={TH_SX}>
                                                 <TableSortLabel active={sortBy === 'timeOn'} direction={sortBy === 'timeOn' ? sortDir : 'asc'} onClick={() => handleSort('timeOn')}>
-                                                    Time ON
+                                                    {t('sites.timeOnLabel')}
                                                 </TableSortLabel>
                                             </TableCell>
                                         )}
                                         {show('timeOff')    && (
                                             <TableCell sx={TH_SX}>
                                                 <TableSortLabel active={sortBy === 'timeOff'} direction={sortBy === 'timeOff' ? sortDir : 'asc'} onClick={() => handleSort('timeOff')}>
-                                                    Time OFF
+                                                    {t('sites.timeOffLabel')}
                                                 </TableSortLabel>
                                             </TableCell>
                                         )}

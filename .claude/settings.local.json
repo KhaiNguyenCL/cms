@@ -71,7 +71,8 @@
       "Bash(xargs wc:*)",
       "Bash(awk '{print $NF}')",
       "Bash(cat)",
-      "Bash(bash /tmp/find_vietnamese.sh)"
+      "Bash(bash /tmp/find_vietnamese.sh)",
+      "Bash(ls /e/cms/backend/*.log)"
     ],
     "additionalDirectories": [
       "E:\\player"

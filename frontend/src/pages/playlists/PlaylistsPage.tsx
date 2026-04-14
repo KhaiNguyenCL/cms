@@ -6,7 +6,7 @@ import {
     Skeleton, Divider, Tooltip, InputAdornment,
     CircularProgress, Table, TableBody, TableCell, TableContainer,
     TableHead, TableRow, Paper, Grid, Card, CardContent, TablePagination, Alert,
-    Select, MenuItem, Menu, Slider,
+    Select, MenuItem, Menu,
 } from '@mui/material';
 import {
     Add, QueueMusic, Delete, VideoFile, Image, Edit,
@@ -281,8 +281,8 @@ function AddMediaDialog({
                 )}
             </DialogContent>
 
-            <DialogActions sx={{ px: 3, pb: 2 }}>
-                <Button size="small" onClick={handleClose}>{t('common.cancel')}</Button>
+            <DialogActions sx={{ px: 3, pb: 2, pt: 2 }}>
+                <Button size="small" onClick={handleClose} >{t('common.cancel')}</Button>
                 <Button size="small" disabled={selected.size === 0} startIcon={<Add />} onClick={handleConfirm}>
                     {t('common.add')}{selected.size > 0 ? ` (${selected.size})` : ''}
                 </Button>
@@ -431,12 +431,7 @@ function getTransition(val?: string | null) {
 }
 
 const DEFAULT_TRANS_MS = 800;
-const TRANS_DURATION_MARKS = [
-    { value: 200, label: '0.2s' },
-    { value: 1000, label: '1s' },
-    { value: 2000, label: '2s' },
-    { value: 3000, label: '3s' },
-];
+const TRANS_DURATION_OPTIONS = [200, 400, 600, 800, 1000, 1500, 2000, 3000];
 
 function TransitionPicker({
     value, onChange, durationMs, onDurationChange,
@@ -449,12 +444,8 @@ function TransitionPicker({
     const { t } = useTranslation();
     const [anchor, setAnchor] = useState<HTMLElement | null>(null);
     const committedMs = durationMs ?? DEFAULT_TRANS_MS;
-    const [displayMs, setDisplayMs] = useState<number>(committedMs);
     const current = getTransition(value);
     const showDuration = (value ?? 'FADE') !== 'NONE';
-
-    // Sync display value when committed value changes from outside (e.g. load from server)
-    useEffect(() => { setDisplayMs(committedMs); }, [committedMs]);
 
     return (
         <>
@@ -476,22 +467,18 @@ function TransitionPicker({
                     />
                 </Tooltip>
                 {showDuration && (
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1, maxWidth: 200}}>
-                        <Slider
-                            size="small"
-                            value={displayMs}
-                            min={100}
-                            max={3000}
-                            step={100}
-                            marks={TRANS_DURATION_MARKS}
-                            onChange={(_e, v) => setDisplayMs(v as number)}
-                            onChangeCommitted={(_e, v) => onDurationChange(v as number)}
-                            sx={{ py: 0.5 }}
-                        />
-                        <Typography variant="caption" sx={{ fontFamily: 'monospace', whiteSpace: 'nowrap', minWidth: 38, textAlign: 'right', color: 'text.secondary' }}>
-                            {displayMs}ms
-                        </Typography>
-                    </Box>
+                    <Select
+                        size="small"
+                        value={committedMs}
+                        onChange={e => onDurationChange(e.target.value as number)}
+                        sx={{ fontSize: '0.7rem', height: 22, '& .MuiSelect-select': { py: 0, px: 1 } }}
+                    >
+                        {TRANS_DURATION_OPTIONS.map(ms => (
+                            <MenuItem key={ms} value={ms} sx={{ fontSize: '0.75rem' }}>
+                                {ms < 1000 ? `${ms}ms` : `${ms / 1000}s`}
+                            </MenuItem>
+                        ))}
+                    </Select>
                 )}
             </Box>
             <Menu anchorEl={anchor} open={Boolean(anchor)} onClose={() => setAnchor(null)}

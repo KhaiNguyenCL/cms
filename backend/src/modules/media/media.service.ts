@@ -50,7 +50,8 @@ function fileHash(filePath: string): string {
     return crypto.createHash('sha256').update(buf).digest('hex');
 }
 
-function detectType(mimeType: string): 'IMAGE' | 'VIDEO' {
+function detectType(mimeType: string): 'IMAGE' | 'GIF' | 'VIDEO' {
+    if (mimeType === 'image/gif') return 'GIF';
     return mimeType.startsWith('image/') ? 'IMAGE' : 'VIDEO';
 }
 
@@ -107,6 +108,8 @@ export async function getMediaById(mediaId: string, organizationId: string): Pro
 
 // ─── Upload ────────────────────────────────────────────────────────────────────
 
+const ALL_MEDIA_TYPES = ['IMAGE', 'GIF', 'VIDEO', 'HTML', 'URL'] as const;
+
 export async function uploadMedia(
     organizationId: string,
     uploadedById: string,
@@ -116,11 +119,22 @@ export async function uploadMedia(
 ): Promise<MediaRow> {
     const mediaType = detectType(file.mimetype);
 
+    // Check org-level allowed media types
+    const orgRow = await queryOne<{ settings: Record<string, unknown> | null }>(
+        `SELECT settings FROM organizations WHERE id = $1`,
+        [organizationId]
+    );
+    const allowedTypes: string[] = (orgRow?.settings?.allowedMediaTypes as string[] | undefined) ?? [...ALL_MEDIA_TYPES];
+    if (!allowedTypes.includes(mediaType)) {
+        fs.unlinkSync(file.path);
+        throw new AppError(403, `Loại media "${mediaType}" không được phép trong tổ chức này`);
+    }
+
     // Check org storage quota before accepting the file
     await checkStorageQuota(organizationId, file.size);
 
     // Validate size per type
-    if (mediaType === 'IMAGE' && file.size > MAX_IMAGE_BYTES) {
+    if ((mediaType === 'IMAGE' || mediaType === 'GIF') && file.size > MAX_IMAGE_BYTES) {
         fs.unlinkSync(file.path);
         throw new AppError(413, `Ảnh quá lớn. Tối đa ${process.env.MAX_IMAGE_SIZE_MB || 50}MB`);
     }
@@ -141,18 +155,18 @@ export async function uploadMedia(
     let height: number | null = null;
     let thumbnailPath: string | null = null;
 
-    if (mediaType === 'IMAGE') {
+    if (mediaType === 'IMAGE' || mediaType === 'GIF') {
         try {
             const meta = await sharp(finalPath).metadata();
             width = meta.width ?? null;
             height = meta.height ?? null;
 
-            // Generate thumbnail (320x180, webp)
+            // Generate thumbnail (320x180, webp) — for GIF sharp extracts first frame
             const thumbName = `thumb_${path.basename(finalName, ext)}.webp`;
             const orgThumbDir = path.join(thumbDir, organizationId);
             if (!fs.existsSync(orgThumbDir)) fs.mkdirSync(orgThumbDir, { recursive: true });
             const thumbFull = path.join(orgThumbDir, thumbName);
-            await sharp(finalPath)
+            await sharp(finalPath, { animated: false })
                 .resize(320, 180, { fit: 'inside', withoutEnlargement: true })
                 .webp({ quality: 75 })
                 .toFile(thumbFull);
@@ -165,7 +179,7 @@ export async function uploadMedia(
     const displayTitle = title || path.basename(file.originalname, ext);
 
     // Videos start as PROCESSING — the transcoding worker will set them READY.
-    // Images are already processed above (sharp), so they go straight to READY.
+    // Images and GIFs are processed above (sharp), so they go straight to READY.
     const initialStatus = mediaType === 'VIDEO' ? 'PROCESSING' : 'READY';
 
     let rows: MediaRow[];
@@ -305,7 +319,7 @@ export async function getMediaThumbnailPath(mediaId: string, organizationId: str
         [mediaId, organizationId]
     );
     if (!media) throw new AppError(404, 'Media không tồn tại');
-    if (media.type !== 'IMAGE') throw new AppError(400, 'Chỉ ảnh mới có thumbnail');
+    if (media.type !== 'IMAGE' && media.type !== 'GIF') throw new AppError(400, 'Chỉ ảnh mới có thumbnail');
     if (!media.thumbnailPath || !fs.existsSync(media.thumbnailPath)) {
         return media.filePath;
     }
@@ -319,7 +333,7 @@ export async function getMediaThumbnailPathPublic(mediaId: string): Promise<stri
         [mediaId]
     );
     if (!media) throw new AppError(404, 'Media không tồn tại');
-    if (media.type === 'IMAGE') {
+    if (media.type === 'IMAGE' || media.type === 'GIF') {
         if (media.thumbnailPath && fs.existsSync(media.thumbnailPath)) {
             return media.thumbnailPath;
         }

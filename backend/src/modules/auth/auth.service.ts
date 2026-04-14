@@ -23,6 +23,7 @@ interface UserRow {
     status: string;
     organization_id: string;
     is_root: boolean;
+    site_id: string | null;
     created_at: string;
     updated_at: string;
 }
@@ -54,7 +55,7 @@ function toPublicUser(u: UserRow): UserPublic {
 
 // ─── Token helpers ────────────────────────────────────────────────────────────
 
-function signAccessToken(payload: { userId: string; organizationId: string; role: string; isRoot?: boolean }) {
+function signAccessToken(payload: { userId: string; organizationId: string; role: string; isRoot?: boolean; siteId?: string | null }) {
     return jwt.sign({ ...payload, type: 'user' }, config.jwt.secret, { expiresIn: '2h' });
 }
 
@@ -69,6 +70,7 @@ async function generateTokenPair(user: UserRow) {
         organizationId: user.organization_id,
         role: user.role,
         isRoot: user.is_root ?? false,
+        siteId: user.site_id ?? null,
     });
     const refreshToken = signRefreshToken(tokenId, user.id);
     await redis.set(`refresh:${tokenId}`, user.id, 'EX', REFRESH_TOKEN_TTL_SEC);
@@ -155,6 +157,7 @@ export async function login(data: LoginBody, ip: string) {
     const user = await queryOne<UserRow & { org_active: boolean }>(
         `SELECT u.id, u.email, u."passwordHash" as password_hash, u.role, u.status,
                 u."organizationId" as organization_id, u."isRoot" as is_root,
+                u."siteId" as site_id,
                 u."createdAt" as created_at, u."updatedAt" as updated_at,
                 o."isActive" as org_active
          FROM users u
@@ -213,6 +216,7 @@ export async function refreshAccessToken(refreshToken: string) {
         const graceUser = await queryOne<UserRow & { org_active: boolean }>(
             `SELECT u.id, u.email, '' as password_hash, u.role, u.status,
                     u."organizationId" as organization_id, u."isRoot" as is_root,
+                    u."siteId" as site_id,
                     u."createdAt" as created_at, u."updatedAt" as updated_at,
                     o."isActive" as org_active
              FROM users u
@@ -232,6 +236,7 @@ export async function refreshAccessToken(refreshToken: string) {
     const user = await queryOne<UserRow & { org_active: boolean }>(
         `SELECT u.id, u.email, '' as password_hash, u.role, u.status,
                 u."organizationId" as organization_id, u."isRoot" as is_root,
+                u."siteId" as site_id,
                 u."createdAt" as created_at, u."updatedAt" as updated_at,
                 o."isActive" as org_active
          FROM users u

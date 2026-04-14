@@ -59,6 +59,18 @@ export async function setOrganizationStatus(req: Request, res: Response, next: N
 
 
 
+// PATCH /api/organizations/:id/settings  — SUPER_ADMIN only
+export async function updateOrgSettings(req: Request, res: Response, next: NextFunction) {
+    try {
+        const id = req.params.id as string;
+        const { settings } = req.body as { settings: Record<string, unknown> };
+        const org = await orgService.updateOrgSettings(id, settings);
+        res.json({ success: true, data: org });
+    } catch (err) {
+        next(err);
+    }
+}
+
 // PATCH /api/organizations/me/device-pin  — ADMIN only
 export async function updateDevicePin(req: Request, res: Response, next: NextFunction) {
     try {

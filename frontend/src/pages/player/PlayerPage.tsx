@@ -793,7 +793,7 @@ export default function PlayerPage() {
                 scheduleTotalMsRef.current = 0;
                 // Preload sync playlist images
                 syncItems.forEach(it => {
-                    if (it.mediaType === 'IMAGE') {
+                    if (it.mediaType === 'IMAGE' || it.mediaType === 'GIF') {
                         const preImg = new Image();
                         preImg.src = it.mediaUrl;
                     }
@@ -827,7 +827,7 @@ export default function PlayerPage() {
 
         // Preload ALL images into browser cache immediately after sync
         items.forEach(it => {
-            if (it.mediaType === 'IMAGE') {
+            if (it.mediaType === 'IMAGE' || it.mediaType === 'GIF') {
                 const preImg = new Image();
                 preImg.src = it.mediaUrl;
             }

@@ -57,10 +57,11 @@ type NavEntry = NavLeaf | NavGroup;
 
 const navStructure: NavEntry[] = [
     { kind: 'item', label: 'Dashboard', icon: <Dashboard sx={{ color: '#38BDF8' }} />, path: '/dashboard', roles: null },
-    { kind: 'item', label: 'Sites Management', icon: <Storefront sx={{ color: '#34D399' }} />, path: '/sites', roles: null },
-    { kind: 'item', label: 'Device Management', icon: <DevicesOther sx={{ color: '#60A5FA' }} />, path: '/device-management', roles: null },
+    { kind: 'item', label: 'Site Management', icon: <Storefront sx={{ color: '#34D399' }} />, path: '/sites', roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'VIEWER', 'SITE_MANAGER'] },
+    { kind: 'item', label: 'Device Management', icon: <DevicesOther sx={{ color: '#60A5FA' }} />, path: '/device-management', roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'VIEWER', 'SITE_MANAGER'] },
     {
         kind: 'group', id: 'content-management', label: 'Content Management', icon: <PhotoLibrary sx={{ color: '#A78BFA' }} />,
+        roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'VIEWER', 'CONTENT_MANAGER'],
         children: [
             { kind: 'item', label: 'Media Library', icon: <PermMedia sx={{ color: '#F472B6' }} />, path: '/media', roles: null },
             { kind: 'item', label: 'Playlist', icon: <QueueMusic sx={{ color: '#A78BFA' }} />, path: '/playlists', roles: null },

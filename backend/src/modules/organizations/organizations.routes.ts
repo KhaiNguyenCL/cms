@@ -64,6 +64,13 @@ router.get('/all', authorize('SUPER_ADMIN'), orgController.listAllOrganizations)
 router.patch('/:id/status', authorize('SUPER_ADMIN'), orgController.setOrganizationStatus);
 
 /**
+ * @route   PATCH /api/organizations/:id/settings
+ * @desc    Cập nhật settings của organization (vd: allowedMediaTypes)
+ * @access  SUPER_ADMIN only
+ */
+router.patch('/:id/settings', authorize('SUPER_ADMIN'), orgController.updateOrgSettings);
+
+/**
  * @route   DELETE /api/organizations/:id
  * @desc    Xóa vĩnh viễn tổ chức và toàn bộ dữ liệu liên quan
  * @access  SUPER_ADMIN only

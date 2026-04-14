@@ -18,46 +18,46 @@ import { useTranslation } from 'react-i18next';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function fmtDuration(ms: number): string {
+function fmtDuration(ms: number, units: { d: string; h: string; m: string; s: string }): string {
     if (ms < 0) ms = 0;
-    const s = Math.floor(ms / 1000);
-    if (s < 60) return `${s}s`;
-    const m = Math.floor(s / 60);
-    if (m < 60) return `${m}p`;
-    const h = Math.floor(m / 60);
-    const rm = m % 60;
-    if (h < 24) return rm > 0 ? `${h}h${rm}p` : `${h}h`;
-    const d = Math.floor(h / 24);
-    const rh = h % 24;
-    return rh > 0 ? `${d}ng${rh}h` : `${d}ng`;
+    const sec = Math.floor(ms / 1000);
+    if (sec < 60) return `${sec}${units.s}`;
+    const min = Math.floor(sec / 60);
+    if (min < 60) return `${min}${units.m}`;
+    const hr = Math.floor(min / 60);
+    const rm = min % 60;
+    if (hr < 24) return rm > 0 ? `${hr}${units.h}${rm}${units.m}` : `${hr}${units.h}`;
+    const d = Math.floor(hr / 24);
+    const rh = hr % 24;
+    return rh > 0 ? `${d}${units.d}${rh}${units.h}` : `${d}${units.d}`;
 }
 
 function fmtTime(iso: string | null): string {
     if (!iso) return '—';
-    return new Date(iso).toLocaleString('vi-VN', { hour12: false });
+    return new Date(iso).toLocaleString(undefined, { hour12: false });
 }
 
-function statusChip(status: string, notConnectedLabel = 'Not connected') {
+function statusChip(status: string, labels: { online: string; offline: string; appExit: string; sleep: string; notConnected: string }) {
     const map: Record<string, { label: string; color: 'success' | 'error' | 'warning' | 'default' }> = {
-        ONLINE: { label: 'Online', color: 'success' },
-        OFFLINE: { label: 'Offline', color: 'error' },
-        APP_EXIT: { label: 'App exit', color: 'warning' },
-        SLEEP: { label: 'Sleep', color: 'default' },
-        REGISTERED: { label: notConnectedLabel, color: 'default' },
+        ONLINE:     { label: labels.online,       color: 'success' },
+        OFFLINE:    { label: labels.offline,      color: 'error' },
+        APP_EXIT:   { label: labels.appExit,      color: 'warning' },
+        SLEEP:      { label: labels.sleep,        color: 'default' },
+        REGISTERED: { label: labels.notConnected, color: 'default' },
     };
-    const cfg = map[status] ?? { label: status, color: 'default' };
+    const cfg = map[status] ?? { label: status, color: 'default' as const };
     return <Chip label={cfg.label} color={cfg.color} size="small" sx={{ fontSize: '0.65rem', height: 20 }} />;
 }
 
-function deviceTimeCell(d: AlarmDevice): { label: string; color: string } {
+function deviceTimeCell(d: AlarmDevice, units: { d: string; h: string; m: string; s: string }): { label: string; color: string } {
     const now = Date.now();
     if (d.status === 'ONLINE' || d.status === 'SLEEP') {
         const since = d.lastOnlineAt ? now - new Date(d.lastOnlineAt).getTime() : null;
-        return { label: since != null ? fmtDuration(since) : '—', color: 'success.main' };
+        return { label: since != null ? fmtDuration(since, units) : '—', color: 'success.main' };
     }
     if (d.status === 'OFFLINE' || d.status === 'APP_EXIT') {
         const since = d.lastOfflineAt ? now - new Date(d.lastOfflineAt).getTime() : null;
-        return { label: since != null ? fmtDuration(since) : '—', color: 'error.main' };
+        return { label: since != null ? fmtDuration(since, units) : '—', color: 'error.main' };
     }
     return { label: '—', color: 'text.disabled' };
 }
@@ -69,14 +69,14 @@ function eventIcon(event: string, reason: string) {
     return <SignalWifiOff sx={{ color: 'error.main', fontSize: 16 }} />;
 }
 
-function eventLabel(event: string, reason: string, labels: { software: string; deviceOff: string; networkLoss: string; appExited: string }): { text: string; color: string } {
-    if (event === 'ONLINE') return { text: 'Online', color: 'success.main' };
+function eventLabel(event: string, reason: string, labels: { online: string; offline: string; software: string; deviceOff: string; networkLoss: string; appExited: string }): { text: string; color: string } {
+    if (event === 'ONLINE') return { text: labels.online, color: 'success.main' };
     const reasonLabel: Record<string, string> = {
         SOFTWARE: labels.software,
         DEVICE_OFF: labels.deviceOff,
         NETWORK: labels.networkLoss,
     };
-    return { text: reasonLabel[reason] ?? (event === 'APP_EXIT' ? labels.appExited : 'Offline'), color: 'error.main' };
+    return { text: reasonLabel[reason] ?? (event === 'APP_EXIT' ? labels.appExited : labels.offline), color: 'error.main' };
 }
 
 // ─── Mail Setting Dialog ──────────────────────────────────────────────────────
@@ -240,6 +240,19 @@ function MailSettingDialog({ open, onClose }: { open: boolean; onClose: () => vo
 
 export default function StatusAlarmPage() {
     const { t } = useTranslation();
+    const statusLabels = {
+        online: t('history.alarm.online'),
+        offline: t('history.alarm.offline'),
+        appExit: t('history.alarm.appExit'),
+        sleep: t('history.alarm.sleep'),
+        notConnected: t('history.alarm.notConnected'),
+    };
+    const durationUnits = {
+        d: t('history.alarm.durationDay'),
+        h: t('history.alarm.durationHour'),
+        m: t('history.alarm.durationMin'),
+        s: t('history.alarm.durationSec'),
+    };
     const [selectedDevice, setSelectedDevice] = useState<AlarmDevice | null>(null);
     const [mailOpen, setMailOpen] = useState(false);
     const [search, setSearch] = useState('');
@@ -320,15 +333,15 @@ export default function StatusAlarmPage() {
                     <Typography variant="h6" fontWeight={700}>{t('history.alarm.title')}</Typography>
                 </Stack>
                 <Stack direction="row" gap={1}>
-                    <Chip icon={<CheckCircle sx={{ fontSize: 14 }} />} label={`Online: ${onlineCount}`}
+                    <Chip icon={<CheckCircle sx={{ fontSize: 14 }} />} label={t('history.alarm.onlineCount', { count: onlineCount })}
                         color="success" variant="outlined" size="small" />
-                    <Chip icon={<Cancel sx={{ fontSize: 14 }} />} label={`Offline: ${offlineCount}`}
+                    <Chip icon={<Cancel sx={{ fontSize: 14 }} />} label={t('history.alarm.offlineCount', { count: offlineCount })}
                         color="error" variant="outlined" size="small" />
                 </Stack>
                 <Box sx={{ flex: 1 }} />
                 <Button variant="outlined" size="small" startIcon={<Mail />}
                     onClick={() => setMailOpen(true)}>
-                    Mail Setting
+                    {t('history.alarm.mailSetting')}
                 </Button>
             </Box>
 
@@ -350,8 +363,8 @@ export default function StatusAlarmPage() {
                         <Stack direction="row" gap={0.5}>
                             {[
                                 { value: 'ALL', label: t('common.all') },
-                                { value: 'ONLINE', label: 'Online' },
-                                { value: 'OFFLINE', label: 'Offline' },
+                                { value: 'ONLINE', label: t('history.alarm.online') },
+                                { value: 'OFFLINE', label: t('history.alarm.offline') },
                             ].map(f => (
                                 <Chip
                                     key={f.value}
@@ -384,7 +397,7 @@ export default function StatusAlarmPage() {
                                         <TableCell sx={{ fontSize: '0.7rem', fontWeight: 700, py: 0.75 }}>{t('common.name')}</TableCell>
                                         <TableCell sx={{ fontSize: '0.7rem', fontWeight: 700, py: 0.75 }}>{t('common.status')}</TableCell>
                                         <TableCell sx={{ fontSize: '0.7rem', fontWeight: 700, py: 0.75 }}>
-                                            Online
+                                            {t('history.alarm.timeOnline')}
                                         </TableCell>
                                         <TableCell sx={{ fontSize: '0.7rem', fontWeight: 700, py: 0.75, width: 60 }}>{t('common.detail')}</TableCell>
                                     </TableRow>
@@ -392,7 +405,7 @@ export default function StatusAlarmPage() {
                                 <TableBody>
                                     {filtered.map(d => {
                                         const isSelected = selectedDevice?.id === d.id;
-                                        const tc = deviceTimeCell(d);
+                                        const tc = deviceTimeCell(d, durationUnits);
                                         return (
                                             <TableRow
                                                 key={d.id}
@@ -411,7 +424,7 @@ export default function StatusAlarmPage() {
                                                     )}
                                                 </TableCell>
                                                 <TableCell sx={{ py: 0.75 }}>
-                                                    {statusChip(d.status, t('history.alarm.notConnected'))}
+                                                    {statusChip(d.status, statusLabels)}
                                                 </TableCell>
                                                 <TableCell sx={{ py: 0.75 }}>
                                                     <Typography variant="caption" sx={{ color: tc.color, fontVariantNumeric: 'tabular-nums', fontSize: '0.72rem' }}>
@@ -478,6 +491,8 @@ export default function StatusAlarmPage() {
                                     <Stack spacing={0}>
                                         {history.map((ev, idx) => {
                                             const lbl = eventLabel(ev.event, ev.reason, {
+                                                online: t('history.alarm.online'),
+                                                offline: t('history.alarm.offline'),
                                                 software: t('history.alarm.softwareError'),
                                                 deviceOff: t('history.alarm.deviceOff'),
                                                 networkLoss: t('history.alarm.networkLoss'),
@@ -520,7 +535,7 @@ export default function StatusAlarmPage() {
                                                             )}
                                                             {durationMs !== null && (
                                                                 <Typography variant="caption" color="text.disabled">
-                                                                    {t('history.alarm.duration', { dur: fmtDuration(durationMs) })}
+                                                                    {t('history.alarm.duration', { dur: fmtDuration(durationMs, durationUnits) })}
                                                                 </Typography>
                                                             )}
                                                         </Stack>

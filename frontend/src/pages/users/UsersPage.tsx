@@ -15,7 +15,8 @@ import { useTranslation } from 'react-i18next';
 import { useAppDispatch, useAppSelector } from '@store/hooks';
 import { pushToast } from '@store/slices/uiSlice';
 import { usersApi, type CreateUserPayload, type UpdateUserPayload } from '@api/users.api';
-import type { User } from '@/types';
+import { sitesApi } from '@api/sites.api';
+import type { User, Site } from '@/types';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -32,6 +33,14 @@ const ROLE_CFG = {
         label: 'Manager', color: '#6C63FF', icon: <Person sx={{ fontSize: 12 }} />,
         perms: ['users.permManagerCrud', 'users.permManagerCmd', 'users.permManagerView', 'users.permManagerNoDelete'],
     },
+    CONTENT_MANAGER: {
+        label: 'Content Manager', color: '#A78BFA', icon: <Person sx={{ fontSize: 12 }} />,
+        perms: ['users.permContentManagerMedia', 'users.permContentManagerPlaylist', 'users.permContentManagerSchedule', 'users.permContentManagerNoDevice'],
+    },
+    SITE_MANAGER: {
+        label: 'Site Manager', color: '#34D399', icon: <Person sx={{ fontSize: 12 }} />,
+        perms: ['users.permSiteManagerSite', 'users.permSiteManagerDevice', 'users.permSiteManagerNoDelete', 'users.permSiteManagerNoContent'],
+    },
     VIEWER: {
         label: 'Viewer', color: '#29B6F6', icon: <Visibility sx={{ fontSize: 12 }} />,
         perms: ['users.permViewerView', 'users.permViewerNoEdit', 'users.permViewerNoDevice'],
@@ -43,6 +52,35 @@ const STATUS_CFG = {
     INACTIVE:  { label: 'Inactive',  color: 'default' as const, icon: <Cancel sx={{ fontSize: 12 }} /> },
     SUSPENDED: { label: 'Suspended', color: 'error'   as const, icon: <Block sx={{ fontSize: 12 }} /> },
 } as const;
+
+// ── Site selector (for SITE_MANAGER) ─────────────────────────────────────────
+
+function SiteSelect({ value, onChange }: { value: string | null; onChange: (id: string | null) => void }) {
+    const { t } = useTranslation();
+    const { data, isLoading } = useQuery({
+        queryKey: ['sites-for-select'],
+        queryFn: () => sitesApi.list({ limit: 200 }),
+        staleTime: 60_000,
+    });
+    const sites: Site[] = data?.data ?? [];
+
+    return (
+        <FormControl fullWidth size="small" required>
+            <InputLabel>{t('users.siteLabel')}</InputLabel>
+            <Select
+                value={value ?? ''}
+                label={t('users.siteLabel')}
+                onChange={e => onChange(e.target.value || null)}
+                disabled={isLoading}
+            >
+                {isLoading && <MuiMenuItem value="" disabled>{t('common.loading')}</MuiMenuItem>}
+                {sites.map(s => (
+                    <MuiMenuItem key={s.id} value={s.id}>{s.name}</MuiMenuItem>
+                ))}
+            </Select>
+        </FormControl>
+    );
+}
 
 function RoleChip({ role }: { role: User['role'] }) {
     const { t } = useTranslation();
@@ -77,7 +115,7 @@ function RoleChip({ role }: { role: User['role'] }) {
 
 function RoleLegend() {
     const { t } = useTranslation();
-    const roles = (['ADMIN', 'MANAGER', 'VIEWER'] as const);
+    const roles = (['ADMIN', 'MANAGER', 'CONTENT_MANAGER', 'SITE_MANAGER', 'VIEWER'] as const);
     return (
         <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', alignItems: 'center' }}>
             <Stack direction="row" alignItems="center" gap={0.5}>
@@ -135,7 +173,7 @@ function CreateUserDialog({ open, onClose }: { open: boolean; onClose: () => voi
     const { t } = useTranslation();
     const dispatch = useAppDispatch();
     const qc = useQueryClient();
-    const [form, setForm] = useState<CreateUserPayload>({ email: '', password: '', role: 'VIEWER' });
+    const [form, setForm] = useState<CreateUserPayload>({ email: '', password: '', role: 'VIEWER', siteId: null });
     const [showPw, setShowPw] = useState(false);
     const [error, setError] = useState('');
 
@@ -152,7 +190,7 @@ function CreateUserDialog({ open, onClose }: { open: boolean; onClose: () => voi
     });
 
     const handleClose = () => {
-        setForm({ email: '', password: '', role: 'VIEWER' });
+        setForm({ email: '', password: '', role: 'VIEWER', siteId: null });
         setError('');
         setShowPw(false);
         onClose();
@@ -165,14 +203,19 @@ function CreateUserDialog({ open, onClose }: { open: boolean; onClose: () => voi
         <Dialog open={open} onClose={handleClose} maxWidth="xs" fullWidth>
             <DialogTitle fontWeight={700}>{t('users.createUser')}</DialogTitle>
             <DialogContent dividers>
-                <Stack spacing={2.5} pt={0.5}>
+                <Stack spacing={2.5} pt={0.5} component="form" autoComplete="off">
                     {error && <Alert severity="error" sx={{ borderRadius: 2 }}>{error}</Alert>}
+
+                    {/* Hidden dummy fields prevent browser from autofilling the visible inputs */}
+                    <input type="text" name="prevent_autofill_email" style={{ display: 'none' }} readOnly />
+                    <input type="password" name="prevent_autofill_pw" style={{ display: 'none' }} readOnly />
 
                     <TextField
                         label={t('users.email')} type="email" fullWidth required size="small"
                         value={form.email}
                         onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
-                        autoFocus
+                        autoComplete="off"
+                        inputProps={{ autoComplete: 'new-password' }}
                     />
 
                     <TextField
@@ -181,6 +224,8 @@ function CreateUserDialog({ open, onClose }: { open: boolean; onClose: () => voi
                         value={form.password}
                         onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
                         helperText="Min 8 chars, include digit & special char"
+                        autoComplete="new-password"
+                        inputProps={{ autoComplete: 'new-password' }}
                         InputProps={{
                             endAdornment: (
                                 <InputAdornment position="end">
@@ -193,24 +238,30 @@ function CreateUserDialog({ open, onClose }: { open: boolean; onClose: () => voi
                     />
 
                     <FormControl fullWidth size="small">
-                        <InputLabel>Role</InputLabel>
+                        <InputLabel>{t('users.role')}</InputLabel>
                         <Select
                             value={form.role}
-                            label="Role"
-                            onChange={e => setForm(f => ({ ...f, role: e.target.value as CreateUserPayload['role'] }))}
+                            label={t('users.role')}
+                            onChange={e => setForm(f => ({ ...f, role: e.target.value as CreateUserPayload['role'], siteId: null }))}
                         >
                             <MuiMenuItem value="ADMIN">{t('users.roleAdminDesc')}</MuiMenuItem>
                             <MuiMenuItem value="MANAGER">{t('users.roleManagerDesc')}</MuiMenuItem>
+                            <MuiMenuItem value="CONTENT_MANAGER">{t('users.roleContentManagerDesc')}</MuiMenuItem>
+                            <MuiMenuItem value="SITE_MANAGER">{t('users.roleSiteManagerDesc')}</MuiMenuItem>
                             <MuiMenuItem value="VIEWER">{t('users.roleViewerDesc')}</MuiMenuItem>
                         </Select>
                     </FormControl>
+
+                    {form.role === 'SITE_MANAGER' && (
+                        <SiteSelect value={form.siteId ?? null} onChange={id => setForm(f => ({ ...f, siteId: id }))} />
+                    )}
                 </Stack>
             </DialogContent>
             <DialogActions sx={{ px: 3, pb: 2 }}>
                 <Button size="small" onClick={handleClose}>{t('common.cancel')}</Button>
                 <Button
                     size="small"
-                    disabled={!valid || mutation.isPending}
+                    disabled={!valid || mutation.isPending || (form.role === 'SITE_MANAGER' && !form.siteId)}
                     onClick={() => mutation.mutate()}
                 >
                     {mutation.isPending ? t('common.creating') : t('users.createUser')}
@@ -234,6 +285,7 @@ function EditUserDialog({
     const dispatch = useAppDispatch();
     const qc = useQueryClient();
     const [role, setRole] = useState<User['role']>(user?.role ?? 'VIEWER');
+    const [siteId, setSiteId] = useState<string | null>(user?.siteId ?? null);
     const [status, setStatus] = useState<User['status']>(user?.status ?? 'ACTIVE');
     const [email, setEmail] = useState(user?.email ?? '');
     const [password, setPassword] = useState('');
@@ -257,7 +309,8 @@ function EditUserDialog({
     const payload: UpdateUserPayload = {};
     if (email && email !== user.email) payload.email = email;
     if (password) payload.password = password;
-    if (role !== user.role && (role === 'ADMIN' || role === 'MANAGER' || role === 'VIEWER')) payload.role = role;
+    if (role !== user.role) payload.role = role;
+    if (siteId !== (user.siteId ?? null)) payload.siteId = siteId;
     if (status !== user.status && (status === 'ACTIVE' || status === 'INACTIVE')) payload.status = status;
     const hasChange = Object.keys(payload).length > 0;
 
@@ -295,17 +348,23 @@ function EditUserDialog({
                     />
 
                     <FormControl fullWidth size="small">
-                        <InputLabel>Role</InputLabel>
+                        <InputLabel>{t('users.role')}</InputLabel>
                         <Select
                             value={role}
-                            label="Role"
-                            onChange={e => setRole(e.target.value as User['role'])}
+                            label={t('users.role')}
+                            onChange={e => { setRole(e.target.value as User['role']); setSiteId(null); }}
                         >
                             <MuiMenuItem value="ADMIN">{t('users.roleAdminDesc')}</MuiMenuItem>
                             <MuiMenuItem value="MANAGER">{t('users.roleManagerDesc')}</MuiMenuItem>
+                            <MuiMenuItem value="CONTENT_MANAGER">{t('users.roleContentManagerDesc')}</MuiMenuItem>
+                            <MuiMenuItem value="SITE_MANAGER">{t('users.roleSiteManagerDesc')}</MuiMenuItem>
                             <MuiMenuItem value="VIEWER">{t('users.roleViewerDesc')}</MuiMenuItem>
                         </Select>
                     </FormControl>
+
+                    {role === 'SITE_MANAGER' && (
+                        <SiteSelect value={siteId} onChange={setSiteId} />
+                    )}
 
                     <FormControl fullWidth size="small">
                         <InputLabel>{t('common.status')}</InputLabel>
@@ -475,10 +534,12 @@ const handleHardDelete = (user: User) => {
                 />
                 <FormControl size="small" sx={{ width: 140 }}>
                     <InputLabel>Role</InputLabel>
-                    <Select value={roleFilter} label="Role" onChange={e => { setRoleFilter(e.target.value); setPage(0); }}>
+                    <Select value={roleFilter} label={t('users.role')} onChange={e => { setRoleFilter(e.target.value); setPage(0); }}>
                         <MuiMenuItem value="">{t('common.all')}</MuiMenuItem>
                         <MuiMenuItem value="ADMIN">Admin</MuiMenuItem>
                         <MuiMenuItem value="MANAGER">Manager</MuiMenuItem>
+                        <MuiMenuItem value="CONTENT_MANAGER">{t('users.roleContentManager')}</MuiMenuItem>
+                        <MuiMenuItem value="SITE_MANAGER">{t('users.roleSiteManager')}</MuiMenuItem>
                         <MuiMenuItem value="VIEWER">Viewer</MuiMenuItem>
                     </Select>
                 </FormControl>
@@ -501,7 +562,7 @@ const handleHardDelete = (user: User) => {
                     <Table>
                         <TableHead>
                             <TableRow>
-                                {['Email', 'Role', t('common.status'), t('common.createdAt'), ''].map(h => (
+                                {['Email', t('users.role'), t('common.status'), t('common.createdAt'), ''].map(h => (
                                     <TableCell key={h} sx={{ color: 'text.secondary', fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>
                                         {h}
                                     </TableCell>
