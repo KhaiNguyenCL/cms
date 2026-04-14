@@ -14,6 +14,7 @@ import {
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import softwareHistoryApi from '@api/software-history.api';
 import type { SoftwareDevice, AppVersion, VersionLog } from '@api/software-history.api';
+import { useTranslation } from 'react-i18next';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -38,6 +39,7 @@ function methodLabel(m: string): { label: string; color: 'primary' | 'error' | '
 // ─── Device Logs Panel ────────────────────────────────────────────────────────
 
 function DeviceLogsPanel({ device }: { device: SoftwareDevice }) {
+    const { t } = useTranslation();
     const qc = useQueryClient();
 
     const { data: logs = [], isLoading } = useQuery<VersionLog[]>({
@@ -71,10 +73,10 @@ function DeviceLogsPanel({ device }: { device: SoftwareDevice }) {
                             <Chip label={device.status} size="small" color={statusColor(device.status)} />
                             {device.appVersion
                                 ? <Chip label={`v${device.appVersion}`} size="small" variant="outlined" />
-                                : <Chip label="Chưa rõ phiên bản" size="small" />
+                                : <Chip label={t('history.software.unknownVersion')} size="small" />
                             }
                             {device.isOutdated && (
-                                <Chip icon={<Warning />} label="Lỗi thời" size="small" color="warning" />
+                                <Chip icon={<Warning />} label={t('history.software.outdated')} size="small" color="warning" />
                             )}
                         </Stack>
                     </Box>
@@ -84,32 +86,32 @@ function DeviceLogsPanel({ device }: { device: SoftwareDevice }) {
                             disabled={pushOtaMut.isPending}
                             onClick={() => pushOtaMut.mutate(latest.id)}
                         >
-                            Cập nhật lên {latest.versionName}
+                            {t('history.software.updateTo', { version: latest.versionName })}
                         </Button>
                     )}
                 </Stack>
                 {device.model && (
                     <Typography variant="caption" color="text.secondary">
-                        {device.model} · OS {device.osVersion ?? '—'} · {device.storeName ?? 'Chưa gán store'}
+                        {device.model} · OS {device.osVersion ?? '—'} · {device.storeName ?? t('history.software.noStore')}
                     </Typography>
                 )}
                 {pushOtaMut.isSuccess && (
                     <Alert severity="success" sx={{ mt: 1 }}>
-                        Đã gửi lệnh OTA. Thiết bị sẽ tự động cập nhật.
+                        {t('history.software.otaSent')}
                     </Alert>
                 )}
                 {pushOtaMut.isError && (
-                    <Alert severity="error" sx={{ mt: 1 }}>Gửi OTA thất bại.</Alert>
+                    <Alert severity="error" sx={{ mt: 1 }}>{t('history.software.otaFailed')}</Alert>
                 )}
             </Box>
 
             {/* Timeline */}
             <Box sx={{ flex: 1, overflow: 'auto', p: 2 }}>
-                <Typography variant="overline" color="text.secondary">Lịch sử phiên bản</Typography>
+                <Typography variant="overline" color="text.secondary">{t('history.software.versionHistory')}</Typography>
                 {isLoading && <CircularProgress size={20} sx={{ ml: 1 }} />}
                 {!isLoading && logs.length === 0 && (
                     <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                        Chưa có lịch sử cập nhật.
+                        {t('history.software.noVersionHistory')}
                     </Typography>
                 )}
                 <Stack gap={0} sx={{ mt: 1 }}>
@@ -132,13 +134,13 @@ function DeviceLogsPanel({ device }: { device: SoftwareDevice }) {
                                     <Stack direction="row" alignItems="center" gap={0.5} flexWrap="wrap">
                                         <Chip label={m.label} size="small" color={m.color} />
                                         <Typography variant="body2">
-                                            {log.fromVersion ? `${log.fromVersion} → ` : '(mới) → '}
+                                            {log.fromVersion ? `${log.fromVersion} → ` : t('history.software.newVersion')}
                                             <strong>{log.toVersion}</strong>
                                         </Typography>
                                     </Stack>
                                     <Typography variant="caption" color="text.secondary">
                                         {fmtDateTime(log.occurredAt)}
-                                        {log.triggeredBy ? ` · bởi ${log.triggeredBy}` : ''}
+                                        {log.triggeredBy ? ` · ${t('history.software.triggeredBy', { name: log.triggeredBy })}` : ''}
                                     </Typography>
                                 </Box>
                             </Box>
@@ -153,6 +155,7 @@ function DeviceLogsPanel({ device }: { device: SoftwareDevice }) {
 // ─── Report Summary (inline in left panel) ───────────────────────────────────
 
 function ReportSummary() {
+    const { t } = useTranslation();
     const { data: report } = useQuery({
         queryKey: ['sw-report'],
         queryFn: softwareHistoryApi.getReport,
@@ -168,7 +171,7 @@ function ReportSummary() {
         <Box sx={{ mb: 1 }}>
             {report.latestVersion && (
                 <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>
-                    Latest: <strong>{report.latestVersion}</strong> · {report.total} thiết bị
+                    {t('history.software.latestReport', { version: report.latestVersion, count: report.total })}
                 </Typography>
             )}
             <Stack gap={0.5}>
@@ -192,6 +195,7 @@ function ReportSummary() {
 type FilterKey = 'all' | 'outdated' | 'ok' | 'unknown';
 
 export default function SoftwareHistoryPage() {
+    const { t } = useTranslation();
     const [search, setSearch]           = useState('');
     const [selected, setSelected]       = useState<SoftwareDevice | null>(null);
     const [filter, setFilter]           = useState<FilterKey>('all');
@@ -223,10 +227,10 @@ export default function SoftwareHistoryPage() {
     const unknownCount  = devices.filter(d => !d.appVersion).length;
 
     const filterLabels: Record<FilterKey, string> = {
-        all:     `Tất cả (${devices.length})`,
-        outdated: `Lỗi thời (${outdatedCount})`,
-        ok:      `Đã cập nhật (${okCount})`,
-        unknown: `Chưa rõ (${unknownCount})`,
+        all:      t('history.software.filterAll', { count: devices.length }),
+        outdated: t('history.software.filterOutdated', { count: outdatedCount }),
+        ok:       t('history.software.filterUpToDate', { count: okCount }),
+        unknown:  t('history.software.filterUnknown', { count: unknownCount }),
     };
 
     return (
@@ -239,9 +243,9 @@ export default function SoftwareHistoryPage() {
             }}>
                 <Box sx={{ p: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
                     <Stack direction="row" alignItems="center" justifyContent="space-between" mb={1}>
-                        <Typography variant="h6" fontWeight={700}>Software History</Typography>
+                        <Typography variant="h6" fontWeight={700}>{t('history.software.title')}</Typography>
                         <Stack direction="row" gap={0.5}>
-                            <Tooltip title="Làm mới">
+                            <Tooltip title={t('common.refresh')}>
                                 <IconButton size="small" onClick={() => refetch()}>
                                     <Refresh fontSize="small" />
                                 </IconButton>
@@ -252,7 +256,7 @@ export default function SoftwareHistoryPage() {
                     <ReportSummary />
 
                     <TextField
-                        fullWidth size="small" placeholder="Tìm thiết bị..."
+                        fullWidth size="small" placeholder={t('history.software.searchPlaceholder')}
                         value={search} onChange={e => setSearch(e.target.value)}
                         sx={{ mb: 1 }}
                         InputProps={{ startAdornment: <InputAdornment position="start"><Search fontSize="small" /></InputAdornment> }}
@@ -295,7 +299,7 @@ export default function SoftwareHistoryPage() {
                                     <Stack direction="row" gap={0.5} mt={0.25} flexWrap="wrap" alignItems="center">
                                         {d.appVersion
                                             ? <Typography variant="caption" color="text.secondary">v{d.appVersion}</Typography>
-                                            : <Typography variant="caption" color="text.disabled">Chưa rõ</Typography>
+                                            : <Typography variant="caption" color="text.disabled">{t('common.unknown')}</Typography>
                                         }
                                         {d.isOutdated && d.latestVersion && (
                                             <Typography variant="caption" color="warning.main">→ {d.latestVersion}</Typography>
@@ -313,7 +317,7 @@ export default function SoftwareHistoryPage() {
                     ))}
                     {!isLoading && filtered.length === 0 && (
                         <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>
-                            Không tìm thấy thiết bị.
+                            {t('history.software.noDevicesFound')}
                         </Typography>
                     )}
                 </Box>
@@ -326,7 +330,7 @@ export default function SoftwareHistoryPage() {
                 ) : (
                     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', flexDirection: 'column', gap: 1, color: 'text.disabled' }}>
                         <HistoryIcon sx={{ fontSize: 64 }} />
-                        <Typography>Chọn thiết bị để xem lịch sử phiên bản</Typography>
+                        <Typography>{t('history.software.selectDevice')}</Typography>
                     </Box>
                 )}
             </Paper>

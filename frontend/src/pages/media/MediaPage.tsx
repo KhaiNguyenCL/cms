@@ -16,6 +16,7 @@ import {
 import { mediaApi } from '@api/media.api';
 import { storageQuotaApi } from '@api/storage-quota.api';
 import { getApiError } from '@api/client';
+import { useTranslation } from 'react-i18next';
 import { useAppDispatch } from '@store/hooks';
 import { pushToast } from '@store/slices/uiSlice';
 import type { Media, MediaType } from '@/types';
@@ -55,19 +56,18 @@ function DeleteConfirmDialog({ target, onClose, onConfirm, loading, errorMsg }: 
     loading: boolean;
     errorMsg: string | null;
 }) {
+    const { t } = useTranslation();
     return (
         <Dialog open={!!target} onClose={loading ? undefined : onClose} maxWidth="xs" fullWidth>
             <DialogTitle fontWeight={700}>
                 <Stack direction="row" alignItems="center" gap={1}>
                     <WarningAmber color="error" />
-                    Xoá media
+                    {t('media.deleteTitle')}
                 </Stack>
             </DialogTitle>
             <DialogContent dividers>
                 <Typography variant="body2" mb={errorMsg ? 2 : 0}>
-                    Bạn có chắc muốn xoá{' '}
-                    <strong>&ldquo;{target?.title}&rdquo;</strong>?
-                    Hành động này không thể hoàn tác.
+                    {t('media.deleteConfirmMsg', { name: target?.title ?? '' })}
                 </Typography>
                 {errorMsg && (
                     <Box sx={{
@@ -80,9 +80,9 @@ function DeleteConfirmDialog({ target, onClose, onConfirm, loading, errorMsg }: 
                 )}
             </DialogContent>
             <DialogActions sx={{ px: 3, pb: 2 }}>
-                <Button size="small" onClick={onClose} disabled={loading}>Huỷ</Button>
+                <Button size="small" onClick={onClose} disabled={loading}>{t('common.cancel')}</Button>
                 <Button color="error" size="small" disabled={loading} startIcon={loading ? <CircularProgress size={14} color="inherit" /> : <Delete />} onClick={() => target && onConfirm(target.id)}>
-                    {loading ? 'Đang xoá…' : 'Xoá'}
+                    {loading ? t('common.deleting') : t('common.delete')}
                 </Button>
             </DialogActions>
         </Dialog>
@@ -92,6 +92,7 @@ function DeleteConfirmDialog({ target, onClose, onConfirm, loading, errorMsg }: 
 // ── Right preview panel ───────────────────────────────────────────────────────
 
 function PreviewPanel({ media, onDelete }: { media: Media | null; onDelete: (id: string, title: string) => void }) {
+    const { t } = useTranslation();
     if (!media) {
         return (
             <Box sx={{
@@ -104,7 +105,7 @@ function PreviewPanel({ media, onDelete }: { media: Media | null; onDelete: (id:
             }}>
                 <ZoomIn sx={{ fontSize: 40, mb: 1, opacity: 0.4 }} />
                 <Typography variant="body2" textAlign="center">
-                    Di chuột vào file để xem trước
+                    {t('media.hoverToPreview')}
                 </Typography>
             </Box>
         );
@@ -181,6 +182,7 @@ function PreviewPanel({ media, onDelete }: { media: Media | null; onDelete: (id:
 function MediaPreviewDialog({ media, open, onClose, onDelete }: {
     media: Media | null; open: boolean; onClose: () => void; onDelete: (id: string, title: string) => void;
 }) {
+    const { t } = useTranslation();
     const dispatch = useAppDispatch();
     const qc = useQueryClient();
     const [editingTitle, setEditingTitle] = useState(false);
@@ -237,7 +239,7 @@ function MediaPreviewDialog({ media, open, onClose, onDelete }: {
                             sx={{ '& .MuiInputBase-input': { fontWeight: 700, fontSize: '1.1rem' } }}
                         />
                     ) : (
-                        <Tooltip title="Click để đổi tên" placement="bottom-start">
+                        <Tooltip title={t('media.clickToRename')} placement="bottom-start">
                             <Typography
                                 variant="h6" fontWeight={700} noWrap
                                 onClick={() => { setTitleValue(localTitle); setEditingTitle(true); }}
@@ -315,6 +317,7 @@ function UploadDialog({ open, onClose, storageUsage }: {
     onClose: () => void;
     storageUsage?: { usedBytes: number; totalQuotaBytes: number; totalQuotaMb: number; usedMb: number } | null;
 }) {
+    const { t } = useTranslation();
     const dispatch = useAppDispatch();
     const qc = useQueryClient();
     const [items, setItems] = useState<FileItem[]>([]);
@@ -447,10 +450,10 @@ function UploadDialog({ open, onClose, storageUsage }: {
                     >
                         <CloudUpload sx={{ fontSize: 36, color: 'primary.main', mb: 0.5 }} />
                         <Typography variant="body2" fontWeight={600}>
-                            Click hoặc kéo thả file vào đây
+                            {t('media.clickOrDrop')}
                         </Typography>
                         <Typography variant="caption" color="text.secondary">
-                            Hỗ trợ nhiều file · MP4, MOV, JPG, PNG, WEBP
+                            {t('media.supportedTypes')}
                         </Typography>
                     </Box>
                     <input
@@ -472,10 +475,10 @@ function UploadDialog({ open, onClose, storageUsage }: {
                             <WarningAmber color="error" sx={{ fontSize: 18, flexShrink: 0 }} />
                             <Box>
                                 <Typography variant="body2" fontWeight={600} color="error.main">
-                                    Đã hết dung lượng
+                                    {t('media.storageFull')}
                                 </Typography>
                                 <Typography variant="caption" color="text.secondary">
-                                    Đã dùng {formatSize(usedBytes)} / {storageUsage!.totalQuotaMb} MB. Liên hệ admin để nâng cấp.
+                                    {t('media.storageFullDesc', { used: formatSize(usedBytes), total: storageUsage!.totalQuotaMb })}
                                 </Typography>
                             </Box>
                         </Box>
@@ -487,10 +490,10 @@ function UploadDialog({ open, onClose, storageUsage }: {
                             <WarningAmber color="warning" sx={{ fontSize: 18, flexShrink: 0 }} />
                             <Box>
                                 <Typography variant="body2" fontWeight={600} color="warning.main">
-                                    Vượt quá dung lượng
+                                    {t('media.willExceed')}
                                 </Typography>
                                 <Typography variant="caption" color="text.secondary">
-                                    Còn {formatSize(freeBytes)} trống · {overLimitIds.size} file bị đánh dấu đỏ sẽ vượt quá giới hạn.
+                                    {t('media.willExceedDesc', { free: formatSize(freeBytes), count: overLimitIds.size })}
                                 </Typography>
                             </Box>
                         </Box>
@@ -573,7 +576,7 @@ function UploadDialog({ open, onClose, storageUsage }: {
                             onClick={() => inputRef.current?.click()}
                             sx={{ alignSelf: 'flex-start' }}
                         >
-                            Thêm file
+                            {t('media.addFiles')}
                         </Button>
                     )}
                 </Stack>
@@ -583,7 +586,7 @@ function UploadDialog({ open, onClose, storageUsage }: {
                     {allFinished ? 'Close' : 'Cancel'}
                 </Button>
                 {!allFinished && (
-                    <Tooltip title={alreadyFull ? 'Đã hết dung lượng, không thể upload' : wouldExceed ? 'Xoá các file bị đánh dấu đỏ để tiếp tục' : ''}>
+                    <Tooltip title={alreadyFull ? t('media.storageFullTooltip') : wouldExceed ? t('media.clearRedTooltip') : ''}>
                         <span>
                             <Button size="small"
                                 disabled={pendingCount === 0 || uploading || alreadyFull || wouldExceed}
@@ -620,6 +623,7 @@ function sortMedia(items: Media[], field: SortField, dir: SortDir): Media[] {
 export default function MediaPage() {
     const dispatch = useAppDispatch();
     const qc = useQueryClient();
+    const { t } = useTranslation();
     const [search, setSearch]         = useState('');
     const [typeFilter, setTypeFilter] = useState('');
     const [page, setPage]             = useState(1);
@@ -661,10 +665,10 @@ export default function MediaPage() {
             if (hoveredMedia?.id === id) setHoveredMedia(null);
             setDeleteTarget(null);
             setDeleteError(null);
-            dispatch(pushToast({ severity: 'success', message: 'Xoá media thành công' }));
+            dispatch(pushToast({ severity: 'success', message: t('common.success') }));
         },
         onError: (err) => {
-            setDeleteError(getApiError(err, 'Xoá thất bại, vui lòng thử lại'));
+            setDeleteError(getApiError(err, t('common.failedAction')));
         },
     });
 
@@ -707,7 +711,7 @@ export default function MediaPage() {
             {/* Header */}
             <Stack direction="row" justifyContent="space-between" alignItems="flex-start" mb={3}>
                 <Box>
-                    <Typography variant="h4" fontWeight={700}>Media Library</Typography>
+                    <Typography variant="h4" fontWeight={700}>{t('media.title')}</Typography>
                     <Typography variant="body2" color="text.secondary">{data?.total ?? 0} files</Typography>
                 </Box>
                 <Stack direction="row" alignItems="center" gap={2}>
@@ -716,7 +720,7 @@ export default function MediaPage() {
                         <Box sx={{ width: 220 }}>
                             <Stack direction="row" justifyContent="space-between" alignItems="baseline" mb={0.5}>
                                 <Typography variant="caption" color="text.secondary" fontWeight={600}>
-                                    Dung lượng
+                                    {t('storage.title')}
                                 </Typography>
                                 <Typography variant="caption" fontWeight={700}
                                     color={storageUsage.percentUsed >= 90 ? 'error.main' : storageUsage.percentUsed >= 70 ? 'warning.main' : 'text.primary'}>
@@ -729,7 +733,7 @@ export default function MediaPage() {
                                         : `${storageUsage.totalQuotaMb} MB`}
                                 </Typography>
                             </Stack>
-                            <Tooltip title={`${storageUsage.percentUsed}% đã dùng · ${data?.total ?? 0} file`}>
+                            <Tooltip title={t('media.storageProgress', { pct: storageUsage.percentUsed, count: data?.total ?? 0 })}>
                                 <LinearProgress
                                     variant="determinate"
                                     value={Math.min(storageUsage.percentUsed, 100)}
@@ -743,12 +747,13 @@ export default function MediaPage() {
                                 />
                             </Tooltip>
                             <Typography variant="caption" color="text.secondary" sx={{ mt: 0.3, display: 'block' }}>
-                                {storageUsage.percentUsed}% đã dùng · còn {
-                                    (() => {
+                                {t('media.storageProgressFree', {
+                                    pct: storageUsage.percentUsed,
+                                    free: (() => {
                                         const freeMb = storageUsage.totalQuotaMb - storageUsage.usedMb;
                                         return freeMb >= 1024 ? `${(freeMb / 1024).toFixed(1)} GB` : `${freeMb.toFixed(0)} MB`;
-                                    })()
-                                }
+                                    })(),
+                                })}
                             </Typography>
                         </Box>
                     ) : (
@@ -915,8 +920,8 @@ export default function MediaPage() {
                             rowsPerPage={limit}
                             onRowsPerPageChange={e => { setLimit(Number(e.target.value)); setPage(1); }}
                             rowsPerPageOptions={[10, 25, 50, 100]}
-                            labelRowsPerPage="Mỗi trang:"
-                            labelDisplayedRows={({ from, to, count }) => `${from}–${to} / ${count}`}
+                            labelRowsPerPage={t("common.perPage")}
+                            labelDisplayedRows={({ from, to, count }) => t('common.displayedRows', { from, to, count })}
                         />
                     )}
 

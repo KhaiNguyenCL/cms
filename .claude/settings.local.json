@@ -69,7 +69,9 @@
       "Bash(npx --yes bcrypt-cli hash 'Admin@123456' 12)",
       "Read(//tmp/**)",
       "Bash(xargs wc:*)",
-      "Bash(awk '{print $NF}')"
+      "Bash(awk '{print $NF}')",
+      "Bash(cat)",
+      "Bash(bash /tmp/find_vietnamese.sh)"
     ],
     "additionalDirectories": [
       "E:\\player"

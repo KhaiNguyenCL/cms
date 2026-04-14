@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import {
     Box, Typography, Stack, Grid, Card, CardContent,
@@ -33,9 +34,9 @@ function fmtDateMonth(iso: string) { return new Date(iso).toLocaleDateString('vi
 function toLocalDate(daysAgo: number) { const d = new Date(); d.setDate(d.getDate() - daysAgo); return d.toISOString().slice(0, 10); }
 
 const PRESETS = [
-    { label: '7 ngày', days: 7 },
-    { label: '30 ngày', days: 30 },
-    { label: '90 ngày', days: 90 },
+    { labelKey: 'analytics.last7d', days: 7 },
+    { labelKey: 'analytics.last30d', days: 30 },
+    { labelKey: 'analytics.last90d', days: 90 },
 ] as const;
 
 // ── KPI Card ──────────────────────────────────────────────────────────────────
@@ -145,6 +146,7 @@ function HealthBar({ label, value, warnAt, errColor, okColor, suffix = '%', tool
 // ── Device health card ────────────────────────────────────────────────────────
 
 function DeviceHealthCard({ dh }: { dh: DeviceHealthStat }) {
+    const { t } = useTranslation();
     const hasProcessCpu = dh.processCpuPercent !== null && dh.processCpuPercent !== undefined;
 
     return (
@@ -167,13 +169,13 @@ function DeviceHealthCard({ dh }: { dh: DeviceHealthStat }) {
             </Stack>
 
             {/* CPU system-wide */}
-            <HealthBar label="CPU hệ thống" value={dh.cpuUsage} warnAt={80}
+            <HealthBar label={t('analytics.cpuSystem')} value={dh.cpuUsage} warnAt={80}
                 errColor="error.main" okColor="primary.main"
                 tooltip="CPU toàn máy (/proc/loadavg)" />
 
             {/* CPU process player — only if reported */}
             {hasProcessCpu && (
-                <HealthBar label="CPU player" value={dh.processCpuPercent!} warnAt={60}
+                <HealthBar label={t('analytics.cpuProcess')} value={dh.processCpuPercent!} warnAt={60}
                     errColor="warning.main" okColor="info.main"
                     tooltip="CPU riêng process player (/proc/[pid]/stat)" />
             )}
@@ -193,6 +195,7 @@ function DeviceHealthCard({ dh }: { dh: DeviceHealthStat }) {
 // ── Main Analytics Page ───────────────────────────────────────────────────────
 
 export default function AnalyticsPage() {
+    const { t } = useTranslation();
     const [preset, setPreset]       = useState<number>(30);
     const [customFrom, setCustomFrom] = useState('');
     const [customTo, setCustomTo]   = useState('');
@@ -227,8 +230,8 @@ export default function AnalyticsPage() {
     const fmtPeriod = groupBy === 'month' ? fmtDateMonth : groupBy === 'week' ? fmtDateWeek : fmtDate;
     const chartData = playback.map(p => ({
         period: fmtPeriod(p.period),
-        'Lượt phát': p.plays,
-        'Hoàn thành': p.completed ?? 0,
+        plays: p.plays,
+        completed: p.completed ?? 0,
     }));
 
     const devOnline  = overview?.devices.online ?? 0;
@@ -246,7 +249,7 @@ export default function AnalyticsPage() {
                 <Box>
                     <Typography variant="h4" fontWeight={700}>Analytics</Typography>
                     <Typography variant="body2" color="text.secondary">
-                        Thống kê {dateFrom} → {dateTo}
+                        {t('analytics.statsTitle', { from: dateFrom, to: dateTo })}
                     </Typography>
                 </Box>
 
@@ -256,14 +259,14 @@ export default function AnalyticsPage() {
                         onChange={(_, v) => { if (v !== null) { setPreset(v); setCustomFrom(''); setCustomTo(''); } }}>
                         {PRESETS.map(p => (
                             <ToggleButton key={p.days} value={p.days} sx={{ px: 1.5, fontSize: '0.75rem' }}>
-                                {p.label}
+                                {t(p.labelKey)}
                             </ToggleButton>
                         ))}
                     </ToggleButtonGroup>
-                    <TextField type="date" size="small" label="Từ ngày" value={customFrom}
+                    <TextField type="date" size="small" label={t('common.fromDate')} value={customFrom}
                         onChange={e => setCustomFrom(e.target.value)}
                         InputLabelProps={{ shrink: true }} sx={{ width: 150 }} />
-                    <TextField type="date" size="small" label="Đến ngày" value={customTo}
+                    <TextField type="date" size="small" label={t('common.toDate')} value={customTo}
                         onChange={e => setCustomTo(e.target.value)}
                         InputLabelProps={{ shrink: true }} sx={{ width: 150 }} />
                 </Stack>
@@ -272,24 +275,24 @@ export default function AnalyticsPage() {
             {/* ── KPI cards ───────────────────────────────────────────────────── */}
             <Grid container spacing={2} mb={3}>
                 {[
-                    { icon: <Tv />, label: 'Thiết bị online', color: '#4CAF82',
+                    { icon: <Tv />, label: t('analytics.onlineDevices'), color: '#4CAF82',
                       value: loadingOverview ? '…' : `${devOnline}/${devTotal}`,
                       sub: `${onlineRate}% online` },
-                    { icon: <PlayArrow />, label: 'Lượt phát', color: '#6C63FF',
+                    { icon: <PlayArrow />, label: t('analytics.playsLabel'), color: '#6C63FF',
                       value: loadingOverview ? '…' : (overview?.playback.totalPlays ?? 0).toLocaleString(),
-                      sub: `${overview?.playback.totalMinutes ?? 0} phút` },
-                    { icon: <CheckCircle />, label: 'Hoàn thành', color: '#29B6F6',
+                      sub: `${overview?.playback.totalMinutes ?? 0} ${t('analytics.minutes')}` },
+                    { icon: <CheckCircle />, label: t('analytics.completionRate'), color: '#29B6F6',
                       value: loadingOverview ? '…' : `${overview?.playback.completionRate ?? 0}%`,
-                      sub: 'tỷ lệ xem hết' },
+                      sub: t('analytics.completedLabel') },
                     { icon: <BarChartIcon />, label: 'Media', color: '#FF6584',
                       value: loadingOverview ? '…' : (overview?.media.count ?? 0),
                       sub: fmtBytes(overview?.media.totalSizeBytes ?? 0) },
-                    { icon: <Storage />, label: 'Storage device', color: '#FFA726',
+                    { icon: <Storage />, label: t('analytics.totalStorage'), color: '#FFA726',
                       value: loadingOverview ? '…' : fmtBytes(overview?.storage.usedBytes ?? 0),
-                      sub: 'tổng dung lượng thiết bị' },
+                      sub: '' },
                     { icon: <TrendingUp />, label: 'Schedules', color: '#AB47BC',
                       value: loadingOverview ? '…' : `${overview?.schedules.active ?? 0}/${overview?.schedules.total ?? 0}`,
-                      sub: 'đang kích hoạt' },
+                      sub: '' },
                 ].map((card, i) => (
                     <Grid key={i} size={{ xs: 6, sm: 4, md: 2 }}>
                         <KpiCard {...card} loading={loadingOverview} />
@@ -301,19 +304,19 @@ export default function AnalyticsPage() {
             <Card sx={{ mb: 3 }}>
                 <CardContent sx={{ p: 2.5 }}>
                     <Stack direction="row" justifyContent="space-between" alignItems="center" mb={2}>
-                        <SectionTitle icon={<BarChartIcon />} title="Lượt phát theo thời gian" />
+                        <SectionTitle icon={<BarChartIcon />} title={t('analytics.playsOverTime')} />
                         <ToggleButtonGroup exclusive size="small" value={groupBy}
                             onChange={(_, v) => { if (v) setGroupBy(v); }}>
-                            <ToggleButton value="day"   sx={{ px: 1.5, fontSize: '0.72rem' }}>Ngày</ToggleButton>
-                            <ToggleButton value="week"  sx={{ px: 1.5, fontSize: '0.72rem' }}>Tuần</ToggleButton>
-                            <ToggleButton value="month" sx={{ px: 1.5, fontSize: '0.72rem' }}>Tháng</ToggleButton>
+                            <ToggleButton value="day"   sx={{ px: 1.5, fontSize: '0.72rem' }}>{t('analytics.byDay')}</ToggleButton>
+                            <ToggleButton value="week"  sx={{ px: 1.5, fontSize: '0.72rem' }}>{t('analytics.byWeek')}</ToggleButton>
+                            <ToggleButton value="month" sx={{ px: 1.5, fontSize: '0.72rem' }}>{t('analytics.byMonth')}</ToggleButton>
                         </ToggleButtonGroup>
                     </Stack>
                     {loadingPlayback ? (
                         <Skeleton variant="rounded" height={260} />
                     ) : chartData.length === 0 ? (
                         <Box sx={{ height: 260, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <Typography color="text.secondary" variant="body2">Chưa có dữ liệu phát trong khoảng thời gian này</Typography>
+                            <Typography color="text.secondary" variant="body2">{t('analytics.noPlayData')}</Typography>
                         </Box>
                     ) : (
                         <ResponsiveContainer width="100%" height={260}>
@@ -333,8 +336,8 @@ export default function AnalyticsPage() {
                                 <YAxis tick={{ fontSize: 11, fill: '#888' }} tickLine={false} axisLine={false} allowDecimals={false} />
                                 <RTooltip content={<PlaybackTooltip />} />
                                 <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
-                                <Area type="monotone" dataKey="Lượt phát" stroke="#6C63FF" strokeWidth={2} fill="url(#gPlays)" dot={false} activeDot={{ r: 4 }} />
-                                <Area type="monotone" dataKey="Hoàn thành" stroke="#4CAF82" strokeWidth={2} fill="url(#gDone)" dot={false} activeDot={{ r: 4 }} />
+                                <Area type="monotone" dataKey="plays" name={t('analytics.playsLabel')} stroke="#6C63FF" strokeWidth={2} fill="url(#gPlays)" dot={false} activeDot={{ r: 4 }} />
+                                <Area type="monotone" dataKey="completed" name={t('analytics.completedLabel')} stroke="#4CAF82" strokeWidth={2} fill="url(#gDone)" dot={false} activeDot={{ r: 4 }} />
                             </AreaChart>
                         </ResponsiveContainer>
                     )}
@@ -347,19 +350,19 @@ export default function AnalyticsPage() {
                 <Grid size={{ xs: 12, md: 7 }}>
                     <Card sx={{ height: '100%' }}>
                         <CardContent sx={{ p: 2.5 }}>
-                            <SectionTitle icon={<PlayArrow />} title="Nội dung phát nhiều nhất" />
+                            <SectionTitle icon={<PlayArrow />} title={t('analytics.topContent')} />
                             {loadingTop ? (
                                 <Stack gap={1}>{[...Array(5)].map((_, i) => <Skeleton key={i} height={48} variant="rounded" />)}</Stack>
                             ) : topContent.length === 0 ? (
                                 <Box py={6} textAlign="center">
-                                    <Typography color="text.secondary" variant="body2">Chưa có dữ liệu phát trong khoảng thời gian này</Typography>
+                                    <Typography color="text.secondary" variant="body2">{t('analytics.noPlayData')}</Typography>
                                 </Box>
                             ) : (
                                 <Box sx={{ overflowX: 'auto' }}>
                                     <Table size="small">
                                         <TableHead>
                                             <TableRow>
-                                                {['#', 'Tên file', 'Loại', 'Lượt phát', 'Hoàn thành', 'Phút'].map((h, i) => (
+                                                {['#', t('analytics.colFileName'), t('common.type'), t('analytics.colPlays'), t('analytics.colCompleted'), t('analytics.colMinutes')].map((h, i) => (
                                                     <TableCell key={h} align={i >= 3 ? 'right' : 'left'}
                                                         sx={{ color: 'text.secondary', fontSize: '0.72rem', fontWeight: 600, textTransform: 'uppercase' }}>
                                                         {h}
@@ -404,10 +407,10 @@ export default function AnalyticsPage() {
                     <Card sx={{ height: '100%' }}>
                         <CardContent sx={{ p: 2.5 }}>
                             <Stack direction="row" justifyContent="space-between" alignItems="center" mb={2}>
-                                <SectionTitle icon={<MonitorHeart />} title="Sức khoẻ thiết bị" />
+                                <SectionTitle icon={<MonitorHeart />} title={t('analytics.healthTitle')} />
                                 {withProcessCpu > 0 && (
                                     <Chip icon={<Memory sx={{ fontSize: 14 }} />}
-                                        label={`${withProcessCpu} thiết bị có CPU player`}
+                                        label={t('analytics.withCpuDevices', { count: withProcessCpu })}
                                         size="small" color="info" variant="outlined"
                                         sx={{ fontSize: '0.65rem' }} />
                                 )}
@@ -416,7 +419,7 @@ export default function AnalyticsPage() {
                                 <Stack gap={1}>{[...Array(3)].map((_, i) => <Skeleton key={i} height={96} variant="rounded" />)}</Stack>
                             ) : deviceHealth.length === 0 ? (
                                 <Box py={6} textAlign="center">
-                                    <Typography color="text.secondary" variant="body2">Chưa có dữ liệu health từ thiết bị</Typography>
+                                    <Typography color="text.secondary" variant="body2">{t('analytics.noHealthData')}</Typography>
                                 </Box>
                             ) : (
                                 <Stack gap={1.5}>

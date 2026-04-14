@@ -1,6 +1,7 @@
 import { type ReactNode } from 'react';
 import { Box, Typography, Chip, List, ListItem, ListItemIcon, ListItemText, alpha } from '@mui/material';
 import { FiberManualRecord } from '@mui/icons-material';
+import { useTranslation } from 'react-i18next';
 
 interface PlaceholderPageProps {
     icon: ReactNode;
@@ -10,6 +11,7 @@ interface PlaceholderPageProps {
 }
 
 export default function PlaceholderPage({ icon, title, description, features }: PlaceholderPageProps) {
+    const { t } = useTranslation();
     return (
         <Box
             sx={{
@@ -44,7 +46,7 @@ export default function PlaceholderPage({ icon, title, description, features }: 
                     {title}
                 </Typography>
                 <Chip
-                    label="Sắp ra mắt"
+                    label={t('common.comingSoon')}
                     size="small"
                     color="primary"
                     variant="outlined"
@@ -60,7 +62,7 @@ export default function PlaceholderPage({ icon, title, description, features }: 
             {features && features.length > 0 && (
                 <Box sx={{ textAlign: 'left', maxWidth: 400, width: '100%' }}>
                     <Typography variant="subtitle2" fontWeight={600} color="text.secondary" gutterBottom>
-                        Tính năng sẽ có:
+                        {t('common.upcomingFeatures')}
                     </Typography>
                     <List dense disablePadding>
                         {features.map((f) => (

@@ -14,6 +14,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSocket } from '@hooks/useSocket';
 import alarmApi from '@api/alarm.api';
 import type { AlarmDevice, AlarmEmail, StatusEvent } from '@api/alarm.api';
+import { useTranslation } from 'react-i18next';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -36,13 +37,13 @@ function fmtTime(iso: string | null): string {
     return new Date(iso).toLocaleString('vi-VN', { hour12: false });
 }
 
-function statusChip(status: string) {
+function statusChip(status: string, notConnectedLabel = 'Not connected') {
     const map: Record<string, { label: string; color: 'success' | 'error' | 'warning' | 'default' }> = {
         ONLINE: { label: 'Online', color: 'success' },
         OFFLINE: { label: 'Offline', color: 'error' },
         APP_EXIT: { label: 'App exit', color: 'warning' },
         SLEEP: { label: 'Sleep', color: 'default' },
-        REGISTERED: { label: 'Chưa kết nối', color: 'default' },
+        REGISTERED: { label: notConnectedLabel, color: 'default' },
     };
     const cfg = map[status] ?? { label: status, color: 'default' };
     return <Chip label={cfg.label} color={cfg.color} size="small" sx={{ fontSize: '0.65rem', height: 20 }} />;
@@ -68,19 +69,20 @@ function eventIcon(event: string, reason: string) {
     return <SignalWifiOff sx={{ color: 'error.main', fontSize: 16 }} />;
 }
 
-function eventLabel(event: string, reason: string): { text: string; color: string } {
+function eventLabel(event: string, reason: string, labels: { software: string; deviceOff: string; networkLoss: string; appExited: string }): { text: string; color: string } {
     if (event === 'ONLINE') return { text: 'Online', color: 'success.main' };
     const reasonLabel: Record<string, string> = {
-        SOFTWARE: 'Lỗi phần mềm',
-        DEVICE_OFF: 'Thiết bị tắt',
-        NETWORK: 'Mất mạng / timeout',
+        SOFTWARE: labels.software,
+        DEVICE_OFF: labels.deviceOff,
+        NETWORK: labels.networkLoss,
     };
-    return { text: reasonLabel[reason] ?? (event === 'APP_EXIT' ? 'App thoát' : 'Offline'), color: 'error.main' };
+    return { text: reasonLabel[reason] ?? (event === 'APP_EXIT' ? labels.appExited : 'Offline'), color: 'error.main' };
 }
 
 // ─── Mail Setting Dialog ──────────────────────────────────────────────────────
 
 function MailSettingDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+    const { t } = useTranslation();
     const qc = useQueryClient();
     const [addInput, setAddInput] = useState('');
     const [editId, setEditId] = useState<string | null>(null);
@@ -116,12 +118,12 @@ function MailSettingDialog({ open, onClose }: { open: boolean; onClose: () => vo
         <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
             <DialogTitle fontWeight={700}>
                 <Stack direction="row" alignItems="center" gap={1}>
-                    <Mail fontSize="small" color="primary" /> Cài đặt email cảnh báo
+                    <Mail fontSize="small" color="primary" /> {t('history.alarm.emailSettings')}
                 </Stack>
             </DialogTitle>
             <DialogContent dividers>
                 <Typography variant="body2" color="text.secondary" mb={2}>
-                    Hệ thống sẽ gửi email khi thiết bị offline. Mỗi tổ chức tối đa <strong>{MAX} email</strong>.
+                    {t('history.alarm.emailSettings')} · {t('history.alarm.emailLimit', { max: MAX })}
                 </Typography>
 
                 {isLoading ? <CircularProgress size={24} /> : (
@@ -133,15 +135,15 @@ function MailSettingDialog({ open, onClose }: { open: boolean; onClose: () => vo
                                         <TextField
                                             size="small" value={editInput} fullWidth
                                             onChange={e => setEditInput(e.target.value)}
-                                            placeholder="Nhập email mới"
+                                            placeholder={t('history.alarm.editEmailPlaceholder')}
                                             sx={{ fontSize: '0.8rem' }}
                                         />
                                         <Button size="small" disableElevation
                                             disabled={!editInput.includes('@') || updateMut.isPending}
                                             onClick={() => updateMut.mutate({ id: em.id, data: { email: editInput } })}>
-                                            Lưu
+                                            {t('common.save')}
                                         </Button>
-                                        <Button size="small" onClick={() => setEditId(null)}>Hủy</Button>
+                                        <Button size="small" onClick={() => setEditId(null)}>{t('common.cancel')}</Button>
                                     </Stack>
                                 ) : (
                                     <Stack direction="row" alignItems="center" spacing={1}>
@@ -159,16 +161,16 @@ function MailSettingDialog({ open, onClose }: { open: boolean; onClose: () => vo
                                             size="small" checked={em.enabled}
                                             onChange={e => updateMut.mutate({ id: em.id, data: { enabled: e.target.checked } })}
                                         />
-                                        <Tooltip title="Gửi email test">
+                                        <Tooltip title={t('history.alarm.sendTestEmail')}>
                                             <IconButton size="small" color="primary"
                                                 disabled={testingId === em.id}
                                                 onClick={async () => {
                                                     setTestingId(em.id);
                                                     try {
                                                         await alarmApi.testEmail(em.email);
-                                                        setTestMsg(p => ({ ...p, [em.id]: '✅ Đã gửi' }));
+                                                        setTestMsg(p => ({ ...p, [em.id]: t('history.alarm.testEmailSent') }));
                                                     } catch {
-                                                        setTestMsg(p => ({ ...p, [em.id]: '❌ Lỗi SMTP' }));
+                                                        setTestMsg(p => ({ ...p, [em.id]: t('history.alarm.testEmailFailed') }));
                                                     } finally {
                                                         setTestingId(null);
                                                         setTimeout(() => setTestMsg(p => { const n = { ...p }; delete n[em.id]; return n; }), 4000);
@@ -179,12 +181,12 @@ function MailSettingDialog({ open, onClose }: { open: boolean; onClose: () => vo
                                                     : <Send fontSize="inherit" />}
                                             </IconButton>
                                         </Tooltip>
-                                        <Tooltip title="Sửa email">
+                                        <Tooltip title={t('history.alarm.editEmail')}>
                                             <IconButton size="small" onClick={() => { setEditId(em.id); setEditInput(em.email); }}>
                                                 <Edit fontSize="inherit" />
                                             </IconButton>
                                         </Tooltip>
-                                        <Tooltip title="Xóa">
+                                        <Tooltip title={t('common.delete')}>
                                             <IconButton size="small" color="error"
                                                 onClick={() => deleteMut.mutate(em.id)}>
                                                 <Delete fontSize="inherit" />
@@ -200,7 +202,7 @@ function MailSettingDialog({ open, onClose }: { open: boolean; onClose: () => vo
                                 <TextField
                                     size="small" value={addInput} fullWidth
                                     onChange={e => setAddInput(e.target.value)}
-                                    placeholder="Thêm email mới…"
+                                    placeholder={t('history.alarm.addEmail')}
                                     type="email"
                                     onKeyDown={e => {
                                         if (e.key === 'Enter' && addInput.includes('@')) {
@@ -213,14 +215,14 @@ function MailSettingDialog({ open, onClose }: { open: boolean; onClose: () => vo
                                     disabled={!addInput.includes('@') || addMut.isPending}
                                     onClick={() => addMut.mutate(addInput)}
                                     sx={{ whiteSpace: 'nowrap' }}>
-                                    Thêm
+                                    {t('common.add')}
                                 </Button>
                             </Stack>
                         )}
 
                         {emails.length >= MAX && (
                             <Typography variant="caption" color="warning.main">
-                                Đã đạt giới hạn {MAX} email.
+                                {t('history.alarm.emailLimit', { max: MAX })}
                             </Typography>
                         )}
                     </Stack>
@@ -228,7 +230,7 @@ function MailSettingDialog({ open, onClose }: { open: boolean; onClose: () => vo
 
             </DialogContent>
             <DialogActions sx={{ px: 3, pb: 2 }}>
-                <Button size="small" onClick={onClose}>Đóng</Button>
+                <Button size="small" onClick={onClose}>{t('common.close')}</Button>
             </DialogActions>
         </Dialog>
     );
@@ -237,6 +239,7 @@ function MailSettingDialog({ open, onClose }: { open: boolean; onClose: () => vo
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function StatusAlarmPage() {
+    const { t } = useTranslation();
     const [selectedDevice, setSelectedDevice] = useState<AlarmDevice | null>(null);
     const [mailOpen, setMailOpen] = useState(false);
     const [search, setSearch] = useState('');
@@ -314,7 +317,7 @@ export default function StatusAlarmPage() {
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
                 <Stack direction="row" alignItems="center" gap={1}>
                     <NotificationsActive color="primary" />
-                    <Typography variant="h6" fontWeight={700}>Status Alarm</Typography>
+                    <Typography variant="h6" fontWeight={700}>{t('history.alarm.title')}</Typography>
                 </Stack>
                 <Stack direction="row" gap={1}>
                     <Chip icon={<CheckCircle sx={{ fontSize: 14 }} />} label={`Online: ${onlineCount}`}
@@ -340,13 +343,13 @@ export default function StatusAlarmPage() {
                     {/* Filters */}
                     <Box sx={{ px: 1.5, py: 1, display: 'flex', gap: 1, flexWrap: 'wrap', borderBottom: '1px solid', borderColor: 'divider' }}>
                         <TextField
-                            size="small" placeholder="Tìm tên, site…" value={search}
+                            size="small" placeholder={t('history.alarm.searchPlaceholder')} value={search}
                             onChange={e => setSearch(e.target.value)}
                             sx={{ flex: 1, minWidth: 120, '& .MuiInputBase-input': { fontSize: '0.8rem' } }}
                         />
                         <Stack direction="row" gap={0.5}>
                             {[
-                                { value: 'ALL', label: 'Tất cả' },
+                                { value: 'ALL', label: t('common.all') },
                                 { value: 'ONLINE', label: 'Online' },
                                 { value: 'OFFLINE', label: 'Offline' },
                             ].map(f => (
@@ -372,18 +375,18 @@ export default function StatusAlarmPage() {
                         ) : filtered.length === 0 ? (
                             <Box sx={{ textAlign: 'center', pt: 6, color: 'text.disabled' }}>
                                 <NotificationsActive sx={{ fontSize: 40, mb: 1, opacity: 0.3 }} />
-                                <Typography variant="body2">Không có thiết bị nào</Typography>
+                                <Typography variant="body2">{t('history.alarm.noDevices')}</Typography>
                             </Box>
                         ) : (
                             <Table size="small" stickyHeader>
                                 <TableHead>
                                     <TableRow>
-                                        <TableCell sx={{ fontSize: '0.7rem', fontWeight: 700, py: 0.75 }}>Tên</TableCell>
-                                        <TableCell sx={{ fontSize: '0.7rem', fontWeight: 700, py: 0.75 }}>Trạng thái</TableCell>
+                                        <TableCell sx={{ fontSize: '0.7rem', fontWeight: 700, py: 0.75 }}>{t('common.name')}</TableCell>
+                                        <TableCell sx={{ fontSize: '0.7rem', fontWeight: 700, py: 0.75 }}>{t('common.status')}</TableCell>
                                         <TableCell sx={{ fontSize: '0.7rem', fontWeight: 700, py: 0.75 }}>
                                             Online
                                         </TableCell>
-                                        <TableCell sx={{ fontSize: '0.7rem', fontWeight: 700, py: 0.75, width: 60 }}>Chi tiết</TableCell>
+                                        <TableCell sx={{ fontSize: '0.7rem', fontWeight: 700, py: 0.75, width: 60 }}>{t('common.detail')}</TableCell>
                                     </TableRow>
                                 </TableHead>
                                 <TableBody>
@@ -408,7 +411,7 @@ export default function StatusAlarmPage() {
                                                     )}
                                                 </TableCell>
                                                 <TableCell sx={{ py: 0.75 }}>
-                                                    {statusChip(d.status)}
+                                                    {statusChip(d.status, t('history.alarm.notConnected'))}
                                                 </TableCell>
                                                 <TableCell sx={{ py: 0.75 }}>
                                                     <Typography variant="caption" sx={{ color: tc.color, fontVariantNumeric: 'tabular-nums', fontSize: '0.72rem' }}>
@@ -416,7 +419,7 @@ export default function StatusAlarmPage() {
                                                     </Typography>
                                                 </TableCell>
                                                 <TableCell sx={{ py: 0.75, textAlign: 'center' }}>
-                                                    <Tooltip title={isSelected ? 'Ẩn' : 'Xem chi tiết'}>
+                                                    <Tooltip title={isSelected ? t('history.content.hideTooltip') : t('common.detail')}>
                                                         <IconButton
                                                             size="small"
                                                             color={isSelected ? 'primary' : 'default'}
@@ -440,8 +443,7 @@ export default function StatusAlarmPage() {
                     {!selectedDevice ? (
                         <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'text.disabled' }}>
                             <NotificationsActive sx={{ fontSize: 56, mb: 2, opacity: 0.15 }} />
-                            <Typography variant="body1" fontWeight={500}>Chọn thiết bị để xem lịch sử</Typography>
-                            <Typography variant="body2" mt={0.5}>Nhấn icon <strong>con mắt</strong> ở cột Detail bên trái</Typography>
+                            <Typography variant="body1" fontWeight={500}>{t('history.alarm.selectDevice')}</Typography>
                         </Box>
                     ) : (
                         <>
@@ -450,14 +452,14 @@ export default function StatusAlarmPage() {
                                 <Box sx={{ flex: 1 }}>
                                     <Typography variant="subtitle1" fontWeight={700}>{selectedDevice.name}</Typography>
                                     <Stack direction="row" gap={1} alignItems="center">
-                                        {statusChip(selectedDevice.status)}
+                                        {statusChip(selectedDevice.status, t('history.alarm.notConnected'))}
                                         {selectedDevice.siteName && (
                                             <Typography variant="caption" color="text.secondary">{selectedDevice.siteName}</Typography>
                                         )}
                                     </Stack>
                                 </Box>
                                 <Typography variant="caption" color="text.disabled">
-                                    {history.length} sự kiện
+                                    {t('history.alarm.eventCount', { count: history.length })}
                                 </Typography>
                             </Box>
 
@@ -469,13 +471,18 @@ export default function StatusAlarmPage() {
                                     </Box>
                                 ) : history.length === 0 ? (
                                     <Box sx={{ textAlign: 'center', pt: 6, color: 'text.disabled' }}>
-                                        <Typography variant="body2">Chưa có lịch sử sự kiện</Typography>
-                                        <Typography variant="caption">Lịch sử sẽ được ghi nhận từ lúc thiết bị kết nối</Typography>
+                                        <Typography variant="body2">{t('history.alarm.noEvents')}</Typography>
+                                        <Typography variant="caption">{t('history.alarm.eventsHint')}</Typography>
                                     </Box>
                                 ) : (
                                     <Stack spacing={0}>
                                         {history.map((ev, idx) => {
-                                            const lbl = eventLabel(ev.event, ev.reason);
+                                            const lbl = eventLabel(ev.event, ev.reason, {
+                                                software: t('history.alarm.softwareError'),
+                                                deviceOff: t('history.alarm.deviceOff'),
+                                                networkLoss: t('history.alarm.networkLoss'),
+                                                appExited: t('history.alarm.appExited'),
+                                            });
                                             const isOnline = ev.event === 'ONLINE';
                                             const nextEv = history[idx + 1];
                                             const durationMs = nextEv
@@ -504,8 +511,8 @@ export default function StatusAlarmPage() {
                                                                 <Chip
                                                                     size="small"
                                                                     label={
-                                                                        ev.reason === 'SOFTWARE' ? 'Phần mềm' :
-                                                                            ev.reason === 'DEVICE_OFF' ? 'Thiết bị tắt' : 'Mạng'
+                                                                        ev.reason === 'SOFTWARE' ? t('history.alarm.softwareError') :
+                                                                            ev.reason === 'DEVICE_OFF' ? t('history.alarm.deviceOff') : t('history.alarm.networkLoss')
                                                                     }
                                                                     variant="outlined"
                                                                     sx={{ fontSize: '0.6rem', height: 16 }}
@@ -513,7 +520,7 @@ export default function StatusAlarmPage() {
                                                             )}
                                                             {durationMs !== null && (
                                                                 <Typography variant="caption" color="text.disabled">
-                                                                    — kéo dài {fmtDuration(durationMs)}
+                                                                    {t('history.alarm.duration', { dur: fmtDuration(durationMs) })}
                                                                 </Typography>
                                                             )}
                                                         </Stack>

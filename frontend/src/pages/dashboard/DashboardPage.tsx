@@ -17,16 +17,17 @@ import {
     Image, VideoFile, Language,
     QueueMusic, CalendarMonth, VerifiedUser,
 } from '@mui/icons-material';
+import { useTranslation } from 'react-i18next';
 import { analyticsApi, type PieSlice } from '@api/analytics.api';
 
 // ── Chart metric options ───────────────────────────────────────────────────────
 
-const METRICS = [
-    { key: 'plays',   label: 'Số lượng lượt phát theo ngày', color: '#6C63FF' },
-    { key: 'devices', label: 'Thiết bị tạo theo thời gian',  color: '#29B6F6' },
-    { key: 'sites',   label: 'Site tạo theo thời gian',       color: '#FFA726' },
-] as const;
-type MetricKey = typeof METRICS[number]['key'];
+type MetricKey = 'plays' | 'devices' | 'sites';
+const METRIC_DEFS = [
+    { key: 'plays' as MetricKey,   labelKey: 'analytics.metricsPlays',   color: '#6C63FF' },
+    { key: 'devices' as MetricKey, labelKey: 'analytics.metricsDevices', color: '#29B6F6' },
+    { key: 'sites' as MetricKey,   labelKey: 'analytics.metricsSites',   color: '#FFA726' },
+];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -37,16 +38,12 @@ function fmtBytes(bytes: number): string {
     return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
 }
 
-function fmtDate(iso: string) { return new Date(iso).toLocaleDateString('vi-VN', { month: 'short', day: 'numeric' }); }
+function fmtDate(iso: string, lang = 'vi') { return new Date(iso).toLocaleDateString(lang === 'vi' ? 'vi-VN' : 'en-US', { month: 'short', day: 'numeric' }); }
 function fmtDateWeek(iso: string) { const d = new Date(iso); return `T${d.getMonth() + 1}/${d.getDate()}`; }
-function fmtDateMonth(iso: string) { return new Date(iso).toLocaleDateString('vi-VN', { year: '2-digit', month: 'short' }); }
+function fmtDateMonth(iso: string, lang = 'vi') { return new Date(iso).toLocaleDateString(lang === 'vi' ? 'vi-VN' : 'en-US', { year: '2-digit', month: 'short' }); }
 function toLocalDate(daysAgo: number) { const d = new Date(); d.setDate(d.getDate() - daysAgo); return d.toISOString().slice(0, 10); }
 
-const PRESETS = [
-    { label: '7 ngày', days: 7 },
-    { label: '30 ngày', days: 30 },
-    { label: '90 ngày', days: 90 },
-] as const;
+const PRESET_DAYS = [7, 30, 90] as const;
 
 // ── Colour palettes ────────────────────────────────────────────────────────────
 
@@ -58,8 +55,8 @@ const STATUS_COLORS: Record<string, string> = {
     ERROR:    '#F44336',
 };
 const LICENSE_COLORS: Record<string, string> = {
-    'Có license':  '#4CAF50',
-    'Hết license': '#F44336',
+    'licensed':   '#4CAF50',
+    'unlicensed': '#F44336',
 };
 const MODEL_PALETTE   = ['#29B6F6', '#FFA726', '#AB47BC', '#26A69A', '#EF5350', '#8D6E63'];
 const VERSION_PALETTE = ['#42A5F5', '#66BB6A', '#FFCA28', '#FF7043', '#26C6DA', '#EC407A'];
@@ -88,6 +85,7 @@ function PieCard({ title, data, colors, loading, total }: {
     loading: boolean; total?: number;
 }) {
     const theme = useTheme();
+    const { t } = useTranslation();
     const getColor = (name: string, idx: number) =>
         Array.isArray(colors) ? colors[idx % colors.length] : (colors[name] ?? '#9E9E9E');
     const isEmpty = !loading && data.every(d => d.value === 0);
@@ -107,7 +105,7 @@ function PieCard({ title, data, colors, loading, total }: {
                     </Box>
                 ) : isEmpty ? (
                     <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <Typography variant="body2" color="text.disabled">Chưa có dữ liệu</Typography>
+                        <Typography variant="body2" color="text.disabled">{t('common.noData')}</Typography>
                     </Box>
                 ) : (
                     <Box sx={{ '& svg': { outline: 'none' } }}>
@@ -225,6 +223,7 @@ function TypeChip({ type }: { type: string }) {
 
 export default function DashboardPage() {
     const theme = useTheme();
+    const { t, i18n } = useTranslation();
     const [preset, setPreset]     = useState<number>(30);
     const [customFrom, setCustomFrom] = useState('');
     const [customTo, setCustomTo]   = useState('');
@@ -287,7 +286,11 @@ export default function DashboardPage() {
     });
     const todayPlays = todayPlayback?.[0]?.plays ?? 0;
 
-    const fmtPeriod = groupBy === 'month' ? fmtDateMonth : groupBy === 'week' ? fmtDateWeek : fmtDate;
+    const METRICS = METRIC_DEFS.map(m => ({ ...m, label: t(m.labelKey) }));
+    const fmtPeriod = groupBy === 'month'
+        ? (iso: string) => fmtDateMonth(iso, i18n.language)
+        : groupBy === 'week' ? fmtDateWeek
+        : (iso: string) => fmtDate(iso, i18n.language);
 
     // Merge playback + creation stats by period
     const chartData = useMemo(() => {
@@ -319,7 +322,7 @@ export default function DashboardPage() {
     const devTotal    = overview?.devices.total ?? 0;
     const onlineRate  = devTotal > 0 ? Math.round((devOnline / devTotal) * 100) : 0;
     const totalDevices = (charts?.status ?? []).reduce((s, d) => s + d.value, 0);
-    const licensedCount = (charts?.license ?? []).find(l => l.name === 'Có license')?.value ?? 0;
+    const licensedCount = (charts?.license ?? []).find(l => l.name === 'licensed')?.value ?? 0;
 
     return (
         <Box>
@@ -329,7 +332,7 @@ export default function DashboardPage() {
                 <Box>
                     <Typography variant="h4" fontWeight={700}>Dashboard</Typography>
                     <Typography variant="body2" color="text.secondary">
-                        Tổng quan mạng lưới · {dateFrom} → {dateTo}
+                        {t('analytics.networkOverview')} · {dateFrom} → {dateTo}
                     </Typography>
                 </Box>
 
@@ -337,17 +340,17 @@ export default function DashboardPage() {
                     <ToggleButtonGroup exclusive size="small"
                         value={customFrom ? null : preset}
                         onChange={(_, v) => { if (v !== null) { setPreset(v); setCustomFrom(''); setCustomTo(''); } }}>
-                        {PRESETS.map(p => (
-                            <ToggleButton key={p.days} value={p.days} sx={{ px: 1.5, fontSize: '0.75rem' }}>
-                                {p.label}
+                        {PRESET_DAYS.map(days => (
+                            <ToggleButton key={days} value={days} sx={{ px: 1.5, fontSize: '0.75rem' }}>
+                                {days} {t('common.days')}
                             </ToggleButton>
                         ))}
                     </ToggleButtonGroup>
-                    <TextField type="date" size="small" label="Từ ngày" value={customFrom}
+                    <TextField type="date" size="small" label={t('analytics.fromDate')} value={customFrom}
                         onChange={e => setCustomFrom(e.target.value)}
                         InputLabelProps={{ shrink: true }}
                         sx={{ width: 148, '& input::-webkit-calendar-picker-indicator': { filter: theme.palette.mode === 'dark' ? 'invert(1)' : 'none' } }} />
-                    <TextField type="date" size="small" label="Đến ngày" value={customTo}
+                    <TextField type="date" size="small" label={t('analytics.toDate')} value={customTo}
                         onChange={e => setCustomTo(e.target.value)}
                         InputLabelProps={{ shrink: true }}
                         sx={{ width: 148, '& input::-webkit-calendar-picker-indicator': { filter: theme.palette.mode === 'dark' ? 'invert(1)' : 'none' } }} />
@@ -357,7 +360,7 @@ export default function DashboardPage() {
             {/* ── Pie charts ────────────────────────────────────────────────── */}
             <Grid container spacing={2} mb={2.5}>
                 <Grid size={{ xs: 12, sm: 4 }}>
-                    <PieCard title="Trạng thái" data={charts?.status ?? []}
+                    <PieCard title={t('analytics.statusChart')} data={charts?.status ?? []}
                         colors={STATUS_COLORS} loading={loadingCharts} total={totalDevices} />
                 </Grid>
                 <Grid size={{ xs: 12, sm: 4 }}>
@@ -376,24 +379,24 @@ export default function DashboardPage() {
                     { icon: <Tv />,          label: 'Online',     color: '#15c00f',
                       value: loadingOverview ? '…' : `${devOnline}/${devTotal}`,
                       sub: `${onlineRate}% online` },
-                    { icon: <PlayArrow />,   label: 'Lượt phát hôm nay', color: '#5850f7',
+                    { icon: <PlayArrow />,   label: t('dashboard2.todayPlays'), color: '#5850f7',
                       value: loadingOverview ? '…' : todayPlays.toLocaleString(),
-                      sub: 'lượt trong ngày' },
-                    { icon: <CheckCircle />, label: 'Hoàn thành', color: '#0498dd',
+                      sub: t('dashboard2.todayPlaysSub') },
+                    { icon: <CheckCircle />, label: t('dashboard2.completionRate'), color: '#0498dd',
                       value: loadingOverview ? '…' : `${overview?.playback.completionRate ?? 0}%`,
-                      sub: 'tỉ lệ playlist chạy hoàn thành' },
+                      sub: t('dashboard2.completionSub') },
                     { icon: <BarChartIcon />, label: 'Media',     color: '#e7113c',
                       value: loadingOverview ? '…' : (overview?.media.count ?? 0),
                       sub: fmtBytes(overview?.media.totalSizeBytes ?? 0) },
                     { icon: <QueueMusic />,  label: 'Playlist',   color: '#e08c0d',
                       value: loadingOverview ? '…' : (overview?.playlists.total ?? 0),
-                      sub: 'danh sách phát' },
+                      sub: t('nav.playlists') },
                     { icon: <CalendarMonth />, label: 'Schedule', color: '#a830bd',
                       value: loadingOverview ? '…' : `${overview?.schedules.active ?? 0}/${overview?.schedules.total ?? 0}`,
-                      sub: 'đang kích hoạt' },
+                      sub: t('dashboard2.activeSub') },
                     { icon: <VerifiedUser />, label: 'License active', color: '#4CAF50',
                       value: loadingCharts ? '…' : `${licensedCount}/${totalDevices}`,
-                      sub: totalDevices > 0 ? `${Math.round(licensedCount / totalDevices * 100)}% thiết bị` : '—' },
+                      sub: totalDevices > 0 ? `${Math.round(licensedCount / totalDevices * 100)}% ${t('nav.devices').toLowerCase()}` : '—' },
                 ].map((card, i) => (
                     <Box key={i} sx={{ flex: '1 1 0', minWidth: { xs: 'calc(50% - 8px)', sm: 'calc(33% - 8px)', md: 0 } }}>
                         <KpiCard {...card} loading={loadingOverview} />
@@ -407,12 +410,12 @@ export default function DashboardPage() {
                     {/* Header row */}
                     <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between"
                         alignItems={{ sm: 'center' }} gap={1.5} mb={2}>
-                        <SectionTitle icon={<BarChartIcon />} title="Thống kê theo thời gian" />
+                        <SectionTitle icon={<BarChartIcon />} title={t('analytics.timeline')} />
                         <FormControl size="small" sx={{ minWidth: 280 }}>
-                            <InputLabel>Chỉ số hiển thị</InputLabel>
+                            <InputLabel>{t('analytics.metric')}</InputLabel>
                             <Select
                                 value={selectedMetric}
-                                label="Chỉ số hiển thị"
+                                label={t('analytics.metric')}
                                 onChange={e => setSelectedMetric(e.target.value as MetricKey)}
                             >
                                 {METRICS.map(m => (
@@ -432,7 +435,7 @@ export default function DashboardPage() {
                         <Skeleton variant="rounded" height={260} />
                     ) : filteredChartData.length === 0 ? (
                         <Box sx={{ height: 260, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <Typography color="text.secondary" variant="body2">Chưa có dữ liệu trong khoảng thời gian này</Typography>
+                            <Typography color="text.secondary" variant="body2">{t('analytics.noDataInRange')}</Typography>
                         </Box>
                     ) : (() => {
                         const m = METRICS.find(x => x.key === selectedMetric)!;
@@ -469,16 +472,16 @@ export default function DashboardPage() {
                 <Grid size={{ xs: 12, md: 4 }}>
                     <Card sx={{ height: '100%' }}>
                         <CardContent sx={{ p: 2.5 }}>
-                            <SectionTitle icon={<PlayArrow />} title="Media phát nhiều nhất" />
+                            <SectionTitle icon={<PlayArrow />} title={t('analytics.topPlayedMedia')} />
                             {loadingTop ? (
                                 <Stack gap={1}>{[...Array(5)].map((_, i) => <Skeleton key={i} height={36} variant="rounded" />)}</Stack>
                             ) : topContent.length === 0 ? (
-                                <Box py={4} textAlign="center"><Typography color="text.secondary" variant="body2">Chưa có dữ liệu</Typography></Box>
+                                <Box py={4} textAlign="center"><Typography color="text.secondary" variant="body2">{t('common.noData')}</Typography></Box>
                             ) : (
                                 <Table size="small">
                                     <TableHead>
                                         <TableRow>
-                                            {['#', 'Tên', 'Loại', 'Lượt', '%'].map((h, i) => (
+                                            {['#', t('common.name'), t('common.type'), t('analytics.plays'), '%'].map((h, i) => (
                                                 <TableCell key={h} align={i >= 3 ? 'right' : 'left'}
                                                     sx={{ color: 'text.secondary', fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', py: 0.5 }}>{h}</TableCell>
                                             ))}
@@ -512,16 +515,16 @@ export default function DashboardPage() {
                 <Grid size={{ xs: 12, md: 4 }}>
                     <Card sx={{ height: '100%' }}>
                         <CardContent sx={{ p: 2.5 }}>
-                            <SectionTitle icon={<QueueMusic />} title="Playlist phát nhiều nhất" />
+                            <SectionTitle icon={<QueueMusic />} title={t('analytics.topPlayedPlaylists')} />
                             {loadingTopPl ? (
                                 <Stack gap={1}>{[...Array(5)].map((_, i) => <Skeleton key={i} height={36} variant="rounded" />)}</Stack>
                             ) : topPlaylists.length === 0 ? (
-                                <Box py={4} textAlign="center"><Typography color="text.secondary" variant="body2">Chưa có dữ liệu</Typography></Box>
+                                <Box py={4} textAlign="center"><Typography color="text.secondary" variant="body2">{t('common.noData')}</Typography></Box>
                             ) : (
                                 <Table size="small">
                                     <TableHead>
                                         <TableRow>
-                                            {['#', 'Tên', 'Lượt', '%'].map((h, i) => (
+                                            {['#', t('common.name'), t('analytics.plays'), '%'].map((h, i) => (
                                                 <TableCell key={h} align={i >= 2 ? 'right' : 'left'}
                                                     sx={{ color: 'text.secondary', fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', py: 0.5 }}>{h}</TableCell>
                                             ))}
@@ -554,16 +557,16 @@ export default function DashboardPage() {
                 <Grid size={{ xs: 12, md: 4 }}>
                     <Card sx={{ height: '100%' }}>
                         <CardContent sx={{ p: 2.5 }}>
-                            <SectionTitle icon={<CalendarMonth />} title="Schedule phát nhiều nhất" />
+                            <SectionTitle icon={<CalendarMonth />} title={t('analytics.topPlayedSchedules')} />
                             {loadingTopSc ? (
                                 <Stack gap={1}>{[...Array(5)].map((_, i) => <Skeleton key={i} height={36} variant="rounded" />)}</Stack>
                             ) : topSchedules.length === 0 ? (
-                                <Box py={4} textAlign="center"><Typography color="text.secondary" variant="body2">Chưa có dữ liệu</Typography></Box>
+                                <Box py={4} textAlign="center"><Typography color="text.secondary" variant="body2">{t('common.noData')}</Typography></Box>
                             ) : (
                                 <Table size="small">
                                     <TableHead>
                                         <TableRow>
-                                            {['#', 'Tên', 'Lượt', '%'].map((h, i) => (
+                                            {['#', t('common.name'), t('analytics.plays'), '%'].map((h, i) => (
                                                 <TableCell key={h} align={i >= 2 ? 'right' : 'left'}
                                                     sx={{ color: 'text.secondary', fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', py: 0.5 }}>{h}</TableCell>
                                             ))}

@@ -19,6 +19,7 @@ import {
 } from '@mui/icons-material';
 import softwareHistoryApi, { type AppVersion } from '@api/software-history.api';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useAppDispatch, useAppSelector } from '@store/hooks';
 import { pushToast } from '@store/slices/uiSlice';
 import { setManagingOrg } from '@store/slices/authSlice';
@@ -64,6 +65,7 @@ function StatChip({ icon, value, color }: { icon: React.ReactNode; value: string
 
 
 function DetailRow({ org }: { org: OrgWithStats }) {
+    const { t } = useTranslation();
     return (
         <Box sx={{ px: 3, py: 2, bgcolor: 'action.hover' }}>
             <Stack direction="row" gap={3} flexWrap="wrap">
@@ -78,11 +80,11 @@ function DetailRow({ org }: { org: OrgWithStats }) {
                     <Typography variant="body2" fontWeight={600}>{org.slug}</Typography>
                 </Box>
                 <Box>
-                    <Typography variant="caption" color="text.secondary" display="block" mb={0.5}>Ngày tạo</Typography>
+                    <Typography variant="caption" color="text.secondary" display="block" mb={0.5}>{t('common.createdAt')}</Typography>
                     <Typography variant="body2" fontWeight={600}>{fmtDate(org.createdAt)}</Typography>
                 </Box>
                 <Box>
-                    <Typography variant="caption" color="text.secondary" display="block" mb={0.5}>Thiết bị được cấp phép</Typography>
+                    <Typography variant="caption" color="text.secondary" display="block" mb={0.5}>{t('superAdmin.detailLicensedDevices')}</Typography>
                     <Typography variant="body2" fontWeight={600}>{org.licensedDevices ?? 0} / {org.totalDevices}</Typography>
                 </Box>
             </Stack>
@@ -101,15 +103,16 @@ function toSlug(name: string): string {
 const STRENGTH_COLOR = ['error', 'warning', 'warning', 'success'] as const;
 function getPwChecks(pw: string) {
     return [
-        { label: 'Ít nhất 8 ký tự', ok: pw.length >= 8 },
-        { label: 'Chứa chữ số (0-9)', ok: /[0-9]/.test(pw) },
-        { label: 'Chứa ký tự đặc biệt', ok: /[^a-zA-Z0-9]/.test(pw) },
+        { labelKey: 'superAdmin.pwCheck1', ok: pw.length >= 8 },
+        { labelKey: 'superAdmin.pwCheck2', ok: /[0-9]/.test(pw) },
+        { labelKey: 'superAdmin.pwCheck3', ok: /[^a-zA-Z0-9]/.test(pw) },
     ];
 }
 
 // ── Create Org dialog ─────────────────────────────────────────────────────────
 
 function CreateOrgDialog({ onClose }: { onClose: () => void }) {
+    const { t } = useTranslation();
     const qc = useQueryClient();
     const dispatch = useAppDispatch();
     const [orgName, setOrgName] = useState('');
@@ -140,11 +143,11 @@ function CreateOrgDialog({ onClose }: { onClose: () => void }) {
         }),
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: ['super-admin-orgs'] });
-            dispatch(pushToast({ severity: 'success', message: `Đã tạo tổ chức "${orgName.trim()}"` }));
+            dispatch(pushToast({ severity: 'success', message: `${t('superAdmin.createOrg')}: "${orgName.trim()}"` }));
             onClose();
         },
         onError: (e: any) => {
-            dispatch(pushToast({ severity: 'error', message: e?.response?.data?.message ?? 'Tạo tổ chức thất bại' }));
+            dispatch(pushToast({ severity: 'error', message: e?.response?.data?.message ?? t('common.failedAction') }));
         },
     });
 
@@ -155,44 +158,44 @@ function CreateOrgDialog({ onClose }: { onClose: () => void }) {
             <DialogTitle fontWeight={700}>
                 <Stack direction="row" alignItems="center" gap={1}>
                     <Business color="primary" />
-                    Tạo tổ chức mới
+                    {t('superAdmin.createOrgTitle')}
                 </Stack>
             </DialogTitle>
             <DialogContent dividers>
                 <Stack spacing={2.5} pt={0.5}>
                     <TextField
-                        label="Tên tổ chức"
+                        label={t('superAdmin.orgNameLabel')}
                         value={orgName}
                         onChange={e => setOrgName(e.target.value)}
                         fullWidth autoFocus required
                         inputProps={{ maxLength: 100 }}
-                        helperText="Tên hiển thị của tổ chức"
+                        helperText={t('superAdmin.orgNameHelper')}
                         size="small"
                     />
-                    <Tooltip title="Slug là định danh duy nhất, chỉ gồm chữ thường a-z, số 0-9 và dấu gạch ngang" placement="right">
+                    <Tooltip title={t('superAdmin.orgSlugTooltip')} placement="right">
                         <TextField
-                            label="Slug tổ chức"
+                            label={t('superAdmin.orgSlugLabel')}
                             value={slug}
                             onChange={e => { setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '')); setSlugEdited(true); }}
                             fullWidth required
                             inputProps={{ maxLength: 50 }}
                             error={slug.length > 0 && !slugValid}
-                            helperText={slug.length > 0 && !slugValid ? 'Chỉ được dùng chữ thường, số và dấu -' : 'Tự động tạo từ tên — không thể đổi sau khi tạo'}
+                            helperText={slug.length > 0 && !slugValid ? t('superAdmin.orgSlugError') : t('superAdmin.orgSlugHelper')}
                             size="small"
                         />
                     </Tooltip>
                     <TextField
-                        label="Email Admin"
+                        label={t('superAdmin.adminEmailLabel')}
                         type="email"
                         value={email}
                         onChange={e => setEmail(e.target.value)}
                         fullWidth required
-                        helperText="Tài khoản Admin đầu tiên của tổ chức"
+                        helperText={t('superAdmin.adminEmailHelper')}
                         size="small"
                     />
                     <Box>
                         <TextField
-                            label="Mật khẩu"
+                            label={t('auth.password')}
                             type={showPw ? 'text' : 'password'}
                             value={password}
                             onChange={e => setPassword(e.target.value)}
@@ -214,12 +217,12 @@ function CreateOrgDialog({ onClose }: { onClose: () => void }) {
                                     sx={{ height: 4, borderRadius: 2 }} />
                                 <Stack mt={0.75} spacing={0.25}>
                                     {pwChecks.map(c => (
-                                        <Stack key={c.label} direction="row" alignItems="center" gap={0.75}>
+                                        <Stack key={c.labelKey} direction="row" alignItems="center" gap={0.75}>
                                             {c.ok
                                                 ? <CheckCircle sx={{ fontSize: 12, color: 'success.main' }} />
                                                 : <Cancel sx={{ fontSize: 12, color: 'text.disabled' }} />
                                             }
-                                            <Typography variant="caption" color={c.ok ? 'success.main' : 'text.disabled'}>{c.label}</Typography>
+                                            <Typography variant="caption" color={c.ok ? 'success.main' : 'text.disabled'}>{t(c.labelKey)}</Typography>
                                         </Stack>
                                     ))}
                                 </Stack>
@@ -227,13 +230,13 @@ function CreateOrgDialog({ onClose }: { onClose: () => void }) {
                         )}
                     </Box>
                     <TextField
-                        label="Xác nhận mật khẩu"
+                        label={t('superAdmin.confirmPasswordLabel')}
                         type={showConfirm ? 'text' : 'password'}
                         value={confirmPw}
                         onChange={e => setConfirmPw(e.target.value)}
                         fullWidth required size="small"
                         error={confirmPw.length > 0 && !confirmOk}
-                        helperText={confirmPw.length > 0 && !confirmOk ? 'Mật khẩu không khớp' : ''}
+                        helperText={confirmPw.length > 0 && !confirmOk ? t('superAdmin.passwordMismatch') : ''}
                         InputProps={{
                             endAdornment: (
                                 <InputAdornment position="end">
@@ -247,14 +250,14 @@ function CreateOrgDialog({ onClose }: { onClose: () => void }) {
                 </Stack>
             </DialogContent>
             <DialogActions sx={{ px: 3, pb: 2 }}>
-                <Button onClick={onClose} size="small">Hủy</Button>
+                <Button onClick={onClose} size="small">{t('common.cancel')}</Button>
                 <Button
                     size="small"
                     disabled={!canSubmit}
                     onClick={() => mutation.mutate()}
                     startIcon={<Add />}
                 >
-                    {mutation.isPending ? 'Đang tạo…' : 'Tạo tổ chức'}
+                    {mutation.isPending ? t('common.creating') : t('superAdmin.createOrg')}
                 </Button>
             </DialogActions>
         </Dialog>
@@ -269,31 +272,33 @@ function ConfirmDialog({ org, onConfirm, onClose }: {
     onConfirm: () => void;
     onClose: () => void;
 }) {
-    const action = org.isActive ? 'tắt' : 'bật';
+    const { t } = useTranslation();
+    const actionKey = org.isActive ? 'superAdmin.actionOff' : 'superAdmin.actionOn';
+    const action = t(actionKey);
     const color = org.isActive ? 'error' : 'success';
     return (
         <Dialog open onClose={onClose} maxWidth="xs" fullWidth>
-            <DialogTitle fontWeight={700}>Xác nhận {action} tổ chức</DialogTitle>
+            <DialogTitle fontWeight={700}>{t('superAdmin.confirmToggleTitle', { action })}</DialogTitle>
             <DialogContent>
                 <Typography variant="body2">
-                    Bạn muốn <strong>{action}</strong> tổ chức <strong>{org.name}</strong>?
+                    {t('common.confirm')} <strong>{action}</strong> {t('superAdmin.organizations').toLowerCase()} <strong>{org.name}</strong>?
                 </Typography>
                 {org.isActive && (
                     <Alert severity="warning" sx={{ mt: 2, borderRadius: 2 }}>
-                        Tắt tổ chức sẽ ngăn mọi thành viên đăng nhập.
+                        {t('superAdmin.toggleWarn')}
                     </Alert>
                 )}
             </DialogContent>
             <DialogActions sx={{ px: 3, pb: 2 }}>
-                <Button onClick={onClose} size="small">Hủy</Button>
+                <Button onClick={onClose} size="small">{t('common.cancel')}</Button>
                 <Button
-                   
+
                     color={color}
                     size="small"
                     onClick={onConfirm}
                     startIcon={<PowerSettingsNew />}
                 >
-                    {action.charAt(0).toUpperCase() + action.slice(1)}
+                    {action}
                 </Button>
             </DialogActions>
         </Dialog>
@@ -303,6 +308,7 @@ function ConfirmDialog({ org, onConfirm, onClose }: {
 // ── Delete Org dialog ─────────────────────────────────────────────────────────
 
 function DeleteOrgDialog({ org, onClose }: { org: OrgWithStats; onClose: () => void }) {
+    const { t } = useTranslation();
     const qc = useQueryClient();
     const dispatch = useAppDispatch();
     const [confirmText, setConfirmText] = useState('');
@@ -311,11 +317,11 @@ function DeleteOrgDialog({ org, onClose }: { org: OrgWithStats; onClose: () => v
         mutationFn: () => organizationsApi.delete(org.id),
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: ['super-admin-orgs'] });
-            dispatch(pushToast({ severity: 'success', message: `Đã xóa tổ chức "${org.name}"` }));
+            dispatch(pushToast({ severity: 'success', message: `${t('superAdmin.deleteOrgBtn')}: "${org.name}"` }));
             onClose();
         },
         onError: (e: any) => {
-            dispatch(pushToast({ severity: 'error', message: e?.response?.data?.message ?? 'Xóa tổ chức thất bại' }));
+            dispatch(pushToast({ severity: 'error', message: e?.response?.data?.message ?? t('common.failedAction') }));
         },
     });
 
@@ -326,15 +332,15 @@ function DeleteOrgDialog({ org, onClose }: { org: OrgWithStats; onClose: () => v
             <DialogTitle fontWeight={700} sx={{ color: 'error.main' }}>
                 <Stack direction="row" alignItems="center" gap={1}>
                     <DeleteForever />
-                    Xóa tổ chức vĩnh viễn
+                    {t('superAdmin.deleteOrgTitle')}
                 </Stack>
             </DialogTitle>
             <DialogContent>
                 <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>
-                    Hành động này <strong>không thể hoàn tác</strong>. Toàn bộ dữ liệu bao gồm devices, media, playlists, schedules và users sẽ bị xóa vĩnh viễn.
+                    {t('superAdmin.deleteOrgAlert')}
                 </Alert>
                 <Typography variant="body2" mb={1.5}>
-                    Nhập <strong>{org.name}</strong> để xác nhận:
+                    {t('superAdmin.deleteOrgConfirmMsg', { name: org.name })}
                 </Typography>
                 <TextField
                     value={confirmText}
@@ -347,16 +353,16 @@ function DeleteOrgDialog({ org, onClose }: { org: OrgWithStats; onClose: () => v
                 />
             </DialogContent>
             <DialogActions sx={{ px: 3, pb: 2 }}>
-                <Button onClick={onClose} size="small">Hủy</Button>
+                <Button onClick={onClose} size="small">{t('common.cancel')}</Button>
                 <Button
-                   
+
                     color="error"
                     size="small"
                     disabled={!canDelete}
                     onClick={() => mutation.mutate()}
                     startIcon={<DeleteForever />}
                 >
-                    {mutation.isPending ? 'Đang xóa…' : 'Xóa vĩnh viễn'}
+                    {mutation.isPending ? t('common.deleting') : t('superAdmin.deleteOrgBtn')}
                 </Button>
             </DialogActions>
         </Dialog>
@@ -372,6 +378,7 @@ function OrgRow({ org, onToggle, onManage, onDelete, currentOrgId }: {
     onDelete: (org: OrgWithStats) => void;
     currentOrgId?: string;
 }) {
+    const { t } = useTranslation();
     const [open, setOpen] = useState(false);
     const managingOrgId = useAppSelector(s => s.auth.managingOrgId);
 
@@ -449,10 +456,10 @@ function OrgRow({ org, onToggle, onManage, onDelete, currentOrgId }: {
                             disabled={!org.isActive && org.id !== currentOrgId}
                             sx={{ fontSize: '0.72rem' }}
                         >
-                            {managingOrgId === org.id ? 'Đang quản lý' : 'Quản lý'}
+                            {managingOrgId === org.id ? t('superAdmin.managing') : t('superAdmin.manageOrg')}
                         </Button>
 
-                        <Tooltip title={org.id === currentOrgId ? 'Không thể tắt tổ chức của chính mình' : org.isActive ? 'Tắt tổ chức' : 'Bật tổ chức'}>
+                        <Tooltip title={org.id === currentOrgId ? t('superAdmin.cantDeactivateOwn') : org.isActive ? t('superAdmin.deactivateOrgTooltip') : t('superAdmin.activateOrgTooltip')}>
                             <span>
                                 <IconButton
                                     size="small"
@@ -464,7 +471,7 @@ function OrgRow({ org, onToggle, onManage, onDelete, currentOrgId }: {
                                 </IconButton>
                             </span>
                         </Tooltip>
-                        <Tooltip title={org.id === currentOrgId ? 'Không thể xóa tổ chức của chính mình' : 'Xóa tổ chức'}>
+                        <Tooltip title={org.id === currentOrgId ? t('superAdmin.cantDeleteOwn') : t('superAdmin.deleteOrgTooltip')}>
                             <span>
                                 <IconButton
                                     size="small"
@@ -496,6 +503,7 @@ function OrgRow({ org, onToggle, onManage, onDelete, currentOrgId }: {
 // ── Platform Admins section ───────────────────────────────────────────────────
 
 function CreatePlatformAdminDialog({ onClose }: { onClose: () => void }) {
+    const { t } = useTranslation();
     const qc = useQueryClient();
     const dispatch = useAppDispatch();
     const [name, setName] = useState('');
@@ -511,7 +519,7 @@ function CreatePlatformAdminDialog({ onClose }: { onClose: () => void }) {
             onClose();
         },
         onError: (e: any) => {
-            dispatch(pushToast({ severity: 'error', message: e?.response?.data?.message ?? 'Tạo thất bại' }));
+            dispatch(pushToast({ severity: 'error', message: e?.response?.data?.message ?? t('common.failedAction') }));
         },
     });
 
@@ -522,18 +530,18 @@ function CreatePlatformAdminDialog({ onClose }: { onClose: () => void }) {
             <DialogTitle fontWeight={700}>
                 <Stack direction="row" alignItems="center" gap={1}>
                     <AdminPanelSettings color="error" />
-                    Thêm Platform Admin
+                    {t('superAdmin.addPlatformAdminTitle')}
                 </Stack>
             </DialogTitle>
             <DialogContent dividers>
                 <Stack spacing={2.5} pt={0.5}>
-                    <TextField label="Tên" value={name} onChange={e => setName(e.target.value)} fullWidth autoFocus size="small" required />
+                    <TextField label={t('common.name')} value={name} onChange={e => setName(e.target.value)} fullWidth autoFocus size="small" required />
                     <TextField label="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} fullWidth size="small" required />
                     <TextField
-                        label="Mật khẩu" type={showPw ? 'text' : 'password'}
+                        label={t('auth.password')} type={showPw ? 'text' : 'password'}
                         value={password} onChange={e => setPassword(e.target.value)}
                         fullWidth size="small" required
-                        helperText="Ít nhất 8 ký tự"
+                        helperText={t('superAdmin.pwMin8Helper')}
                         InputProps={{
                             endAdornment: (
                                 <InputAdornment position="end">
@@ -547,9 +555,9 @@ function CreatePlatformAdminDialog({ onClose }: { onClose: () => void }) {
                 </Stack>
             </DialogContent>
             <DialogActions sx={{ px: 3, pb: 2 }}>
-                <Button onClick={onClose} size="small">Hủy</Button>
+                <Button onClick={onClose} size="small">{t('common.cancel')}</Button>
                 <Button color="error" size="small" disabled={!canSubmit} onClick={() => mutation.mutate()} startIcon={<Add />}>
-                    {mutation.isPending ? 'Đang tạo…' : 'Tạo'}
+                    {mutation.isPending ? t('common.creating') : t('common.create')}
                 </Button>
             </DialogActions>
         </Dialog>
@@ -557,6 +565,7 @@ function CreatePlatformAdminDialog({ onClose }: { onClose: () => void }) {
 }
 
 function ChangePasswordDialog({ admin, onClose }: { admin: PlatformAdmin; onClose: () => void }) {
+    const { t } = useTranslation();
     const dispatch = useAppDispatch();
     const qc = useQueryClient();
     const [pw, setPw] = useState('');
@@ -570,7 +579,7 @@ function ChangePasswordDialog({ admin, onClose }: { admin: PlatformAdmin; onClos
             dispatch(pushToast({ severity: 'success', message: `Đã đổi mật khẩu "${admin.name}"` }));
             onClose();
         },
-        onError: (e: any) => dispatch(pushToast({ severity: 'error', message: e?.response?.data?.message ?? 'Đổi mật khẩu thất bại' })),
+        onError: (e: any) => dispatch(pushToast({ severity: 'error', message: e?.response?.data?.message ?? t('common.failedAction') })),
     });
 
     const valid = pw.length >= 8 && pw === confirm;
@@ -580,15 +589,15 @@ function ChangePasswordDialog({ admin, onClose }: { admin: PlatformAdmin; onClos
             <DialogTitle fontWeight={700}>
                 <Stack direction="row" alignItems="center" gap={1}>
                     <Lock color="warning" />
-                    Đổi mật khẩu — {admin.name}
+                    {t('superAdmin.changePwTitle', { name: admin.name })}
                 </Stack>
             </DialogTitle>
             <DialogContent dividers>
                 <Stack spacing={2.5} pt={0.5}>
                     <TextField
-                        label="Mật khẩu mới" type={show ? 'text' : 'password'}
+                        label={t('superAdmin.newPasswordLabel')} type={show ? 'text' : 'password'}
                         value={pw} onChange={e => setPw(e.target.value)}
-                        fullWidth size="small" autoFocus helperText="Ít nhất 8 ký tự"
+                        fullWidth size="small" autoFocus helperText={t('superAdmin.pwMin8Helper')}
                         InputProps={{
                             endAdornment: (
                                 <InputAdornment position="end">
@@ -600,20 +609,20 @@ function ChangePasswordDialog({ admin, onClose }: { admin: PlatformAdmin; onClos
                         }}
                     />
                     <TextField
-                        label="Nhập lại mật khẩu" type={show ? 'text' : 'password'}
+                        label={t('superAdmin.repeatPasswordLabel')} type={show ? 'text' : 'password'}
                         value={confirm} onChange={e => setConfirm(e.target.value)}
                         fullWidth size="small"
                         error={confirm.length > 0 && pw !== confirm}
-                        helperText={confirm.length > 0 && pw !== confirm ? 'Mật khẩu không khớp' : ''}
+                        helperText={confirm.length > 0 && pw !== confirm ? t('superAdmin.passwordMismatch') : ''}
                     />
                 </Stack>
             </DialogContent>
             <DialogActions sx={{ px: 3, pb: 2 }}>
-                <Button onClick={onClose} size="small">Hủy</Button>
+                <Button onClick={onClose} size="small">{t('common.cancel')}</Button>
                 <Button color="warning" size="small"
                     disabled={!valid || mutation.isPending}
                     onClick={() => mutation.mutate()}>
-                    {mutation.isPending ? 'Đang lưu…' : 'Đổi mật khẩu'}
+                    {mutation.isPending ? t('common.saving') : t('superAdmin.changePwBtn')}
                 </Button>
             </DialogActions>
         </Dialog>
@@ -621,6 +630,7 @@ function ChangePasswordDialog({ admin, onClose }: { admin: PlatformAdmin; onClos
 }
 
 function PlatformAdminsSection({ currentAdminId }: { currentAdminId?: string }) {
+    const { t } = useTranslation();
     const qc = useQueryClient();
     const dispatch = useAppDispatch();
     const [createOpen, setCreateOpen] = useState(false);
@@ -639,10 +649,10 @@ function PlatformAdminsSection({ currentAdminId }: { currentAdminId?: string }) 
         mutationFn: (admin: PlatformAdmin) => platformAuthApi.updateAdmin(admin.id, { isActive: !admin.isActive }),
         onSuccess: (_, admin) => {
             qc.invalidateQueries({ queryKey: ['platform-admins'] });
-            dispatch(pushToast({ severity: 'success', message: `Đã ${admin.isActive ? 'tắt' : 'bật'} "${admin.name}"` }));
+            dispatch(pushToast({ severity: 'success', message: `${admin.isActive ? t('superAdmin.actionOff') : t('superAdmin.actionOn')}: "${admin.name}"` }));
         },
         onError: (e: any) => {
-            dispatch(pushToast({ severity: 'error', message: e?.response?.data?.message ?? 'Thao tác thất bại' }));
+            dispatch(pushToast({ severity: 'error', message: e?.response?.data?.message ?? t('common.failedAction') }));
         },
     });
 
@@ -650,10 +660,10 @@ function PlatformAdminsSection({ currentAdminId }: { currentAdminId?: string }) 
         mutationFn: (id: string) => platformAuthApi.deleteAdmin(id),
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: ['platform-admins'] });
-            dispatch(pushToast({ severity: 'success', message: 'Đã xóa platform admin' }));
+            dispatch(pushToast({ severity: 'success', message: t('common.delete') }));
         },
         onError: (e: any) => {
-            dispatch(pushToast({ severity: 'error', message: e?.response?.data?.message ?? 'Xóa thất bại' }));
+            dispatch(pushToast({ severity: 'error', message: e?.response?.data?.message ?? t('common.failedAction') }));
         },
     });
 
@@ -677,12 +687,12 @@ function PlatformAdminsSection({ currentAdminId }: { currentAdminId?: string }) 
                     <Box>
                         <Typography variant="h6" fontWeight={700}>Platform Admins</Typography>
                         <Typography variant="caption" color="text.secondary">
-                            Tài khoản quản trị hệ thống — không thuộc tổ chức nào
+                            {t('superAdmin.platformAdminsDesc')}
                         </Typography>
                     </Box>
                 </Stack>
                 <Button variant="outlined" color="error" size="small" startIcon={<Add />} onClick={() => setCreateOpen(true)}>
-                    Thêm
+                    {t('common.add')}
                 </Button>
             </Stack>
 
@@ -691,11 +701,11 @@ function PlatformAdminsSection({ currentAdminId }: { currentAdminId?: string }) 
                     <Table size="small">
                         <TableHead>
                             <TableRow>
-                                <TableCell sx={{ fontWeight: 700 }}>Tên</TableCell>
+                                <TableCell sx={{ fontWeight: 700 }}>{t('common.name')}</TableCell>
                                 <TableCell sx={{ fontWeight: 700 }}>Email</TableCell>
-                                <TableCell sx={{ fontWeight: 700 }}>Trạng thái</TableCell>
-                                <TableCell sx={{ fontWeight: 700 }}>Đăng nhập lần cuối</TableCell>
-                                <TableCell sx={{ fontWeight: 700 }}>Ngày tạo</TableCell>
+                                <TableCell sx={{ fontWeight: 700 }}>{t('common.status')}</TableCell>
+                                <TableCell sx={{ fontWeight: 700 }}>{t('users.lastLogin')}</TableCell>
+                                <TableCell sx={{ fontWeight: 700 }}>{t('common.createdAt')}</TableCell>
                                 <TableCell />
                             </TableRow>
                         </TableHead>
@@ -710,7 +720,7 @@ function PlatformAdminsSection({ currentAdminId }: { currentAdminId?: string }) 
                                     ? (
                                         <TableRow>
                                             <TableCell colSpan={6} align="center" sx={{ py: 4 }}>
-                                                <Typography color="text.secondary">Chưa có platform admin nào</Typography>
+                                                <Typography color="text.secondary">{t('superAdmin.noPlatformAdmins')}</Typography>
                                             </TableCell>
                                         </TableRow>
                                     )
@@ -736,7 +746,7 @@ function PlatformAdminsSection({ currentAdminId }: { currentAdminId?: string }) 
                                                             sx={{ height: 18, fontSize: '0.62rem', fontWeight: 700 }} />
                                                     )}
                                                     {admin.id === currentAdminId && (
-                                                        <Chip label="Bạn" size="small" color="default"
+                                                        <Chip label={t('common.you')} size="small" color="default"
                                                             sx={{ height: 18, fontSize: '0.62rem' }} />
                                                     )}
                                                 </Stack>
@@ -767,8 +777,8 @@ function PlatformAdminsSection({ currentAdminId }: { currentAdminId?: string }) 
                                                     {/* Change password */}
                                                     <Tooltip title={
                                                         !canChangePassword(admin)
-                                                            ? 'Không thể đổi mật khẩu tài khoản root'
-                                                            : 'Đổi mật khẩu'
+                                                            ? t('superAdmin.cantChangePwRoot')
+                                                            : t('superAdmin.changePwTooltip')
                                                     }>
                                                         <span>
                                                             <IconButton size="small" color="warning"
@@ -780,9 +790,9 @@ function PlatformAdminsSection({ currentAdminId }: { currentAdminId?: string }) 
                                                     </Tooltip>
                                                     {/* Toggle active */}
                                                     <Tooltip title={
-                                                        admin.isRoot ? 'Tài khoản root không thể tắt' :
-                                                        admin.id === currentAdminId ? 'Không thể tắt chính mình' :
-                                                        admin.isActive ? 'Tắt' : 'Bật'
+                                                        admin.isRoot ? t('superAdmin.rootCantDeactivate') :
+                                                        admin.id === currentAdminId ? t('superAdmin.cantDeactivateSelf') :
+                                                        admin.isActive ? t('superAdmin.actionOff') : t('superAdmin.actionOn')
                                                     }>
                                                         <span>
                                                             <IconButton size="small"
@@ -795,14 +805,14 @@ function PlatformAdminsSection({ currentAdminId }: { currentAdminId?: string }) 
                                                     </Tooltip>
                                                     {/* Delete */}
                                                     <Tooltip title={
-                                                        admin.isRoot ? 'Không thể xóa tài khoản root' :
-                                                        admin.id === currentAdminId ? 'Không thể xóa chính mình' :
-                                                        'Xóa'
+                                                        admin.isRoot ? t('superAdmin.rootCantDelete') :
+                                                        admin.id === currentAdminId ? t('superAdmin.cantDeleteSelf') :
+                                                        t('common.delete')
                                                     }>
                                                         <span>
                                                             <IconButton size="small" color="error"
                                                                 onClick={() => {
-                                                                    if (!window.confirm(`Xóa admin "${admin.name}"?`)) return;
+                                                                    if (!window.confirm(`${t('common.delete')} admin "${admin.name}"?`)) return;
                                                                     deleteMutation.mutate(admin.id);
                                                                 }}
                                                                 disabled={!canDelete(admin) || deleteMutation.isPending}>
@@ -829,6 +839,7 @@ function PlatformAdminsSection({ currentAdminId }: { currentAdminId?: string }) 
 // ── Version Manager ───────────────────────────────────────────────────────────
 
 function VersionManagerDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+    const { t } = useTranslation();
     const qc = useQueryClient();
     const [form, setForm] = useState({ versionName: '', versionCode: '', downloadUrl: '', releaseNotes: '', isLatest: false });
     const [adding, setAdding] = useState(false);
@@ -868,28 +879,28 @@ function VersionManagerDialog({ open, onClose }: { open: boolean; onClose: () =>
 
     const pushAllMut = useMutation({
         mutationFn: (versionId: string) => softwareHistoryApi.pushOtaAll(versionId),
-        onSuccess: (data) => setOtaMsg(`Đã gửi OTA đến ${data.pushed} thiết bị`),
+        onSuccess: (data) => setOtaMsg(t('superAdmin.pushOtaTooltip') + `: ${data.pushed}`),
     });
 
     const latest = versions.find(v => v.isLatest);
 
     return (
         <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
-            <DialogTitle fontWeight={700}>Quản lý phiên bản ứng dụng</DialogTitle>
+            <DialogTitle fontWeight={700}>{t('superAdmin.versionManagerTitle')}</DialogTitle>
             <DialogContent dividers>
                 {otaMsg && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setOtaMsg('')}>{otaMsg}</Alert>}
 
                 {latest && (
                     <Box sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
                         <Typography variant="body2" color="text.secondary">
-                            Phiên bản mới nhất: <strong>{latest.versionName}</strong>
+                            {t('superAdmin.latestVersion')} <strong>{latest.versionName}</strong>
                         </Typography>
                         <Button
                             size="small" startIcon={<Send />}
                             disabled={pushAllMut.isPending}
                             onClick={() => pushAllMut.mutate(latest.id)}
                         >
-                            Cập nhật tất cả thiết bị lỗi thời
+                            {t('superAdmin.updateAllOutdated')}
                         </Button>
                     </Box>
                 )}
@@ -898,13 +909,13 @@ function VersionManagerDialog({ open, onClose }: { open: boolean; onClose: () =>
                     <Table size="small">
                         <TableHead>
                             <TableRow>
-                                <TableCell>Phiên bản</TableCell>
+                                <TableCell>{t('devices.appVersion')}</TableCell>
                                 <TableCell>Code</TableCell>
-                                <TableCell>Ghi chú</TableCell>
-                                <TableCell>Ngày tạo</TableCell>
+                                <TableCell>{t('common.note')}</TableCell>
+                                <TableCell>{t('common.createdAt')}</TableCell>
                                 <TableCell align="center">Latest</TableCell>
                                 <TableCell align="center">OTA All</TableCell>
-                                <TableCell align="center">Xóa</TableCell>
+                                <TableCell align="center">{t('common.delete')}</TableCell>
                             </TableRow>
                         </TableHead>
                         <TableBody>
@@ -922,7 +933,7 @@ function VersionManagerDialog({ open, onClose }: { open: boolean; onClose: () =>
                                     </TableCell>
                                     <TableCell>{v.createdAt ? new Date(v.createdAt).toLocaleString('vi-VN', { hour12: false }) : '—'}</TableCell>
                                     <TableCell align="center">
-                                        <Tooltip title={v.isLatest ? 'Đang là latest' : 'Đặt làm latest'}>
+                                        <Tooltip title={v.isLatest ? t('superAdmin.alreadyLatest') : t('superAdmin.setLatestTooltip')}>
                                             <span>
                                                 <IconButton size="small" disabled={v.isLatest || setLatestMut.isPending}
                                                     onClick={() => setLatestMut.mutate(v.id)}>
@@ -932,14 +943,14 @@ function VersionManagerDialog({ open, onClose }: { open: boolean; onClose: () =>
                                         </Tooltip>
                                     </TableCell>
                                     <TableCell align="center">
-                                        <Tooltip title="Push OTA tất cả thiết bị lỗi thời">
+                                        <Tooltip title={t('superAdmin.pushOtaTooltip')}>
                                             <IconButton size="small" disabled={pushAllMut.isPending} onClick={() => pushAllMut.mutate(v.id)}>
                                                 <Send fontSize="small" />
                                             </IconButton>
                                         </Tooltip>
                                     </TableCell>
                                     <TableCell align="center">
-                                        <Tooltip title={v.organizationId === null ? 'Phiên bản global — không thể xóa' : 'Xóa'}>
+                                        <Tooltip title={v.organizationId === null ? t('superAdmin.globalVersionCantDelete') : t('common.delete')}>
                                             <span>
                                                 <IconButton size="small" color="error"
                                                     disabled={v.organizationId === null || deleteMut.isPending}
@@ -959,9 +970,9 @@ function VersionManagerDialog({ open, onClose }: { open: boolean; onClose: () =>
 
                 {adding ? (
                     <Stack gap={1.5}>
-                        <Typography variant="subtitle2">Thêm phiên bản mới</Typography>
+                        <Typography variant="subtitle2">{t('superAdmin.addVersionSubtitle')}</Typography>
                         <Stack direction="row" gap={1}>
-                            <TextField label="Tên phiên bản" size="small" required
+                            <TextField label={t('superAdmin.versionNameLabel')} size="small" required
                                 value={form.versionName}
                                 onChange={e => setForm(f => ({ ...f, versionName: e.target.value }))} />
                             <TextField label="Version code" size="small" type="number" required
@@ -984,19 +995,19 @@ function VersionManagerDialog({ open, onClose }: { open: boolean; onClose: () =>
                                     releaseNotes: form.releaseNotes || undefined,
                                     isLatest: form.isLatest,
                                 })}>
-                                Lưu
+                                {t('common.save')}
                             </Button>
-                            <Button size="small" onClick={() => setAdding(false)}>Hủy</Button>
+                            <Button size="small" onClick={() => setAdding(false)}>{t('common.cancel')}</Button>
                         </Stack>
                     </Stack>
                 ) : (
                     <Button startIcon={<Add />} size="small" onClick={() => setAdding(true)}>
-                        Thêm phiên bản
+                        {t('superAdmin.addVersionBtn')}
                     </Button>
                 )}
             </DialogContent>
             <DialogActions sx={{ px: 3, pb: 2 }}>
-                <Button size="small" onClick={onClose}>Đóng</Button>
+                <Button size="small" onClick={onClose}>{t('common.close')}</Button>
             </DialogActions>
         </Dialog>
     );
@@ -1005,6 +1016,7 @@ function VersionManagerDialog({ open, onClose }: { open: boolean; onClose: () =>
 // ── Summary cards ─────────────────────────────────────────────────────────────
 
 function SummaryCards({ orgs }: { orgs: OrgWithStats[] }) {
+    const { t } = useTranslation();
     const total = orgs.length;
     const active = orgs.filter(o => o.isActive).length;
     const totalUsers = orgs.reduce((s, o) => s + o.totalUsers, 0);
@@ -1013,9 +1025,9 @@ function SummaryCards({ orgs }: { orgs: OrgWithStats[] }) {
     const totalBytes = orgs.reduce((s, o) => s + o.totalMediaSizeBytes, 0);
 
     const cards = [
-        { label: 'Tổ chức', value: `${active} / ${total}`, sub: 'active / tổng', icon: <Business />, color: '#6C63FF' },
-        { label: 'Users', value: totalUsers, sub: 'toàn hệ thống', icon: <People />, color: '#4CAF82' },
-        { label: 'Devices', value: totalDevices, sub: 'toàn hệ thống', icon: <Tv />, color: '#FF9800' },
+        { label: t('superAdmin.organizations'), value: `${active} / ${total}`, sub: t('superAdmin.cardActiveTotalSub'), icon: <Business />, color: '#6C63FF' },
+        { label: 'Users', value: totalUsers, sub: t('superAdmin.cardSystemwideSub'), icon: <People />, color: '#4CAF82' },
+        { label: 'Devices', value: totalDevices, sub: t('superAdmin.cardSystemwideSub'), icon: <Tv />, color: '#FF9800' },
         { label: 'Media', value: totalMedia, sub: fmtBytes(totalBytes), icon: <PermMedia />, color: '#2196F3' },
     ];
 
@@ -1057,6 +1069,7 @@ const EMPTY_TMPL_FORM: MailTemplatePayload = { name: '', subject: '', bodyHtml: 
 // ── SMTP Tab ───────────────────────────────────────────────────────────────────
 
 function SmtpTab({ open }: { open: boolean }) {
+    const { t } = useTranslation();
     const dispatch = useAppDispatch();
     const qc = useQueryClient();
     const [editing, setEditing] = useState<MailConfig | null>(null);
@@ -1085,22 +1098,22 @@ function SmtpTab({ open }: { open: boolean }) {
             : mailConfigApi.create(form),
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: ['mail-configs'] });
-            dispatch(pushToast({ severity: 'success', message: editing ? 'Đã cập nhật cấu hình' : 'Đã tạo cấu hình mail' }));
+            dispatch(pushToast({ severity: 'success', message: editing ? t('common.save') : t('superAdmin.addSmtp') }));
             setFormOpen(false);
         },
-        onError: (e: any) => dispatch(pushToast({ severity: 'error', message: e?.response?.data?.error ?? 'Thao tác thất bại' })),
+        onError: (e: any) => dispatch(pushToast({ severity: 'error', message: e?.response?.data?.error ?? t('common.failedAction') })),
     });
 
     const deleteMutation = useMutation({
         mutationFn: (id: string) => mailConfigApi.delete(id),
-        onSuccess: () => { qc.invalidateQueries({ queryKey: ['mail-configs'] }); dispatch(pushToast({ severity: 'success', message: 'Đã xoá cấu hình' })); },
-        onError: (e: any) => dispatch(pushToast({ severity: 'error', message: e?.response?.data?.error ?? 'Xoá thất bại' })),
+        onSuccess: () => { qc.invalidateQueries({ queryKey: ['mail-configs'] }); dispatch(pushToast({ severity: 'success', message: t('common.delete') })); },
+        onError: (e: any) => dispatch(pushToast({ severity: 'error', message: e?.response?.data?.error ?? t('common.failedAction') })),
     });
 
     const activateMutation = useMutation({
         mutationFn: (id: string) => mailConfigApi.activate(id),
-        onSuccess: () => { qc.invalidateQueries({ queryKey: ['mail-configs'] }); dispatch(pushToast({ severity: 'success', message: 'Đã kích hoạt cấu hình' })); },
-        onError: (e: any) => dispatch(pushToast({ severity: 'error', message: e?.response?.data?.error ?? 'Thao tác thất bại' })),
+        onSuccess: () => { qc.invalidateQueries({ queryKey: ['mail-configs'] }); dispatch(pushToast({ severity: 'success', message: t('superAdmin.activateTooltip') })); },
+        onError: (e: any) => dispatch(pushToast({ severity: 'error', message: e?.response?.data?.error ?? t('common.failedAction') })),
     });
 
     const canSave = form.name && form.host && form.port && form.username && form.fromAddress && (editing || form.password);
@@ -1108,24 +1121,24 @@ function SmtpTab({ open }: { open: boolean }) {
     return (
         <>
             <Box sx={{ p: 2, display: 'flex', justifyContent: 'flex-end' }}>
-                <Button size="small" startIcon={<Add />} onClick={openCreate} variant="outlined">Thêm SMTP</Button>
+                <Button size="small" startIcon={<Add />} onClick={openCreate} variant="outlined">{t('superAdmin.addSmtp')}</Button>
             </Box>
             {isLoading ? (
                 <Box px={2}>{[1,2].map(i => <Skeleton key={i} height={56} sx={{ mb: 1 }} />)}</Box>
             ) : configs.length === 0 ? (
                 <Box textAlign="center" py={6}>
                     <Email sx={{ fontSize: 48, color: 'text.disabled', mb: 1 }} />
-                    <Typography variant="body2" color="text.secondary">Chưa có cấu hình SMTP nào</Typography>
+                    <Typography variant="body2" color="text.secondary">{t('superAdmin.noSmtpConfigs')}</Typography>
                 </Box>
             ) : (
                 <Table size="small">
                     <TableHead>
                         <TableRow>
-                            <TableCell sx={{ fontWeight: 700 }}>Tên</TableCell>
+                            <TableCell sx={{ fontWeight: 700 }}>{t('common.name')}</TableCell>
                             <TableCell>Host / Port</TableCell>
                             <TableCell>Username</TableCell>
                             <TableCell>From</TableCell>
-                            <TableCell>Trạng thái</TableCell>
+                            <TableCell>{t('common.status')}</TableCell>
                             <TableCell align="right" />
                         </TableRow>
                     </TableHead>
@@ -1144,23 +1157,23 @@ function SmtpTab({ open }: { open: boolean }) {
                                 </TableCell>
                                 <TableCell>
                                     {c.isActive
-                                        ? <Chip size="small" icon={<CheckCircle sx={{ fontSize: '14px !important' }} />} label="Đang dùng" color="success" />
-                                        : <Chip size="small" label="Không dùng" variant="outlined" color="default" />}
+                                        ? <Chip size="small" icon={<CheckCircle sx={{ fontSize: '14px !important' }} />} label={t('superAdmin.smtpInUse')} color="success" />
+                                        : <Chip size="small" label={t('superAdmin.smtpNotInUse')} variant="outlined" color="default" />}
                                 </TableCell>
                                 <TableCell align="right">
                                     <Stack direction="row" justifyContent="flex-end" gap={0.5}>
                                         {!c.isActive && (
-                                            <Tooltip title="Kích hoạt">
+                                            <Tooltip title={t('superAdmin.activateTooltip')}>
                                                 <IconButton size="small" color="success" onClick={() => activateMutation.mutate(c.id)} disabled={activateMutation.isPending}>
                                                     <CheckCircleOutlined fontSize="small" />
                                                 </IconButton>
                                             </Tooltip>
                                         )}
-                                        <Tooltip title="Chỉnh sửa">
+                                        <Tooltip title={t('common.edit')}>
                                             <IconButton size="small" onClick={() => openEdit(c)}><Edit fontSize="small" /></IconButton>
                                         </Tooltip>
                                         {!c.isActive && (
-                                            <Tooltip title="Xoá">
+                                            <Tooltip title={t('common.delete')}>
                                                 <IconButton size="small" color="error" onClick={() => deleteMutation.mutate(c.id)} disabled={deleteMutation.isPending}>
                                                     <Delete fontSize="small" />
                                                 </IconButton>
@@ -1175,16 +1188,16 @@ function SmtpTab({ open }: { open: boolean }) {
             )}
 
             <Dialog open={formOpen} onClose={() => setFormOpen(false)} maxWidth="sm" fullWidth>
-                <DialogTitle fontWeight={700}>{editing ? 'Chỉnh sửa SMTP' : 'Thêm cấu hình SMTP'}</DialogTitle>
+                <DialogTitle fontWeight={700}>{editing ? t('superAdmin.editSmtpTitle') : t('superAdmin.addSmtpTitle')}</DialogTitle>
                 <DialogContent dividers>
                     <Stack spacing={2} pt={0.5}>
-                        <TextField size="small" label="Tên cấu hình *" value={form.name} onChange={e => set('name', e.target.value)} fullWidth autoFocus />
+                        <TextField size="small" label={t('superAdmin.configNameLabel')} value={form.name} onChange={e => set('name', e.target.value)} fullWidth autoFocus />
                         <Stack direction="row" gap={2}>
                             <TextField size="small" label="SMTP Host *" value={form.host} onChange={e => set('host', e.target.value)} fullWidth />
                             <TextField size="small" label="Port *" type="number" value={form.port} onChange={e => set('port', Number(e.target.value))} sx={{ width: 120 }} />
                         </Stack>
                         <Stack direction="row" gap={2} alignItems="center">
-                            <Typography variant="body2" color="text.secondary">Giao thức:</Typography>
+                            <Typography variant="body2" color="text.secondary">{t('superAdmin.protocolLabel')}</Typography>
                             {(['STARTTLS (587)', 'SSL/TLS (465)'] as const).map((label, i) => (
                                 <Chip key={label} label={label} size="small"
                                     color={form.secure === (i === 1) ? 'primary' : 'default'}
@@ -1194,7 +1207,7 @@ function SmtpTab({ open }: { open: boolean }) {
                         </Stack>
                         <TextField size="small" label="Username *" value={form.username} onChange={e => set('username', e.target.value)} fullWidth />
                         <TextField size="small"
-                            label={editing ? 'Mật khẩu (để trống = giữ nguyên)' : 'Mật khẩu *'}
+                            label={editing ? t('superAdmin.passwordEditLabel') : t('superAdmin.passwordReqLabel')}
                             type={showPass ? 'text' : 'password'}
                             value={form.password} onChange={e => set('password', e.target.value)} fullWidth
                             InputProps={{ endAdornment: (
@@ -1205,14 +1218,14 @@ function SmtpTab({ open }: { open: boolean }) {
                                 </InputAdornment>
                             )}} />
                         <Divider />
-                        <TextField size="small" label="Tên hiển thị (From Name) *" value={form.fromName} onChange={e => set('fromName', e.target.value)} fullWidth />
-                        <TextField size="small" label="Địa chỉ gửi (From Address) *" type="email" value={form.fromAddress} onChange={e => set('fromAddress', e.target.value)} fullWidth />
+                        <TextField size="small" label={t('superAdmin.fromNameLabel')} value={form.fromName} onChange={e => set('fromName', e.target.value)} fullWidth />
+                        <TextField size="small" label={t('superAdmin.fromAddressLabel')} type="email" value={form.fromAddress} onChange={e => set('fromAddress', e.target.value)} fullWidth />
                     </Stack>
                 </DialogContent>
                 <DialogActions sx={{ px: 3, pb: 2 }}>
-                    <Button size="small" onClick={() => setFormOpen(false)}>Huỷ</Button>
+                    <Button size="small" onClick={() => setFormOpen(false)}>{t('common.cancel')}</Button>
                     <Button size="small" variant="contained" disabled={!canSave || saveMutation.isPending} onClick={() => saveMutation.mutate()}>
-                        {saveMutation.isPending ? <CircularProgress size={16} /> : editing ? 'Lưu' : 'Tạo'}
+                        {saveMutation.isPending ? <CircularProgress size={16} /> : editing ? t('common.save') : t('common.create')}
                     </Button>
                 </DialogActions>
             </Dialog>
@@ -1223,6 +1236,7 @@ function SmtpTab({ open }: { open: boolean }) {
 // ── Templates Tab ──────────────────────────────────────────────────────────────
 
 function TemplatesTab({ open }: { open: boolean }) {
+    const { t } = useTranslation();
     const dispatch = useAppDispatch();
     const qc = useQueryClient();
     const [editing, setEditing] = useState<MailTemplate | null>(null);
@@ -1237,9 +1251,9 @@ function TemplatesTab({ open }: { open: boolean }) {
 
     const set = (k: keyof MailTemplatePayload, v: string) => setForm(f => ({ ...f, [k]: v }));
     const openCreate = () => { setEditing(null); setForm(EMPTY_TMPL_FORM); setFormOpen(true); };
-    const openEdit = (t: MailTemplate) => {
-        setEditing(t);
-        setForm({ name: t.name, subject: t.subject, bodyHtml: t.bodyHtml, description: t.description ?? '' });
+    const openEdit = (tmpl: MailTemplate) => {
+        setEditing(tmpl);
+        setForm({ name: tmpl.name, subject: tmpl.subject, bodyHtml: tmpl.bodyHtml, description: tmpl.description ?? '' });
         setFormOpen(true);
     };
 
@@ -1247,16 +1261,16 @@ function TemplatesTab({ open }: { open: boolean }) {
         mutationFn: () => editing ? mailTemplateApi.update(editing.id, form) : mailTemplateApi.create(form),
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: ['mail-templates'] });
-            dispatch(pushToast({ severity: 'success', message: editing ? 'Đã cập nhật template' : 'Đã tạo template' }));
+            dispatch(pushToast({ severity: 'success', message: editing ? t('common.save') : t('superAdmin.addTemplate') }));
             setFormOpen(false);
         },
-        onError: (e: any) => dispatch(pushToast({ severity: 'error', message: e?.response?.data?.error ?? 'Thao tác thất bại' })),
+        onError: (e: any) => dispatch(pushToast({ severity: 'error', message: e?.response?.data?.error ?? t('common.failedAction') })),
     });
 
     const deleteMutation = useMutation({
         mutationFn: (id: string) => mailTemplateApi.delete(id),
-        onSuccess: () => { qc.invalidateQueries({ queryKey: ['mail-templates'] }); dispatch(pushToast({ severity: 'success', message: 'Đã xoá template' })); },
-        onError: (e: any) => dispatch(pushToast({ severity: 'error', message: e?.response?.data?.error ?? 'Xoá thất bại' })),
+        onSuccess: () => { qc.invalidateQueries({ queryKey: ['mail-templates'] }); dispatch(pushToast({ severity: 'success', message: t('common.delete') })); },
+        onError: (e: any) => dispatch(pushToast({ severity: 'error', message: e?.response?.data?.error ?? t('common.failedAction') })),
     });
 
     const canSave = form.name.trim() && form.subject.trim() && form.bodyHtml.trim();
@@ -1267,38 +1281,38 @@ function TemplatesTab({ open }: { open: boolean }) {
     return (
         <>
             <Box sx={{ p: 2, display: 'flex', justifyContent: 'flex-end' }}>
-                <Button size="small" startIcon={<Add />} onClick={openCreate} variant="outlined">Thêm template</Button>
+                <Button size="small" startIcon={<Add />} onClick={openCreate} variant="outlined">{t('superAdmin.addTemplate')}</Button>
             </Box>
             {isLoading ? (
                 <Box px={2}>{[1,2].map(i => <Skeleton key={i} height={56} sx={{ mb: 1 }} />)}</Box>
             ) : templates.length === 0 ? (
                 <Box textAlign="center" py={6}>
                     <Email sx={{ fontSize: 48, color: 'text.disabled', mb: 1 }} />
-                    <Typography variant="body2" color="text.secondary">Chưa có template nào</Typography>
+                    <Typography variant="body2" color="text.secondary">{t('superAdmin.noTemplates')}</Typography>
                 </Box>
             ) : (
                 <Table size="small">
                     <TableHead>
                         <TableRow>
-                            <TableCell sx={{ fontWeight: 700 }}>Tên template</TableCell>
+                            <TableCell sx={{ fontWeight: 700 }}>{t('common.name')}</TableCell>
                             <TableCell>Subject</TableCell>
-                            <TableCell>Mô tả</TableCell>
+                            <TableCell>{t('common.description')}</TableCell>
                             <TableCell align="right" />
                         </TableRow>
                     </TableHead>
                     <TableBody>
-                        {templates.map(t => (
-                            <TableRow key={t.id} hover>
-                                <TableCell><Typography variant="body2" fontWeight={600}>{t.name}</Typography></TableCell>
-                                <TableCell><Typography variant="body2">{t.subject}</Typography></TableCell>
-                                <TableCell><Typography variant="body2" color="text.secondary">{t.description ?? '—'}</Typography></TableCell>
+                        {templates.map(tmpl => (
+                            <TableRow key={tmpl.id} hover>
+                                <TableCell><Typography variant="body2" fontWeight={600}>{tmpl.name}</Typography></TableCell>
+                                <TableCell><Typography variant="body2">{tmpl.subject}</Typography></TableCell>
+                                <TableCell><Typography variant="body2" color="text.secondary">{tmpl.description ?? '—'}</Typography></TableCell>
                                 <TableCell align="right">
                                     <Stack direction="row" justifyContent="flex-end" gap={0.5}>
-                                        <Tooltip title="Chỉnh sửa">
-                                            <IconButton size="small" onClick={() => openEdit(t)}><Edit fontSize="small" /></IconButton>
+                                        <Tooltip title={t('common.edit')}>
+                                            <IconButton size="small" onClick={() => openEdit(tmpl)}><Edit fontSize="small" /></IconButton>
                                         </Tooltip>
-                                        <Tooltip title="Xoá">
-                                            <IconButton size="small" color="error" onClick={() => deleteMutation.mutate(t.id)} disabled={deleteMutation.isPending}>
+                                        <Tooltip title={t('common.delete')}>
+                                            <IconButton size="small" color="error" onClick={() => deleteMutation.mutate(tmpl.id)} disabled={deleteMutation.isPending}>
                                                 <Delete fontSize="small" />
                                             </IconButton>
                                         </Tooltip>
@@ -1311,17 +1325,17 @@ function TemplatesTab({ open }: { open: boolean }) {
             )}
 
             <Dialog open={formOpen} onClose={() => setFormOpen(false)} maxWidth="md" fullWidth>
-                <DialogTitle fontWeight={700}>{editing ? 'Chỉnh sửa template' : 'Thêm template'}</DialogTitle>
+                <DialogTitle fontWeight={700}>{editing ? t('superAdmin.editTemplateTitle') : t('superAdmin.addTemplateTitle')}</DialogTitle>
                 <DialogContent dividers>
                     <Stack spacing={2} pt={0.5}>
                         <Stack direction="row" gap={2}>
-                            <TextField size="small" label="Tên template *" value={form.name} onChange={e => set('name', e.target.value)} fullWidth autoFocus />
-                            <TextField size="small" label="Mô tả" value={form.description} onChange={e => set('description', e.target.value)} fullWidth />
+                            <TextField size="small" label={t('superAdmin.templateNameLabel')} value={form.name} onChange={e => set('name', e.target.value)} fullWidth autoFocus />
+                            <TextField size="small" label={t('common.description')} value={form.description} onChange={e => set('description', e.target.value)} fullWidth />
                         </Stack>
                         <TextField size="small" label="Subject *" value={form.subject} onChange={e => set('subject', e.target.value)} fullWidth />
                         <Box>
                             <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: 'block' }}>
-                                Biến có thể dùng:
+                                {t('superAdmin.templateVarsLabel')}
                             </Typography>
                             <Stack direction="row" flexWrap="wrap" gap={0.5} mb={1}>
                                 {allVars.map(v => (
@@ -1331,7 +1345,7 @@ function TemplatesTab({ open }: { open: boolean }) {
                                 ))}
                             </Stack>
                             <TextField
-                                label="Nội dung HTML *"
+                                label={t('superAdmin.bodyHtmlLabel')}
                                 value={form.bodyHtml}
                                 onChange={e => set('bodyHtml', e.target.value)}
                                 fullWidth multiline minRows={10} maxRows={20}
@@ -1341,9 +1355,9 @@ function TemplatesTab({ open }: { open: boolean }) {
                     </Stack>
                 </DialogContent>
                 <DialogActions sx={{ px: 3, pb: 2 }}>
-                    <Button size="small" onClick={() => setFormOpen(false)}>Huỷ</Button>
+                    <Button size="small" onClick={() => setFormOpen(false)}>{t('common.cancel')}</Button>
                     <Button size="small" variant="contained" disabled={!canSave || saveMutation.isPending} onClick={() => saveMutation.mutate()}>
-                        {saveMutation.isPending ? <CircularProgress size={16} /> : editing ? 'Lưu' : 'Tạo'}
+                        {saveMutation.isPending ? <CircularProgress size={16} /> : editing ? t('common.save') : t('common.create')}
                     </Button>
                 </DialogActions>
             </Dialog>
@@ -1354,6 +1368,7 @@ function TemplatesTab({ open }: { open: boolean }) {
 // ── Mail Settings Tab ─────────────────────────────────────────────────────────
 
 function MailSettingsTab({ open }: { open: boolean }) {
+    const { t } = useTranslation();
     const dispatch = useAppDispatch();
     const qc = useQueryClient();
 
@@ -1379,8 +1394,8 @@ function MailSettingsTab({ open }: { open: boolean }) {
     const updateMutation = useMutation({
         mutationFn: ({ eventType, payload }: { eventType: string; payload: Parameters<typeof mailSettingsApi.update>[1] }) =>
             mailSettingsApi.update(eventType, payload),
-        onSuccess: () => { qc.invalidateQueries({ queryKey: ['mail-settings'] }); dispatch(pushToast({ severity: 'success', message: 'Đã cập nhật' })); },
-        onError: (e: any) => dispatch(pushToast({ severity: 'error', message: e?.response?.data?.error ?? 'Thao tác thất bại' })),
+        onSuccess: () => { qc.invalidateQueries({ queryKey: ['mail-settings'] }); dispatch(pushToast({ severity: 'success', message: t('common.save') })); },
+        onError: (e: any) => dispatch(pushToast({ severity: 'error', message: e?.response?.data?.error ?? t('common.failedAction') })),
     });
 
     const settingMap = new Map(settings.map(s => [s.eventType, s]));
@@ -1391,10 +1406,10 @@ function MailSettingsTab({ open }: { open: boolean }) {
         <Table size="small">
             <TableHead>
                 <TableRow>
-                    <TableCell sx={{ fontWeight: 700 }}>Sự kiện</TableCell>
+                    <TableCell sx={{ fontWeight: 700 }}>Event</TableCell>
                     <TableCell>Template</TableCell>
-                    <TableCell>Cấu hình SMTP</TableCell>
-                    <TableCell align="center">Bật</TableCell>
+                    <TableCell>SMTP</TableCell>
+                    <TableCell align="center">{t('common.enabled')}</TableCell>
                 </TableRow>
             </TableHead>
             <TableBody>
@@ -1415,8 +1430,8 @@ function MailSettingsTab({ open }: { open: boolean }) {
                                         value={s.templateId ?? ''}
                                         onChange={e => updateMutation.mutate({ eventType: et.key, payload: { templateId: e.target.value || null } })}
                                     >
-                                        <MenuItem value=""><em>— Không dùng —</em></MenuItem>
-                                        {templates.map(t => <MenuItem key={t.id} value={t.id}>{t.name}</MenuItem>)}
+                                        <MenuItem value=""><em>—</em></MenuItem>
+                                        {templates.map(tmpl => <MenuItem key={tmpl.id} value={tmpl.id}>{tmpl.name}</MenuItem>)}
                                     </Select>
                                 </FormControl>
                                 {s.templateId && (
@@ -1433,7 +1448,7 @@ function MailSettingsTab({ open }: { open: boolean }) {
                                         value={s.mailConfigId ?? ''}
                                         onChange={e => updateMutation.mutate({ eventType: et.key, payload: { mailConfigId: e.target.value || null } })}
                                     >
-                                        <MenuItem value=""><em>— Mặc định —</em></MenuItem>
+                                        <MenuItem value=""><em>{t('superAdmin.smtpDefault')}</em></MenuItem>
                                         {configs.map(c => (
                                             <MenuItem key={c.id} value={c.id}>
                                                 {c.name} {c.isActive ? '(active)' : ''}
@@ -1461,6 +1476,7 @@ function MailSettingsTab({ open }: { open: boolean }) {
 // ── Test Mail Tab ─────────────────────────────────────────────────────────────
 
 function TestMailTab({ open }: { open: boolean }) {
+    const { t } = useTranslation();
     const dispatch = useAppDispatch();
     const [to, setTo] = useState('');
     const [configId, setConfigId] = useState('');
@@ -1473,22 +1489,22 @@ function TestMailTab({ open }: { open: boolean }) {
 
     const sendMutation = useMutation({
         mutationFn: () => mailConfigApi.testMail(to.trim(), configId || undefined),
-        onSuccess: (res) => dispatch(pushToast({ severity: 'success', message: res.message ?? 'Đã gửi email test' })),
-        onError: (e: any) => dispatch(pushToast({ severity: 'error', message: e?.response?.data?.error ?? 'Gửi thất bại' })),
+        onSuccess: (res) => dispatch(pushToast({ severity: 'success', message: res.message ?? t('superAdmin.sendTestBtn') })),
+        onError: (e: any) => dispatch(pushToast({ severity: 'error', message: e?.response?.data?.error ?? t('common.failedAction') })),
     });
 
     const isValidEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to.trim());
 
     return (
         <Box sx={{ p: 3, maxWidth: 480 }}>
-            <Typography variant="subtitle1" fontWeight={700} mb={2}>Gửi email test</Typography>
+            <Typography variant="subtitle1" fontWeight={700} mb={2}>{t('superAdmin.testMailTitle')}</Typography>
             <Typography variant="body2" color="text.secondary" mb={3}>
-                Dùng để kiểm tra cấu hình SMTP có hoạt động đúng không. Email sẽ được gửi ngay đến địa chỉ bạn nhập.
+                {t('superAdmin.testMailDesc')}
             </Typography>
             <Stack spacing={2}>
                 <TextField
                     size="small"
-                    label="Địa chỉ email nhận *"
+                    label={t('superAdmin.recipientEmailLabel')}
                     type="email"
                     value={to}
                     onChange={e => setTo(e.target.value)}
@@ -1496,16 +1512,16 @@ function TestMailTab({ open }: { open: boolean }) {
                     fullWidth
                     autoFocus
                     error={to.length > 0 && !isValidEmail}
-                    helperText={to.length > 0 && !isValidEmail ? 'Email không hợp lệ' : ''}
+                    helperText={to.length > 0 && !isValidEmail ? t('superAdmin.emailInvalid') : ''}
                 />
                 <FormControl size="small" fullWidth>
-                    <InputLabel>Dùng cấu hình SMTP</InputLabel>
+                    <InputLabel>{t('superAdmin.smtpConfigLabel')}</InputLabel>
                     <Select
-                        label="Dùng cấu hình SMTP"
+                        label={t('superAdmin.smtpConfigLabel')}
                         value={configId}
                         onChange={e => setConfigId(e.target.value)}
                     >
-                        <MenuItem value=""><em>— Dùng cấu hình đang active —</em></MenuItem>
+                        <MenuItem value=""><em>{t('superAdmin.useActiveSmtp')}</em></MenuItem>
                         {configs.map(c => (
                             <MenuItem key={c.id} value={c.id}>
                                 {c.name}
@@ -1521,7 +1537,7 @@ function TestMailTab({ open }: { open: boolean }) {
                     onClick={() => sendMutation.mutate()}
                     sx={{ alignSelf: 'flex-start' }}
                 >
-                    {sendMutation.isPending ? 'Đang gửi...' : 'Gửi test'}
+                    {sendMutation.isPending ? t('common.sending') : t('superAdmin.sendTestBtn')}
                 </Button>
             </Stack>
         </Box>
@@ -1544,7 +1560,7 @@ const EVENT_TRIGGER_META: Record<string, {
         hasDelay: true,
         hasCooldown: true,
         hasAdvanceDays: false,
-        delayLabel: 'Chờ trước khi gửi (tránh cảnh báo nhầm khi mạng chập chờn ngắn)',
+        delayLabel: '',
     },
     DEVICE_ERROR: {
         icon: <span>⚠️</span>,
@@ -1573,6 +1589,7 @@ const EVENT_TRIGGER_META: Record<string, {
 };
 
 function AutoConfigTab({ open }: { open: boolean }) {
+    const { t } = useTranslation();
     const dispatch = useAppDispatch();
     const qc = useQueryClient();
 
@@ -1590,9 +1607,9 @@ function AutoConfigTab({ open }: { open: boolean }) {
             mailSettingsApi.update(eventType, payload),
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: ['mail-settings'] });
-            dispatch(pushToast({ severity: 'success', message: 'Đã lưu cấu hình' }));
+            dispatch(pushToast({ severity: 'success', message: t('common.save') }));
         },
-        onError: (e: any) => dispatch(pushToast({ severity: 'error', message: e?.response?.data?.error ?? 'Thao tác thất bại' })),
+        onError: (e: any) => dispatch(pushToast({ severity: 'error', message: e?.response?.data?.error ?? t('common.failedAction') })),
     });
 
     const settingMap = new Map(settings.map(s => [s.eventType, s]));
@@ -1625,7 +1642,7 @@ function AutoConfigTab({ open }: { open: boolean }) {
     return (
         <Box sx={{ p: 3 }}>
             <Typography variant="body2" color="text.secondary" mb={3}>
-                Cấu hình <strong>thời điểm</strong> và <strong>tần suất</strong> gửi mail tự động cho từng sự kiện. Bật/tắt và chọn template ở tab <em>Cài đặt gửi</em>.
+                {t('superAdmin.autoConfigDesc')}
             </Typography>
             <Stack spacing={3}>
                 {eventTypes.map(et => {
@@ -1643,7 +1660,7 @@ function AutoConfigTab({ open }: { open: boolean }) {
                                     <Stack direction="row" alignItems="center" gap={1} mb={0.5}>
                                         <Typography fontSize="1.1rem">{meta.icon}</Typography>
                                         <Typography variant="subtitle2" fontWeight={700}>{et.label}</Typography>
-                                        <Chip size="small" label={s.isEnabled ? 'Bật' : 'Tắt'} color={s.isEnabled ? 'success' : 'default'} variant="outlined" />
+                                        <Chip size="small" label={s.isEnabled ? t('superAdmin.actionOn') : t('superAdmin.actionOff')} color={s.isEnabled ? 'success' : 'default'} variant="outlined" />
                                     </Stack>
                                     <Typography variant="caption" color="text.secondary">{et.description}</Typography>
                                 </Box>
@@ -1651,7 +1668,7 @@ function AutoConfigTab({ open }: { open: boolean }) {
 
                             {!hasAnyControl && (
                                 <Typography variant="caption" color="text.secondary" fontStyle="italic">
-                                    Sự kiện này gửi ngay lập tức khi xảy ra, không có cấu hình thêm.
+                                    {t('superAdmin.instantEvent')}
                                 </Typography>
                             )}
 
@@ -1659,7 +1676,7 @@ function AutoConfigTab({ open }: { open: boolean }) {
                                 <Box mb={2}>
                                     <Stack direction="row" alignItems="center" gap={2} flexWrap="wrap">
                                         <TextField
-                                            select size="small" label="Độ trễ trước khi gửi"
+                                            select size="small" label={t('superAdmin.delayFieldLabel')}
                                             value={lv.triggerDelayMin}
                                             onChange={e => {
                                                 const v = Number(e.target.value);
@@ -1670,21 +1687,21 @@ function AutoConfigTab({ open }: { open: boolean }) {
                                             sx={{ minWidth: 200 }}
                                         >
                                             {[0,1,2,3,5,10,15,20,30].map(v => (
-                                                <MenuItem key={v} value={v}>{v === 0 ? 'Ngay lập tức' : `${v} phút`}</MenuItem>
+                                                <MenuItem key={v} value={v}>{v === 0 ? t('superAdmin.immediately') : `${v} ${t('common.minutes')}`}</MenuItem>
                                             ))}
                                         </TextField>
                                         <TextField
-                                            size="small" label="Hoặc nhập số phút" type="number"
+                                            size="small" label={t('superAdmin.orEnterMinutes')} type="number"
                                             value={lv.triggerDelayMin}
                                             onChange={e => setLocalVals(prev => ({ ...prev, [et.key]: { ...lv, triggerDelayMin: Math.max(0, Math.min(60, Number(e.target.value))) } }))}
                                             onBlur={() => commit(et.key)}
                                             disabled={!s.isEnabled}
                                             inputProps={{ min: 0, max: 60 }}
                                             sx={{ width: 160 }}
-                                            InputProps={{ endAdornment: <InputAdornment position="end">phút</InputAdornment> }}
+                                            InputProps={{ endAdornment: <InputAdornment position="end">{t('common.minutes')}</InputAdornment> }}
                                         />
                                     </Stack>
-                                    <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>{meta.delayLabel}</Typography>
+                                    <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>{t('superAdmin.delayOfflineHelp')}</Typography>
                                 </Box>
                             )}
 
@@ -1692,7 +1709,7 @@ function AutoConfigTab({ open }: { open: boolean }) {
                                 <Box>
                                     <Stack direction="row" alignItems="center" gap={2} flexWrap="wrap">
                                         <TextField
-                                            select size="small" label="Cooldown giữa 2 lần cảnh báo"
+                                            select size="small" label={t('superAdmin.cooldownFieldLabel')}
                                             value={lv.cooldownHours}
                                             onChange={e => {
                                                 const v = Number(e.target.value);
@@ -1703,22 +1720,22 @@ function AutoConfigTab({ open }: { open: boolean }) {
                                             sx={{ minWidth: 200 }}
                                         >
                                             {[0,1,2,4,6,8,12,24].map(v => (
-                                                <MenuItem key={v} value={v}>{v === 0 ? 'Không giới hạn' : `${v} giờ`}</MenuItem>
+                                                <MenuItem key={v} value={v}>{v === 0 ? t('superAdmin.noLimit') : `${v} ${t('common.hours')}`}</MenuItem>
                                             ))}
                                         </TextField>
                                         <TextField
-                                            size="small" label="Hoặc nhập số giờ" type="number"
+                                            size="small" label={t('superAdmin.orEnterHours')} type="number"
                                             value={lv.cooldownHours}
                                             onChange={e => setLocalVals(prev => ({ ...prev, [et.key]: { ...lv, cooldownHours: Math.max(0, Math.min(168, Number(e.target.value))) } }))}
                                             onBlur={() => commit(et.key)}
                                             disabled={!s.isEnabled}
                                             inputProps={{ min: 0, max: 168 }}
                                             sx={{ width: 160 }}
-                                            InputProps={{ endAdornment: <InputAdornment position="end">giờ</InputAdornment> }}
+                                            InputProps={{ endAdornment: <InputAdornment position="end">{t('common.hours')}</InputAdornment> }}
                                         />
                                     </Stack>
                                     <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
-                                        Không gửi lặp lại cho cùng thiết bị trong vòng {lv.cooldownHours === 0 ? 'bất kỳ thời gian nào' : `${lv.cooldownHours} giờ`}
+                                        {lv.cooldownHours === 0 ? t('superAdmin.cooldownHelpUnlimited') : t('superAdmin.cooldownHelp', { hours: lv.cooldownHours })}
                                     </Typography>
                                 </Box>
                             )}
@@ -1727,7 +1744,7 @@ function AutoConfigTab({ open }: { open: boolean }) {
                                 <Box>
                                     <Stack direction="row" alignItems="center" gap={2} flexWrap="wrap">
                                         <TextField
-                                            select size="small" label="Gửi trước khi hết hạn"
+                                            select size="small" label={t('superAdmin.advanceDaysFieldLabel')}
                                             value={lv.advanceDays}
                                             onChange={e => {
                                                 const v = Number(e.target.value);
@@ -1738,22 +1755,22 @@ function AutoConfigTab({ open }: { open: boolean }) {
                                             sx={{ minWidth: 200 }}
                                         >
                                             {[7,14,30,45,60,90].map(v => (
-                                                <MenuItem key={v} value={v}>{v} ngày</MenuItem>
+                                                <MenuItem key={v} value={v}>{v} {t('common.days')}</MenuItem>
                                             ))}
                                         </TextField>
                                         <TextField
-                                            size="small" label="Hoặc nhập số ngày" type="number"
+                                            size="small" label={t('superAdmin.orEnterDays')} type="number"
                                             value={lv.advanceDays}
                                             onChange={e => setLocalVals(prev => ({ ...prev, [et.key]: { ...lv, advanceDays: Math.max(1, Math.min(365, Number(e.target.value))) } }))}
                                             onBlur={() => commit(et.key)}
                                             disabled={!s.isEnabled}
                                             inputProps={{ min: 1, max: 365 }}
                                             sx={{ width: 160 }}
-                                            InputProps={{ endAdornment: <InputAdornment position="end">ngày</InputAdornment> }}
+                                            InputProps={{ endAdornment: <InputAdornment position="end">{t('common.days')}</InputAdornment> }}
                                         />
                                     </Stack>
                                     <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
-                                        Kiểm tra hàng ngày lúc 08:00, gửi cảnh báo khi license còn ≤ {lv.advanceDays} ngày
+                                        {t('superAdmin.advanceDaysHelp', { days: lv.advanceDays })}
                                     </Typography>
                                 </Box>
                             )}
@@ -1768,6 +1785,7 @@ function AutoConfigTab({ open }: { open: boolean }) {
 // ── MailConfigDialog (tabbed) ─────────────────────────────────────────────────
 
 function MailConfigDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+    const { t } = useTranslation();
     const [tab, setTab] = useState(0);
 
     return (
@@ -1775,16 +1793,16 @@ function MailConfigDialog({ open, onClose }: { open: boolean; onClose: () => voi
             <DialogTitle fontWeight={700}>
                 <Stack direction="row" alignItems="center" gap={1}>
                     <Email color="primary" />
-                    Cấu hình Mail
+                    {t('superAdmin.mailConfigTitle')}
                 </Stack>
             </DialogTitle>
             <Box sx={{ borderBottom: 1, borderColor: 'divider', px: 3 }}>
                 <Tabs value={tab} onChange={(_, v) => setTab(v)}>
                     <Tab label="SMTP" />
                     <Tab label="Templates" />
-                    <Tab label="Cài đặt gửi" />
-                    <Tab label="Tự động" />
-                    <Tab label="Test mail" />
+                    <Tab label={t('superAdmin.mailTabSendSettings')} />
+                    <Tab label={t('superAdmin.mailTabAuto')} />
+                    <Tab label={t('superAdmin.mailTabTestMail')} />
                 </Tabs>
             </Box>
             <DialogContent dividers sx={{ p: 0, minHeight: 400 }}>
@@ -1795,7 +1813,7 @@ function MailConfigDialog({ open, onClose }: { open: boolean; onClose: () => voi
                 {tab === 4 && <TestMailTab open={open} />}
             </DialogContent>
             <DialogActions sx={{ px: 3, pb: 2 }}>
-                <Button onClick={onClose}>Đóng</Button>
+                <Button onClick={onClose}>{t('common.close')}</Button>
             </DialogActions>
         </Dialog>
     );
@@ -1841,6 +1859,7 @@ function StorageOrgRow({ stat, onAdjust }: { stat: OrgStorageStat; onAdjust: (st
 }
 
 function AdjustPoolDialog({ stat, onClose }: { stat: OrgStorageStat; onClose: () => void }) {
+    const { t } = useTranslation();
     const dispatch = useAppDispatch();
     const qc = useQueryClient();
     const [baseMb, setBaseMb] = useState(String(stat.storageBaseMb));
@@ -1859,10 +1878,10 @@ function AdjustPoolDialog({ stat, onClose }: { stat: OrgStorageStat; onClose: ()
         }),
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: ['storage-org-stats'] });
-            dispatch(pushToast({ severity: 'success', message: 'Đã cập nhật pool dung lượng' }));
+            dispatch(pushToast({ severity: 'success', message: t('superAdmin.storageManagerTitle') }));
             onClose();
         },
-        onError: (e: any) => dispatch(pushToast({ severity: 'error', message: e?.response?.data?.message ?? 'Thao tác thất bại' })),
+        onError: (e: any) => dispatch(pushToast({ severity: 'error', message: e?.response?.data?.message ?? t('common.failedAction') })),
     });
 
     const previewBase = parseInt(baseMb) || stat.storageBaseMb;
@@ -1873,11 +1892,11 @@ function AdjustPoolDialog({ stat, onClose }: { stat: OrgStorageStat; onClose: ()
 
     return (
         <Dialog open onClose={onClose} maxWidth="sm" fullWidth>
-            <DialogTitle fontWeight={700}>Điều chỉnh dung lượng — {stat.name}</DialogTitle>
+            <DialogTitle fontWeight={700}>{t('superAdmin.adjustPoolTitle', { name: stat.name })}</DialogTitle>
             <DialogContent dividers>
                 <Stack spacing={2} pt={0.5}>
                     <TextField label="Base (MB)" type="number" value={baseMb} onChange={e => setBaseMb(e.target.value)} size="small" fullWidth
-                        helperText="Dung lượng cơ bản của tổ chức" />
+                        helperText={t('superAdmin.baseMbHelper')} />
                     <Stack direction="row" gap={1.5}>
                         <TextField label="Delta +50 MB" type="number" value={d50} onChange={e => setD50(e.target.value)} size="small" fullWidth
                             helperText={`Hiện: ${stat.ext50mb} gói`} />
@@ -1886,21 +1905,22 @@ function AdjustPoolDialog({ stat, onClose }: { stat: OrgStorageStat; onClose: ()
                         <TextField label="Delta +200 MB" type="number" value={d200} onChange={e => setD200(e.target.value)} size="small" fullWidth
                             helperText={`Hiện: ${stat.ext200mb} gói`} />
                     </Stack>
-                    <TextField label="Ghi chú" value={note} onChange={e => setNote(e.target.value)} size="small" fullWidth multiline rows={2} />
+                    <TextField label={t('common.note')} value={note} onChange={e => setNote(e.target.value)} size="small" fullWidth multiline rows={2} />
                     <Alert severity="info" icon={false}>
-                        Sau điều chỉnh: tổng quota = <strong>{fmtMb(previewTotal)}</strong>
+                        {t('superAdmin.afterAdjust')} <strong>{fmtMb(previewTotal)}</strong>
                     </Alert>
                 </Stack>
             </DialogContent>
             <DialogActions sx={{ px: 3, pb: 2 }}>
-                <Button onClick={onClose}>Hủy</Button>
-                <Button variant="contained" onClick={() => mutation.mutate()} disabled={mutation.isPending}>Lưu</Button>
+                <Button onClick={onClose}>{t('common.cancel')}</Button>
+                <Button variant="contained" onClick={() => mutation.mutate()} disabled={mutation.isPending}>{t('common.save')}</Button>
             </DialogActions>
         </Dialog>
     );
 }
 
 function StoragePurchaseRequestsTab() {
+    const { t } = useTranslation();
     const dispatch = useAppDispatch();
     const qc = useQueryClient();
     const [statusFilter, setStatusFilter] = useState<string>('PENDING');
@@ -1918,11 +1938,11 @@ function StoragePurchaseRequestsTab() {
         onSuccess: (_, vars) => {
             qc.invalidateQueries({ queryKey: ['storage-purchase-requests'] });
             qc.invalidateQueries({ queryKey: ['storage-org-stats'] });
-            dispatch(pushToast({ severity: 'success', message: vars.action === 'approve' ? 'Đã duyệt yêu cầu' : 'Đã từ chối yêu cầu' }));
+            dispatch(pushToast({ severity: 'success', message: vars.action === 'approve' ? t('license.approveStorageReq') : t('license.rejectStorageReq') }));
             setNoteDialog(null);
             setAdminNote('');
         },
-        onError: (e: any) => dispatch(pushToast({ severity: 'error', message: e?.response?.data?.message ?? 'Thao tác thất bại' })),
+        onError: (e: any) => dispatch(pushToast({ severity: 'error', message: e?.response?.data?.message ?? t('common.failedAction') })),
     });
 
     const PKG_COLOR: Record<number, 'default' | 'primary' | 'secondary'> = { 50: 'default', 100: 'primary', 200: 'secondary' };
@@ -1931,7 +1951,7 @@ function StoragePurchaseRequestsTab() {
         <Box>
             <Stack direction="row" gap={1} mb={2}>
                 {['PENDING', 'APPROVED', 'REJECTED', ''].map(s => (
-                    <Chip key={s} label={s || 'Tất cả'} size="small" clickable
+                    <Chip key={s} label={s === 'PENDING' ? t('common.pending') : s === 'APPROVED' ? t('common.approved') : s === 'REJECTED' ? t('common.rejected') : t('common.all')} size="small" clickable
                         variant={statusFilter === s ? 'filled' : 'outlined'}
                         color={s === 'PENDING' ? 'warning' : s === 'APPROVED' ? 'success' : s === 'REJECTED' ? 'error' : 'default'}
                         onClick={() => setStatusFilter(s)} />
@@ -1941,12 +1961,12 @@ function StoragePurchaseRequestsTab() {
                 <Table size="small">
                     <TableHead>
                         <TableRow>
-                            <TableCell sx={{ fontWeight: 700 }}>Tổ chức</TableCell>
-                            <TableCell sx={{ fontWeight: 700 }}>Gói</TableCell>
-                            <TableCell sx={{ fontWeight: 700 }}>SL</TableCell>
-                            <TableCell sx={{ fontWeight: 700 }}>Tổng</TableCell>
-                            <TableCell sx={{ fontWeight: 700 }}>Trạng thái</TableCell>
-                            <TableCell sx={{ fontWeight: 700 }}>Ngày tạo</TableCell>
+                            <TableCell sx={{ fontWeight: 700 }}>{t('superAdmin.organizations')}</TableCell>
+                            <TableCell sx={{ fontWeight: 700 }}>{t('license.package')}</TableCell>
+                            <TableCell sx={{ fontWeight: 700 }}>{t('license.quantity')}</TableCell>
+                            <TableCell sx={{ fontWeight: 700 }}>{t('common.total')}</TableCell>
+                            <TableCell sx={{ fontWeight: 700 }}>{t('common.status')}</TableCell>
+                            <TableCell sx={{ fontWeight: 700 }}>{t('common.createdAt')}</TableCell>
                             <TableCell />
                         </TableRow>
                     </TableHead>
@@ -1955,7 +1975,7 @@ function StoragePurchaseRequestsTab() {
                             <TableRow key={i}>{[...Array(7)].map((__, j) => <TableCell key={j}><Skeleton /></TableCell>)}</TableRow>
                         )) : requests.length === 0 ? (
                             <TableRow><TableCell colSpan={7} align="center" sx={{ py: 4 }}>
-                                <Typography color="text.secondary">Không có yêu cầu nào</Typography>
+                                <Typography color="text.secondary">{t('license.noStorageRequests')}</Typography>
                             </TableCell></TableRow>
                         ) : requests.map(r => (
                             <TableRow key={r.id} hover>
@@ -1965,19 +1985,19 @@ function StoragePurchaseRequestsTab() {
                                 <TableCell><Typography variant="body2" fontWeight={600}>{fmtMb(r.totalMb)}</Typography></TableCell>
                                 <TableCell>
                                     <Chip size="small"
-                                        label={r.status === 'PENDING' ? 'Chờ duyệt' : r.status === 'APPROVED' ? 'Đã duyệt' : 'Từ chối'}
+                                        label={r.status === 'PENDING' ? t('common.pending') : r.status === 'APPROVED' ? t('common.approved') : t('common.rejected')}
                                         color={r.status === 'PENDING' ? 'warning' : r.status === 'APPROVED' ? 'success' : 'error'} />
                                 </TableCell>
                                 <TableCell>{fmtDate(r.createdAt)}</TableCell>
                                 <TableCell align="right">
                                     {r.status === 'PENDING' && (
                                         <Stack direction="row" gap={0.5}>
-                                            <Tooltip title="Duyệt">
+                                            <Tooltip title={t('common.approve')}>
                                                 <IconButton size="small" color="success" onClick={() => { setNoteDialog({ id: r.id, action: 'approve' }); setAdminNote(''); }}>
                                                     <CheckCircle fontSize="small" />
                                                 </IconButton>
                                             </Tooltip>
-                                            <Tooltip title="Từ chối">
+                                            <Tooltip title={t('common.reject')}>
                                                 <IconButton size="small" color="error" onClick={() => { setNoteDialog({ id: r.id, action: 'reject' }); setAdminNote(''); }}>
                                                     <Cancel fontSize="small" />
                                                 </IconButton>
@@ -1994,19 +2014,19 @@ function StoragePurchaseRequestsTab() {
             {noteDialog && (
                 <Dialog open onClose={() => setNoteDialog(null)} maxWidth="xs" fullWidth>
                     <DialogTitle fontWeight={700}>
-                        {noteDialog.action === 'approve' ? 'Duyệt yêu cầu' : 'Từ chối yêu cầu'}
+                        {noteDialog.action === 'approve' ? t('license.approveStorageReq') : t('license.rejectStorageReq')}
                     </DialogTitle>
                     <DialogContent>
-                        <TextField label="Ghi chú admin" value={adminNote} onChange={e => setAdminNote(e.target.value)}
+                        <TextField label={t('license.adminNoteOptional')} value={adminNote} onChange={e => setAdminNote(e.target.value)}
                             fullWidth multiline rows={2} size="small" sx={{ mt: 1 }} />
                     </DialogContent>
                     <DialogActions sx={{ px: 3, pb: 2 }}>
-                        <Button onClick={() => setNoteDialog(null)}>Hủy</Button>
+                        <Button onClick={() => setNoteDialog(null)}>{t('common.cancel')}</Button>
                         <Button variant="contained"
                             color={noteDialog.action === 'approve' ? 'success' : 'error'}
                             disabled={resolveMutation.isPending}
                             onClick={() => resolveMutation.mutate({ id: noteDialog.id, action: noteDialog.action, note: adminNote })}>
-                            {noteDialog.action === 'approve' ? 'Duyệt' : 'Từ chối'}
+                            {noteDialog.action === 'approve' ? t('common.approve') : t('common.reject')}
                         </Button>
                     </DialogActions>
                 </Dialog>
@@ -2016,6 +2036,7 @@ function StoragePurchaseRequestsTab() {
 }
 
 function StorageManagerDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+    const { t } = useTranslation();
     const [tab, setTab] = useState(0);
     const [adjustStat, setAdjustStat] = useState<OrgStorageStat | null>(null);
 
@@ -2030,12 +2051,12 @@ function StorageManagerDialog({ open, onClose }: { open: boolean; onClose: () =>
             <DialogTitle fontWeight={700}>
                 <Stack direction="row" alignItems="center" gap={1}>
                     <Storage color="primary" />
-                    Quản lý dung lượng
+                    {t('superAdmin.storageManagerTitle')}
                 </Stack>
             </DialogTitle>
             <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ px: 3, borderBottom: 1, borderColor: 'divider' }}>
-                <Tab label="Tổ chức" />
-                <Tab label="Yêu cầu mua" />
+                <Tab label={t('superAdmin.storageTabOrgs')} />
+                <Tab label={t('superAdmin.storageTabRequests')} />
             </Tabs>
             <DialogContent sx={{ pt: 2 }}>
                 {tab === 0 && (
@@ -2043,10 +2064,10 @@ function StorageManagerDialog({ open, onClose }: { open: boolean; onClose: () =>
                         <Table size="small">
                             <TableHead>
                                 <TableRow>
-                                    <TableCell sx={{ fontWeight: 700 }}>Tổ chức</TableCell>
-                                    <TableCell sx={{ fontWeight: 700 }}>Sử dụng</TableCell>
-                                    <TableCell sx={{ fontWeight: 700 }}>Cấu hình pool</TableCell>
-                                    <TableCell sx={{ fontWeight: 700 }}>Yêu cầu</TableCell>
+                                    <TableCell sx={{ fontWeight: 700 }}>{t('superAdmin.organizations')}</TableCell>
+                                    <TableCell sx={{ fontWeight: 700 }}>{t('storage.used')}</TableCell>
+                                    <TableCell sx={{ fontWeight: 700 }}>{t('storage.title')}</TableCell>
+                                    <TableCell sx={{ fontWeight: 700 }}>{t('license.requests')}</TableCell>
                                     <TableCell />
                                 </TableRow>
                             </TableHead>
@@ -2055,7 +2076,7 @@ function StorageManagerDialog({ open, onClose }: { open: boolean; onClose: () =>
                                     <TableRow key={i}>{[...Array(5)].map((__, j) => <TableCell key={j}><Skeleton /></TableCell>)}</TableRow>
                                 )) : stats.length === 0 ? (
                                     <TableRow><TableCell colSpan={5} align="center" sx={{ py: 4 }}>
-                                        <Typography color="text.secondary">Chưa có tổ chức nào</Typography>
+                                        <Typography color="text.secondary">{t('superAdmin.noOrgsYet')}</Typography>
                                     </TableCell></TableRow>
                                 ) : stats.map(s => (
                                     <StorageOrgRow key={s.id} stat={s} onAdjust={setAdjustStat} />
@@ -2067,7 +2088,7 @@ function StorageManagerDialog({ open, onClose }: { open: boolean; onClose: () =>
                 {tab === 1 && <StoragePurchaseRequestsTab />}
             </DialogContent>
             <DialogActions sx={{ px: 3, pb: 2 }}>
-                <Button onClick={onClose}>Đóng</Button>
+                <Button onClick={onClose}>{t('common.close')}</Button>
             </DialogActions>
 
             {adjustStat && <AdjustPoolDialog stat={adjustStat} onClose={() => setAdjustStat(null)} />}
@@ -2081,6 +2102,7 @@ export default function SuperAdminPage() {
     const dispatch = useAppDispatch();
     const navigate = useNavigate();
     const qc = useQueryClient();
+    const { t } = useTranslation();
     const currentUser = useAppSelector(s => s.auth.user);
     const isPlatformAdmin = useAppSelector(s => s.auth.isPlatformAdmin);
     const platformAdmin = useAppSelector(s => s.auth.platformAdmin);
@@ -2117,12 +2139,12 @@ export default function SuperAdminPage() {
         mutationFn: (org: OrgWithStats) => organizationsApi.setStatus(org.id, !org.isActive),
         onSuccess: (_, org) => {
             qc.invalidateQueries({ queryKey: ['super-admin-orgs'] });
-            const action = org.isActive ? 'tắt' : 'bật';
-            dispatch(pushToast({ severity: 'success', message: `Đã ${action} tổ chức "${org.name}"` }));
+            const action = org.isActive ? t('superAdmin.actionOff') : t('superAdmin.actionOn');
+            dispatch(pushToast({ severity: 'success', message: `${action}: "${org.name}"` }));
             setConfirmOrg(null);
         },
         onError: (e: any) => {
-            dispatch(pushToast({ severity: 'error', message: e?.response?.data?.message ?? 'Thao tác thất bại' }));
+            dispatch(pushToast({ severity: 'error', message: e?.response?.data?.message ?? t('common.failedAction') }));
             setConfirmOrg(null);
         },
     });
@@ -2143,23 +2165,23 @@ export default function SuperAdminPage() {
                             />
                         </Stack>
                         <Typography variant="body2" color="text.secondary">
-                            Quản lý tất cả tổ chức trên hệ thống
+                            {t('superAdmin.subtitle')}
                         </Typography>
                     </Box>
                     <Stack direction="row" gap={1}>
                         <Button variant="outlined" startIcon={<Email />} onClick={() => setMailConfigOpen(true)}>
-                            Cấu hình mail
+                            {t('superAdmin.mailConfig')}
                         </Button>
                         <Badge badgeContent={pendingStorageCount || undefined} color="error">
                             <Button variant="outlined" startIcon={<Storage />} onClick={() => setStorageOpen(true)}>
-                                Dung lượng
+                                {t('superAdmin.storage')}
                             </Button>
                         </Badge>
                         <Button variant="outlined" startIcon={<SystemUpdate />} onClick={() => setVersionMgrOpen(true)}>
-                            Phiên bản app
+                            {t('superAdmin.appVersion')}
                         </Button>
                         <Button startIcon={<Add />} onClick={() => setCreateOrgOpen(true)}>
-                            Tạo tổ chức
+                            {t('superAdmin.createOrg')}
                         </Button>
                     </Stack>
                 </Stack>
@@ -2167,7 +2189,7 @@ export default function SuperAdminPage() {
 
             {isError && (
                 <Alert severity="error" sx={{ mb: 3, borderRadius: 2 }}>
-                    Không thể tải danh sách tổ chức.
+                    {t('superAdmin.cantLoadOrgs')}
                 </Alert>
             )}
 
@@ -2187,11 +2209,11 @@ export default function SuperAdminPage() {
                         <TableHead>
                             <TableRow>
                                 <TableCell sx={{ width: 36 }} />
-                                <TableCell sx={{ fontWeight: 700 }}>Tổ chức</TableCell>
-                                <TableCell sx={{ fontWeight: 700 }}>Trạng thái</TableCell>
-                                <TableCell sx={{ fontWeight: 700 }}>Tài nguyên</TableCell>
+                                <TableCell sx={{ fontWeight: 700 }}>{t('superAdmin.organizations')}</TableCell>
+                                <TableCell sx={{ fontWeight: 700 }}>{t('common.status')}</TableCell>
+                                <TableCell sx={{ fontWeight: 700 }}>Resources</TableCell>
                                 <TableCell sx={{ fontWeight: 700 }}>Media size</TableCell>
-                                <TableCell sx={{ fontWeight: 700 }}>Ngày tạo</TableCell>
+                                <TableCell sx={{ fontWeight: 700 }}>{t('common.createdAt')}</TableCell>
                                 <TableCell />
                             </TableRow>
                         </TableHead>
@@ -2208,7 +2230,7 @@ export default function SuperAdminPage() {
                                     ? (
                                         <TableRow>
                                             <TableCell colSpan={7} align="center" sx={{ py: 6 }}>
-                                                <Typography color="text.secondary">Chưa có tổ chức nào</Typography>
+                                                <Typography color="text.secondary">{t('superAdmin.noOrgsYet')}</Typography>
                                             </TableCell>
                                         </TableRow>
                                     )

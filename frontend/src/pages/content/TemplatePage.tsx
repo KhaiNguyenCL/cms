@@ -1,17 +1,19 @@
 import { DashboardCustomize } from '@mui/icons-material';
+import { useTranslation } from 'react-i18next';
 import PlaceholderPage from '@pages/shared/PlaceholderPage';
 
 export default function TemplatePage() {
+    const { t } = useTranslation();
     return (
         <PlaceholderPage
             icon={<DashboardCustomize />}
             title="Template"
-            description="Tạo và quản lý các template bố cục màn hình cho nội dung."
+            description={t('templates.description')}
             features={[
-                'Thiết kế layout với nhiều vùng hiển thị',
-                'Template cho ticker, video wall, split screen',
-                'Thư viện template có sẵn',
-                'Preview trực tiếp trên thiết bị',
+                t('templates.feature1'),
+                t('templates.feature2'),
+                t('templates.feature3'),
+                t('templates.feature4'),
             ]}
         />
     );

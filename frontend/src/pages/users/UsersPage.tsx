@@ -11,6 +11,7 @@ import {
     Search, PersonAdd, MoreVert, Edit, Block, DeleteForever,
     CheckCircle, Cancel, Person, Shield, Visibility, VisibilityOff, Info,
 } from '@mui/icons-material';
+import { useTranslation } from 'react-i18next';
 import { useAppDispatch, useAppSelector } from '@store/hooks';
 import { pushToast } from '@store/slices/uiSlice';
 import { usersApi, type CreateUserPayload, type UpdateUserPayload } from '@api/users.api';
@@ -21,21 +22,21 @@ import type { User } from '@/types';
 const ROLE_CFG = {
     SUPER_ADMIN: {
         label: 'Super Admin', color: '#F44336', icon: <Shield sx={{ fontSize: 12 }} />,
-        perms: ['Toàn quyền hệ thống', 'Quản lý tất cả tổ chức', 'Cấp phép & quota'],
+        perms: ['users.permSuperAdminAll', 'users.permSuperAdminOrgs', 'users.permSuperAdminLicense'],
     },
     ADMIN: {
         label: 'Admin', color: '#FF6584', icon: <Shield sx={{ fontSize: 12 }} />,
-        perms: ['Toàn quyền trong tổ chức', 'Tạo/xóa user, device, media', 'Xóa playlist, schedule', 'OTA update, cấp phép device'],
+        perms: ['users.permAdminAll', 'users.permAdminCrud', 'users.permAdminPlaylist', 'users.permAdminOta'],
     },
     MANAGER: {
         label: 'Manager', color: '#6C63FF', icon: <Person sx={{ fontSize: 12 }} />,
-        perms: ['Tạo/sửa playlist, schedule, media', 'Gửi lệnh đến device', 'Xem device & user', 'Không thể xóa'],
+        perms: ['users.permManagerCrud', 'users.permManagerCmd', 'users.permManagerView', 'users.permManagerNoDelete'],
     },
     VIEWER: {
         label: 'Viewer', color: '#29B6F6', icon: <Visibility sx={{ fontSize: 12 }} />,
-        perms: ['Chỉ xem media, playlist, schedule', 'Không thể tạo, sửa, xóa', 'Không xem device & user'],
+        perms: ['users.permViewerView', 'users.permViewerNoEdit', 'users.permViewerNoDevice'],
     },
-} as const;
+};
 
 const STATUS_CFG = {
     ACTIVE:    { label: 'Active',    color: 'success' as const, icon: <CheckCircle sx={{ fontSize: 12 }} /> },
@@ -44,6 +45,7 @@ const STATUS_CFG = {
 } as const;
 
 function RoleChip({ role }: { role: User['role'] }) {
+    const { t } = useTranslation();
     const cfg = ROLE_CFG[role] ?? ROLE_CFG.VIEWER;
     return (
         <Tooltip
@@ -51,7 +53,7 @@ function RoleChip({ role }: { role: User['role'] }) {
                 <Box>
                     <Typography variant="caption" fontWeight={700} display="block" mb={0.5}>{cfg.label}</Typography>
                     {cfg.perms.map(p => (
-                        <Typography key={p} variant="caption" display="block" sx={{ opacity: 0.9 }}>• {p}</Typography>
+                        <Typography key={p} variant="caption" display="block" sx={{ opacity: 0.9 }}>• {t(p)}</Typography>
                     ))}
                 </Box>
             }
@@ -74,12 +76,13 @@ function RoleChip({ role }: { role: User['role'] }) {
 }
 
 function RoleLegend() {
+    const { t } = useTranslation();
     const roles = (['ADMIN', 'MANAGER', 'VIEWER'] as const);
     return (
         <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', alignItems: 'center' }}>
             <Stack direction="row" alignItems="center" gap={0.5}>
                 <Info sx={{ fontSize: 14, color: 'text.disabled' }} />
-                <Typography variant="caption" color="text.secondary" fontWeight={600}>Quyền theo role:</Typography>
+                <Typography variant="caption" color="text.secondary" fontWeight={600}>{t('users.roleLegendTitle')}</Typography>
             </Stack>
             {roles.map(role => {
                 const cfg = ROLE_CFG[role];
@@ -90,7 +93,7 @@ function RoleLegend() {
                         title={
                             <Box>
                                 {cfg.perms.map(p => (
-                                    <Typography key={p} variant="caption" display="block" sx={{ opacity: 0.9 }}>• {p}</Typography>
+                                    <Typography key={p} variant="caption" display="block" sx={{ opacity: 0.9 }}>• {t(p)}</Typography>
                                 ))}
                             </Box>
                         }
@@ -129,6 +132,7 @@ function StatusChip({ status }: { status: User['status'] }) {
 // ── Create User Dialog ─────────────────────────────────────────────────────────
 
 function CreateUserDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+    const { t } = useTranslation();
     const dispatch = useAppDispatch();
     const qc = useQueryClient();
     const [form, setForm] = useState<CreateUserPayload>({ email: '', password: '', role: 'VIEWER' });
@@ -139,11 +143,11 @@ function CreateUserDialog({ open, onClose }: { open: boolean; onClose: () => voi
         mutationFn: () => usersApi.create(form),
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: ['users'] });
-            dispatch(pushToast({ severity: 'success', message: 'Tạo user thành công' }));
+            dispatch(pushToast({ severity: 'success', message: t('users.createUser') }));
             handleClose();
         },
         onError: (e: any) => {
-            setError(e?.response?.data?.message ?? 'Tạo user thất bại');
+            setError(e?.response?.data?.message ?? t('users.createFailed'));
         },
     });
 
@@ -159,24 +163,24 @@ function CreateUserDialog({ open, onClose }: { open: boolean; onClose: () => voi
 
     return (
         <Dialog open={open} onClose={handleClose} maxWidth="xs" fullWidth>
-            <DialogTitle fontWeight={700}>Tạo user mới</DialogTitle>
+            <DialogTitle fontWeight={700}>{t('users.createUser')}</DialogTitle>
             <DialogContent dividers>
                 <Stack spacing={2.5} pt={0.5}>
                     {error && <Alert severity="error" sx={{ borderRadius: 2 }}>{error}</Alert>}
 
                     <TextField
-                        label="Email" type="email" fullWidth required size="small"
+                        label={t('users.email')} type="email" fullWidth required size="small"
                         value={form.email}
                         onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
                         autoFocus
                     />
 
                     <TextField
-                        label="Mật khẩu" fullWidth required size="small"
+                        label={t('auth.password')} fullWidth required size="small"
                         type={showPw ? 'text' : 'password'}
                         value={form.password}
                         onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
-                        helperText="Tối thiểu 8 ký tự, có số và ký tự đặc biệt"
+                        helperText="Min 8 chars, include digit & special char"
                         InputProps={{
                             endAdornment: (
                                 <InputAdornment position="end">
@@ -195,21 +199,21 @@ function CreateUserDialog({ open, onClose }: { open: boolean; onClose: () => voi
                             label="Role"
                             onChange={e => setForm(f => ({ ...f, role: e.target.value as CreateUserPayload['role'] }))}
                         >
-                            <MuiMenuItem value="ADMIN">Admin — toàn quyền</MuiMenuItem>
-                            <MuiMenuItem value="MANAGER">Manager — quản lý nội dung</MuiMenuItem>
-                            <MuiMenuItem value="VIEWER">Viewer — chỉ xem</MuiMenuItem>
+                            <MuiMenuItem value="ADMIN">{t('users.roleAdminDesc')}</MuiMenuItem>
+                            <MuiMenuItem value="MANAGER">{t('users.roleManagerDesc')}</MuiMenuItem>
+                            <MuiMenuItem value="VIEWER">{t('users.roleViewerDesc')}</MuiMenuItem>
                         </Select>
                     </FormControl>
                 </Stack>
             </DialogContent>
             <DialogActions sx={{ px: 3, pb: 2 }}>
-                <Button size="small" onClick={handleClose}>Huỷ</Button>
+                <Button size="small" onClick={handleClose}>{t('common.cancel')}</Button>
                 <Button
                     size="small"
                     disabled={!valid || mutation.isPending}
                     onClick={() => mutation.mutate()}
                 >
-                    {mutation.isPending ? 'Đang tạo...' : 'Tạo user'}
+                    {mutation.isPending ? t('common.creating') : t('users.createUser')}
                 </Button>
             </DialogActions>
         </Dialog>
@@ -226,6 +230,7 @@ function EditUserDialog({
     onClose: () => void;
     isSelf: boolean;
 }) {
+    const { t } = useTranslation();
     const dispatch = useAppDispatch();
     const qc = useQueryClient();
     const [role, setRole] = useState<User['role']>(user?.role ?? 'VIEWER');
@@ -239,11 +244,11 @@ function EditUserDialog({
         mutationFn: (payload: UpdateUserPayload) => usersApi.update(user!.id, payload),
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: ['users'] });
-            dispatch(pushToast({ severity: 'success', message: 'Cập nhật user thành công' }));
+            dispatch(pushToast({ severity: 'success', message: t('users.updateSuccess') }));
             onClose();
         },
         onError: (e: any) => {
-            setError(e?.response?.data?.message ?? 'Cập nhật thất bại');
+            setError(e?.response?.data?.message ?? t('users.updateFailed'));
         },
     });
 
@@ -258,7 +263,7 @@ function EditUserDialog({
 
     return (
         <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
-            <DialogTitle fontWeight={700}>Chỉnh sửa user</DialogTitle>
+            <DialogTitle fontWeight={700}>{t('users.editUser')}</DialogTitle>
             <DialogContent dividers>
                 <Stack spacing={2.5} pt={0.5}>
                     {error && <Alert severity="error" sx={{ borderRadius: 2 }}>{error}</Alert>}
@@ -272,12 +277,12 @@ function EditUserDialog({
                     />
 
                     <TextField
-                        label="Mật khẩu mới"
+                        label={t('users.newPassword')}
                         value={password}
                         onChange={e => setPassword(e.target.value)}
                         fullWidth size="small"
                         type={showPw ? 'text' : 'password'}
-                        placeholder="Để trống nếu không đổi"
+                        placeholder={t('users.passwordPlaceholder')}
                         InputProps={{
                             endAdornment: (
                                 <InputAdornment position="end">
@@ -296,17 +301,17 @@ function EditUserDialog({
                             label="Role"
                             onChange={e => setRole(e.target.value as User['role'])}
                         >
-                            <MuiMenuItem value="ADMIN">Admin — toàn quyền</MuiMenuItem>
-                            <MuiMenuItem value="MANAGER">Manager — quản lý nội dung</MuiMenuItem>
-                            <MuiMenuItem value="VIEWER">Viewer — chỉ xem</MuiMenuItem>
+                            <MuiMenuItem value="ADMIN">{t('users.roleAdminDesc')}</MuiMenuItem>
+                            <MuiMenuItem value="MANAGER">{t('users.roleManagerDesc')}</MuiMenuItem>
+                            <MuiMenuItem value="VIEWER">{t('users.roleViewerDesc')}</MuiMenuItem>
                         </Select>
                     </FormControl>
 
                     <FormControl fullWidth size="small">
-                        <InputLabel>Trạng thái</InputLabel>
+                        <InputLabel>{t('common.status')}</InputLabel>
                         <Select
                             value={status}
-                            label="Trạng thái"
+                            label={t('common.status')}
                             disabled={isSelf}
                             onChange={e => setStatus(e.target.value as User['status'])}
                         >
@@ -315,20 +320,20 @@ function EditUserDialog({
                         </Select>
                         {isSelf && (
                             <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>
-                                Không thể tự vô hiệu hoá tài khoản của mình
+                                {t('users.cannotDisableSelf')}
                             </Typography>
                         )}
                     </FormControl>
                 </Stack>
             </DialogContent>
             <DialogActions sx={{ px: 3, pb: 2 }}>
-                <Button size="small" onClick={onClose}>Huỷ</Button>
+                <Button size="small" onClick={onClose}>{t('common.cancel')}</Button>
                 <Button
                     size="small"
                     disabled={!hasChange || mutation.isPending}
                     onClick={() => mutation.mutate(payload)}
                 >
-                    {mutation.isPending ? 'Đang lưu...' : 'Lưu thay đổi'}
+                    {mutation.isPending ? t('common.saving') : t('users.saveChanges')}
                 </Button>
             </DialogActions>
         </Dialog>
@@ -346,6 +351,7 @@ function UserActionsMenu({
     onEdit: () => void;
     onHardDelete: () => void;
 }) {
+    const { t } = useTranslation();
     const [anchor, setAnchor] = useState<null | HTMLElement>(null);
     const open = Boolean(anchor);
 
@@ -360,16 +366,16 @@ function UserActionsMenu({
             <Menu anchorEl={anchor} open={open} onClose={() => setAnchor(null)}
                 slotProps={{ paper: { sx: { minWidth: 180 } } }}>
                 <MuiMenuItem onClick={() => { setAnchor(null); onEdit(); }}>
-                    <Edit fontSize="small" sx={{ mr: 1.5 }} /> Chỉnh sửa
+                    <Edit fontSize="small" sx={{ mr: 1.5 }} /> {t('common.edit')}
                 </MuiMenuItem>
-                <Tooltip title={isSelf ? 'Không thể tự xoá' : ''} placement="left">
+                <Tooltip title={isSelf ? t('users.cantDeleteSelf') : ''} placement="left">
                     <span>
                         <MuiMenuItem
                             onClick={() => { setAnchor(null); onHardDelete(); }}
                             disabled={isSelf}
                             sx={{ color: 'error.main' }}
                         >
-                            <DeleteForever fontSize="small" sx={{ mr: 1.5 }} /> Xoá vĩnh viễn
+                            <DeleteForever fontSize="small" sx={{ mr: 1.5 }} /> {t('users.deleteForeverAction')}
                         </MuiMenuItem>
                     </span>
                 </Tooltip>
@@ -383,6 +389,7 @@ function UserActionsMenu({
 export default function UsersPage() {
     const dispatch = useAppDispatch();
     const qc = useQueryClient();
+    const { t } = useTranslation();
     const currentUser = useAppSelector(s => s.auth.user);
     const isAdmin = currentUser?.role === 'ADMIN' || currentUser?.role === 'SUPER_ADMIN';
 
@@ -412,10 +419,10 @@ const hardDeleteMutation = useMutation({
         mutationFn: (id: string) => usersApi.hardDelete(id),
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: ['users'] });
-            dispatch(pushToast({ severity: 'success', message: 'Đã xoá user vĩnh viễn' }));
+            dispatch(pushToast({ severity: 'success', message: t('common.success') }));
         },
         onError: (e: any) => {
-            dispatch(pushToast({ severity: 'error', message: e?.response?.data?.message ?? 'Xoá thất bại' }));
+            dispatch(pushToast({ severity: 'error', message: e?.response?.data?.message ?? t('common.failedAction') }));
         },
     });
 
@@ -438,14 +445,14 @@ const handleHardDelete = (user: User) => {
             {/* Header */}
             <Stack direction="row" justifyContent="space-between" alignItems="center" mb={3}>
                 <Box>
-                    <Typography variant="h4" fontWeight={700}>Users</Typography>
+                    <Typography variant="h4" fontWeight={700}>{t('users.title')}</Typography>
                     <Typography variant="body2" color="text.secondary">
-                        {data?.total ?? 0} người dùng trong tổ chức
+                        {data?.total ?? 0} {t('users.title').toLowerCase()}
                     </Typography>
                 </Box>
                 {isAdmin && (
                     <Button startIcon={<PersonAdd />} onClick={() => setCreateOpen(true)}>
-                        Tạo user
+                        {t('users.createUser')}
                     </Button>
                 )}
             </Stack>
@@ -453,7 +460,7 @@ const handleHardDelete = (user: User) => {
             {/* Filters */}
             <Stack direction="row" gap={2} mb={3} flexWrap="wrap">
                 <TextField
-                    placeholder="Tìm theo email..."
+                    placeholder={t('users.searchPlaceholder')}
                     value={search}
                     onChange={e => { setSearch(e.target.value); setPage(0); }}
                     size="small"
@@ -469,16 +476,16 @@ const handleHardDelete = (user: User) => {
                 <FormControl size="small" sx={{ width: 140 }}>
                     <InputLabel>Role</InputLabel>
                     <Select value={roleFilter} label="Role" onChange={e => { setRoleFilter(e.target.value); setPage(0); }}>
-                        <MuiMenuItem value="">Tất cả</MuiMenuItem>
+                        <MuiMenuItem value="">{t('common.all')}</MuiMenuItem>
                         <MuiMenuItem value="ADMIN">Admin</MuiMenuItem>
                         <MuiMenuItem value="MANAGER">Manager</MuiMenuItem>
                         <MuiMenuItem value="VIEWER">Viewer</MuiMenuItem>
                     </Select>
                 </FormControl>
                 <FormControl size="small" sx={{ width: 140 }}>
-                    <InputLabel>Trạng thái</InputLabel>
-                    <Select value={statusFilter} label="Trạng thái" onChange={e => { setStatusFilter(e.target.value); setPage(0); }}>
-                        <MuiMenuItem value="">Tất cả</MuiMenuItem>
+                    <InputLabel>{t('common.status')}</InputLabel>
+                    <Select value={statusFilter} label={t('common.status')} onChange={e => { setStatusFilter(e.target.value); setPage(0); }}>
+                        <MuiMenuItem value="">{t('common.all')}</MuiMenuItem>
                         <MuiMenuItem value="ACTIVE">Active</MuiMenuItem>
                         <MuiMenuItem value="INACTIVE">Inactive</MuiMenuItem>
                     </Select>
@@ -494,7 +501,7 @@ const handleHardDelete = (user: User) => {
                     <Table>
                         <TableHead>
                             <TableRow>
-                                {['Email', 'Role', 'Trạng thái', 'Ngày tạo', ''].map(h => (
+                                {['Email', 'Role', t('common.status'), t('common.createdAt'), ''].map(h => (
                                     <TableCell key={h} sx={{ color: 'text.secondary', fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>
                                         {h}
                                     </TableCell>
@@ -513,7 +520,7 @@ const handleHardDelete = (user: User) => {
                                 : users.length === 0 ? (
                                     <TableRow>
                                         <TableCell colSpan={5} align="center" sx={{ py: 6, color: 'text.secondary' }}>
-                                            Không tìm thấy user nào
+                                            {t('users.noUsersFound')}
                                         </TableCell>
                                     </TableRow>
                                 )
@@ -538,7 +545,7 @@ const handleHardDelete = (user: User) => {
                                                         <Typography variant="body2" fontWeight={600} component="div">
                                                             {user.email}
                                                             {isSelf && (
-                                                                <Chip label="Bạn" size="small" sx={{ ml: 1, height: 16, fontSize: '0.6rem' }} />
+                                                                <Chip label={t('users.youLabel')} size="small" sx={{ ml: 1, height: 16, fontSize: '0.6rem' }} />
                                                             )}
                                                         </Typography>
                                                         <Typography variant="caption" color="text.secondary">
@@ -558,10 +565,10 @@ const handleHardDelete = (user: User) => {
                                                 {confirmUserId?.id === user.id ? (
                                                     <Stack direction="row" spacing={0.5} alignItems="center" justifyContent="flex-end">
                                                         <Typography variant="caption" color={confirmUserId.action === 'delete' ? 'error' : 'warning.main'}>
-                                                            {confirmUserId.action === 'delete' ? 'Xoá vĩnh viễn?' : 'Disable?'}
+                                                            {confirmUserId.action === 'delete' ? t('users.deleteForever') : 'Disable?'}
                                                         </Typography>
-                                                        <Button size="small" color={confirmUserId.action === 'delete' ? 'error' : 'warning'} onClick={handleConfirm}>Có</Button>
-                                                        <Button size="small" onClick={() => setConfirmUserId(null)}>Không</Button>
+                                                        <Button size="small" color={confirmUserId.action === 'delete' ? 'error' : 'warning'} onClick={handleConfirm}>{t('common.yes')}</Button>
+                                                        <Button size="small" onClick={() => setConfirmUserId(null)}>{t('common.no')}</Button>
                                                     </Stack>
                                                 ) : (
                                                     <UserActionsMenu
@@ -589,7 +596,7 @@ const handleHardDelete = (user: User) => {
                         onPageChange={(_, p) => setPage(p)}
                         rowsPerPage={LIMIT}
                         rowsPerPageOptions={[LIMIT]}
-                        labelDisplayedRows={({ from, to, count }) => `${from}–${to} / ${count}`}
+                        labelDisplayedRows={({ from, to, count }) => t('common.displayedRows', { from, to, count })}
                     />
                 )}
             </Card>

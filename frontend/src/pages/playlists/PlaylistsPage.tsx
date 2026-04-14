@@ -28,6 +28,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { playlistsApi } from '@api/playlists.api';
 import { mediaApi } from '@api/media.api';
 import { getApiError } from '@api/client';
+import { useTranslation } from 'react-i18next';
 import { useAppDispatch } from '@store/hooks';
 import { pushToast } from '@store/slices/uiSlice';
 import type { Playlist, PlaylistItem, Media } from '@/types';
@@ -88,6 +89,7 @@ function AddMediaDialog({
     existingMediaIds: Set<string>;
     hasForeverItem: boolean;
 }) {
+    const { t } = useTranslation();
     const [search, setSearch] = useState('');
     const [page, setPage] = useState(1);
     const [selected, setSelected] = useState<Map<string, number>>(new Map());
@@ -149,13 +151,13 @@ function AddMediaDialog({
             <DialogTitle fontWeight={700}>
                 <Stack direction="row" justifyContent="space-between" alignItems="center">
                     <Box>
-                        <Typography variant="h6" fontWeight={700}>Thêm Media vào Playlist</Typography>
+                        <Typography variant="h6" fontWeight={700}>{t('playlists.addMedia')}</Typography>
                         <Typography variant="caption" color="text.secondary">
-                            {selected.size > 0 ? `${selected.size} đã chọn` : 'Click để chọn media'}
+                            {selected.size > 0 ? `${selected.size} ${t('common.select').toLowerCase()}` : t('common.select')}
                         </Typography>
                     </Box>
                     {selected.size > 0 && (
-                        <Chip label={`${selected.size} đã chọn`} color="primary" size="small" onDelete={() => setSelected(new Map())} />
+                        <Chip label={`${selected.size} ${t('common.select').toLowerCase()}`} color="primary" size="small" onDelete={() => setSelected(new Map())} />
                     )}
                 </Stack>
             </DialogTitle>
@@ -163,7 +165,7 @@ function AddMediaDialog({
             <DialogContent dividers sx={{ p: 0 }}>
                 <Box sx={{ p: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
                     <TextField
-                        placeholder="Tìm media..."
+                        placeholder={t('playlists.searchMedia')}
                         value={search}
                         onChange={(e) => { setSearch(e.target.value); setPage(1); }}
                         size="small" fullWidth
@@ -180,7 +182,7 @@ function AddMediaDialog({
                     ) : !allMedia.length ? (
                         <Box textAlign="center" py={4}>
                             <Image sx={{ fontSize: 48, color: 'text.secondary', mb: 1 }} />
-                            <Typography color="text.secondary">Không tìm thấy media</Typography>
+                            <Typography color="text.secondary">{t('playlists.noMediaFound')}</Typography>
                         </Box>
                     ) : (
                         <Grid container spacing={1.5}>
@@ -209,10 +211,10 @@ function AddMediaDialog({
                                                 </Box>
                                             )}
                                             {alreadyIn && (
-                                                <Chip label="Đã có" size="small" sx={{ position: 'absolute', top: 6, left: 6, zIndex: 2, fontSize: '0.6rem', bgcolor: 'rgba(0,0,0,0.7)', color: 'white' }} />
+                                                <Chip label={t('playlists.alreadyAdded')} size="small" sx={{ position: 'absolute', top: 6, left: 6, zIndex: 2, fontSize: '0.6rem', bgcolor: 'rgba(0,0,0,0.7)', color: 'white' }} />
                                             )}
                                             {isProcessing && (
-                                                <Chip label="Đang xử lý" size="small" sx={{ position: 'absolute', top: 6, left: 6, zIndex: 2, fontSize: '0.6rem', bgcolor: 'rgba(237,108,2,0.85)', color: 'white' }} />
+                                                <Chip label={t('playlists.processing')} size="small" sx={{ position: 'absolute', top: 6, left: 6, zIndex: 2, fontSize: '0.6rem', bgcolor: 'rgba(237,108,2,0.85)', color: 'white' }} />
                                             )}
                                             <Box sx={{ aspectRatio: '16/9', bgcolor: 'action.hover', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                                 {thumbUrl
@@ -235,7 +237,7 @@ function AddMediaDialog({
                                                                 const alreadyForever = loopForever.has(media.id);
                                                                 const otherHasForever = !alreadyForever && (hasForeverItem || loopForever.size > 0);
                                                                 return (
-                                                                    <Tooltip title={alreadyForever ? 'Tắt hiện mãi' : otherHasForever ? 'Playlist đã có item hiện mãi' : 'Hiện mãi'}>
+                                                                    <Tooltip title={alreadyForever ? t('playlists.turnOffLoop') : otherHasForever ? t('playlists.playlistHasLoop') : t('playlists.loopForever')}>
                                                                         <span>
                                                                             <IconButton size="small" color={alreadyForever ? 'primary' : 'default'} onClick={() => toggleLoop(media.id)} disabled={otherHasForever} sx={{ p: 0.5 }}>
                                                                                 <AllInclusive sx={{ fontSize: 16 }} />
@@ -245,7 +247,7 @@ function AddMediaDialog({
                                                                 );
                                                             })()}
                                                             {loopForever.has(media.id)
-                                                                ? <Typography variant="caption" color="primary" fontWeight={700}>Hiện mãi</Typography>
+                                                                ? <Typography variant="caption" color="primary" fontWeight={700}>{t('playlists.loopForever')}</Typography>
                                                                 : <Chip
                                                                     size="small"
                                                                     label={fmtDuration(selected.get(media.id) ?? 10)}
@@ -274,15 +276,15 @@ function AddMediaDialog({
                         onRowsPerPageChange={() => {}}
                         rowsPerPageOptions={[24]}
                         labelRowsPerPage=""
-                        labelDisplayedRows={({ from, to, count }) => `${from}–${to} / ${count}`}
+                        labelDisplayedRows={({ from, to, count }) => t('common.displayedRows', { from, to, count })}
                     />
                 )}
             </DialogContent>
 
             <DialogActions sx={{ px: 3, pb: 2 }}>
-                <Button size="small" onClick={handleClose}>Huỷ</Button>
+                <Button size="small" onClick={handleClose}>{t('common.cancel')}</Button>
                 <Button size="small" disabled={selected.size === 0} startIcon={<Add />} onClick={handleConfirm}>
-                    Thêm {selected.size > 0 ? selected.size : ''} vào danh sách
+                    {t('common.add')}{selected.size > 0 ? ` (${selected.size})` : ''}
                 </Button>
             </DialogActions>
         </Dialog>
@@ -298,6 +300,7 @@ function DurationCell({
     item: LocalItem;
     onChange: (itemId: string, secs: number) => void;
 }) {
+    const { t } = useTranslation();
     const isForever = (item.duration ?? 0) >= 86400;
     const [editing, setEditing] = useState(false);
     const [value, setValue] = useState(String(item.duration ?? 10));
@@ -310,7 +313,7 @@ function DurationCell({
 
     if (isForever) {
         return (
-            <Tooltip title="Click để đổi thời gian">
+            <Tooltip title={t('playlists.clickChangeDuration')}>
                 <Chip label="∞" size="small" color="primary" variant="outlined"
                     onClick={() => { setValue('10'); setEditing(true); }}
                     sx={{ fontWeight: 700, cursor: 'pointer', fontSize: '0.65rem', minWidth: 36 }} />
@@ -334,7 +337,7 @@ function DurationCell({
     }
 
     return (
-        <Tooltip title="Click để đổi thời gian">
+        <Tooltip title={t('playlists.clickChangeDuration')}>
             <Chip label={`${item.duration ?? 10}s`} size="small" variant="outlined"
                 onClick={() => { setValue(String(item.duration ?? 10)); setEditing(true); }}
                 sx={{ fontWeight: 600, cursor: 'pointer', fontSize: '0.65rem', minWidth: 36, '&:hover': { bgcolor: 'action.hover' } }} />
@@ -352,6 +355,7 @@ function TimestampMarker({
     prevItem: LocalItem | null; isFinal?: boolean;
     onDurationChange: (itemId: string, secs: number) => void;
 }) {
+    const { t } = useTranslation();
     const [editing, setEditing] = useState(false);
     const [value, setValue] = useState('');
 
@@ -388,7 +392,7 @@ function TimestampMarker({
                 />
             ) : (
                 <Tooltip
-                    title={isEditable ? 'Click để chỉnh mốc (thay đổi thời lượng media trước)' : ''}
+                    title={isEditable ? t('playlists.clickChangeTimestamp') : ''}
                     disableHoverListener={!isEditable}
                 >
                     <Typography
@@ -414,16 +418,16 @@ function TimestampMarker({
 // ── Transition config ─────────────────────────────────────────────────────────
 
 const TRANSITIONS = [
-    { value: 'FADE',  label: 'Crossfade',    icon: <BlurOn    sx={{ fontSize: 15 }} /> },
-    { value: 'NONE',  label: 'Tức thì',      icon: <FlashOn   sx={{ fontSize: 15 }} /> },
-    { value: 'SLIDE', label: 'Trượt',        icon: <SwipeLeft sx={{ fontSize: 15 }} /> },
-    { value: 'ZOOM',  label: 'Phóng to',     icon: <ZoomIn    sx={{ fontSize: 15 }} /> },
-    { value: 'WIPE',  label: 'Màn trập',     icon: <SwipeLeft sx={{ fontSize: 15, transform: 'scaleX(-1)' }} /> },
-    { value: 'FLIP',  label: 'Lật trang',    icon: <ZoomIn    sx={{ fontSize: 15, transform: 'scaleX(-1)' }} /> },
+    { value: 'FADE',  labelKey: 'playlists.transitionFade',       icon: <BlurOn    sx={{ fontSize: 15 }} /> },
+    { value: 'NONE',  labelKey: 'playlists.transitionInstant',    icon: <FlashOn   sx={{ fontSize: 15 }} /> },
+    { value: 'SLIDE', labelKey: 'playlists.transitionSlide',      icon: <SwipeLeft sx={{ fontSize: 15 }} /> },
+    { value: 'ZOOM',  labelKey: 'playlists.transitionZoom',       icon: <ZoomIn    sx={{ fontSize: 15 }} /> },
+    { value: 'WIPE',  labelKey: 'playlists.transitionShutter',    icon: <SwipeLeft sx={{ fontSize: 15, transform: 'scaleX(-1)' }} /> },
+    { value: 'FLIP',  labelKey: 'playlists.transitionFlip',       icon: <ZoomIn    sx={{ fontSize: 15, transform: 'scaleX(-1)' }} /> },
 ];
 
 function getTransition(val?: string | null) {
-    return TRANSITIONS.find(t => t.value === (val ?? 'FADE')) ?? TRANSITIONS[0];
+    return TRANSITIONS.find(tr => tr.value === (val ?? 'FADE')) ?? TRANSITIONS[0];
 }
 
 const DEFAULT_TRANS_MS = 800;
@@ -442,6 +446,7 @@ function TransitionPicker({
     durationMs?: number | null;
     onDurationChange: (ms: number) => void;
 }) {
+    const { t } = useTranslation();
     const [anchor, setAnchor] = useState<HTMLElement | null>(null);
     const committedMs = durationMs ?? DEFAULT_TRANS_MS;
     const [displayMs, setDisplayMs] = useState<number>(committedMs);
@@ -460,11 +465,11 @@ function TransitionPicker({
                     borderTop: '1px dashed', borderBottom: '1px dashed', borderColor: 'divider',
                 }}
             >
-                <Tooltip title="Hiệu ứng chuyển cảnh — nhấn để thay đổi">
+                <Tooltip title={t('playlists.transitionEffect')}>
                     <Chip
                         size="small"
                         icon={current.icon}
-                        label={current.label}
+                        label={t(current.labelKey)}
                         onClick={e => setAnchor(e.currentTarget)}
                         variant="outlined"
                         sx={{ fontSize: '0.65rem', height: 20, cursor: 'pointer', borderStyle: 'dashed', flexShrink: 0 }}
@@ -493,14 +498,14 @@ function TransitionPicker({
                 anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
                 transformOrigin={{ vertical: 'top', horizontal: 'center' }}
             >
-                {TRANSITIONS.map(t => (
+                {TRANSITIONS.map(tr => (
                     <MenuItem
-                        key={t.value}
-                        selected={t.value === (value ?? 'FADE')}
-                        onClick={() => { onChange(t.value); setAnchor(null); }}
+                        key={tr.value}
+                        selected={tr.value === (value ?? 'FADE')}
+                        onClick={() => { onChange(tr.value); setAnchor(null); }}
                         sx={{ fontSize: '0.8rem', gap: 1, minWidth: 140 }}
                     >
-                        {t.icon}{t.label}
+                        {tr.icon}{t(tr.labelKey)}
                     </MenuItem>
                 ))}
             </Menu>
@@ -519,6 +524,7 @@ function SortableItem({
     totalItems: number;
     onPreview: (item: LocalItem) => void;
 }) {
+    const { t } = useTranslation();
     const [loopDialog, setLoopDialog] = useState(false);
 
     const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
@@ -577,11 +583,11 @@ function SortableItem({
                                     ({fmtDuration(item.media.duration)})
                                 </Typography>
                             )}
-                            {item._isNew && <Chip label="Chưa lưu" size="small" color="primary" variant="outlined" sx={{ fontSize: '0.55rem', height: 14, px: 0.3 }} />}
+                            {item._isNew && <Chip label={t('playlists.unsaved')} size="small" color="primary" variant="outlined" sx={{ fontSize: '0.55rem', height: 14, px: 0.3 }} />}
                         </Stack>
                     </Box>
 
-                    <Tooltip title={isForever ? 'Tắt hiện mãi' : 'Hiện mãi (lặp liên tục)'}>
+                    <Tooltip title={isForever ? t('playlists.turnOffLoop') : t('playlists.loopForever')}>
                         <span>
                             <IconButton size="small" color={isForever ? 'primary' : 'default'} onClick={handleLoopClick} sx={{ mr: 0.5 }}>
                                 <AllInclusive sx={{ fontSize: 22 }} />
@@ -600,16 +606,14 @@ function SortableItem({
             </Box>
 
             <Dialog open={loopDialog} onClose={() => setLoopDialog(false)} maxWidth="xs" fullWidth>
-                <DialogTitle fontWeight={700}>Không thể bật Hiện mãi</DialogTitle>
+                <DialogTitle fontWeight={700}>{t('playlists.loopOnlyTitle')}</DialogTitle>
                 <DialogContent dividers>
                     <Typography variant="body2">
-                        Chế độ <strong>Hiện mãi</strong> chỉ có thể bật khi playlist chỉ có <strong>1 media</strong>.
-                        <br /><br />
-                        Hiện tại playlist có <strong>{totalItems} media</strong>.
+                        {t('playlists.loopOnlyMsg', { count: totalItems })}
                     </Typography>
                 </DialogContent>
                 <DialogActions sx={{ px: 3, pb: 2 }}>
-                    <Button size="small" onClick={() => setLoopDialog(false)}>Đã hiểu</Button>
+                    <Button size="small" onClick={() => setLoopDialog(false)}>{t('playlists.understand')}</Button>
                 </DialogActions>
             </Dialog>
         </>
@@ -662,11 +666,12 @@ function inStyle(type: string, entered: boolean): React.CSSProperties {
 }
 
 function MediaLayer({ item, url, onVideoEnd }: { item: LocalItem | undefined; url?: string; onVideoEnd?: () => void }) {
+    const { t } = useTranslation();
     const isVideo = item?.media?.type === 'VIDEO';
     if (!url) return (
         <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', color: 'grey.700' }}>
             {typeIcon(item?.media?.type)}
-            <Typography variant="caption" mt={1}>Không tải được media</Typography>
+            <Typography variant="caption" mt={1}>{t('playlists.noMediaLoad')}</Typography>
         </Box>
     );
     if (isVideo) return (
@@ -909,6 +914,7 @@ function PlaylistPreviewDialog({ open, onClose, items }: {
 // ── Playlist right panel ──────────────────────────────────────────────────────
 
 function PlaylistPanel({ playlistId, onClose }: { playlistId: string | null; onClose: () => void }) {
+    const { t } = useTranslation();
     if (!playlistId) {
         return (
             <Box sx={{
@@ -920,7 +926,7 @@ function PlaylistPanel({ playlistId, onClose }: { playlistId: string | null; onC
                 position: 'sticky', top: 80, alignSelf: 'flex-start',
             }}>
                 <QueueMusic sx={{ fontSize: 48, mb: 1, opacity: 0.4 }} />
-                <Typography variant="body2" textAlign="center">Click vào playlist để xem danh sách media</Typography>
+                <Typography variant="body2" textAlign="center">{t('playlists.clickToView')}</Typography>
             </Box>
         );
     }
@@ -928,6 +934,7 @@ function PlaylistPanel({ playlistId, onClose }: { playlistId: string | null; onC
 }
 
 function PlaylistPanelInner({ playlistId, onClose }: { playlistId: string; onClose: () => void }) {
+    const { t } = useTranslation();
     const dispatch = useAppDispatch();
     const qc = useQueryClient();
     const [addMediaOpen, setAddMediaOpen] = useState(false);
@@ -1071,10 +1078,10 @@ function PlaylistPanelInner({ playlistId, onClose }: { playlistId: string; onClo
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: ['playlist', playlistId] });
             qc.invalidateQueries({ queryKey: ['playlists'] });
-            dispatch(pushToast({ severity: 'success', message: 'Playlist đã được lưu và cập nhật thiết bị' }));
+            dispatch(pushToast({ severity: 'success', message: t('playlists.savedAndUpdated') }));
         },
         onError: (err) => {
-            dispatch(pushToast({ severity: 'error', message: getApiError(err, 'Lưu thất bại, vui lòng thử lại') }));
+            dispatch(pushToast({ severity: 'error', message: getApiError(err, t('playlists.saveFailed')) }));
         },
     });
 
@@ -1086,17 +1093,17 @@ function PlaylistPanelInner({ playlistId, onClose }: { playlistId: string; onClo
 
     const startTimes = useMemo(() => {
         const times: number[] = [];
-        let t = 0;
+        let acc = 0;
         for (const item of localItems) {
-            times.push(t);
+            times.push(acc);
             const dur = item.duration ?? 10;
             if (dur >= 86400) {
                 while (times.length < localItems.length) times.push(-1);
                 break;
             }
-            t += dur;
+            acc += dur;
         }
-        while (times.length < localItems.length) times.push(t);
+        while (times.length < localItems.length) times.push(acc);
         return times;
     }, [localItems]);
 
@@ -1133,14 +1140,14 @@ function PlaylistPanelInner({ playlistId, onClose }: { playlistId: string; onClo
                         <Typography variant="caption" color="text.secondary">
                             {localItems.length} items
                             {totalSecs !== null && ` · ${fmtTotalDuration(totalSecs)}`}
-                            {isDirty && <Typography component="span" variant="caption" color="warning.main"> · Chưa lưu</Typography>}
+                            {isDirty && <Typography component="span" variant="caption" color="warning.main"> · {t('playlists.unsaved')}</Typography>}
                         </Typography>
                     </Box>
                     <Stack direction="row" alignItems="center" gap={0.5}>
                         <Button size="small" color="inherit" onClick={handleDiscard}
                             disabled={!isDirty || saveMutation.isPending}
                             sx={{ fontSize: '0.72rem', color: isDirty ? 'text.secondary' : 'text.disabled' }}>
-                            Huỷ
+                            {t('common.cancel')}
                         </Button>
                         <Button
                             size="small"
@@ -1151,7 +1158,7 @@ function PlaylistPanelInner({ playlistId, onClose }: { playlistId: string; onClo
                             onClick={() => saveMutation.mutate()}
                             sx={{ fontSize: '0.72rem' }}
                         >
-                            {saveMutation.isPending ? 'Đang lưu…' : 'Save'}
+                            {saveMutation.isPending ? t('common.saving') : t('common.save')}
                         </Button>
                         <Button size="small" startIcon={<PlayCircle />}
                             onClick={() => { setPreviewStartIdx(0); setPreviewOpen(true); }}
@@ -1159,9 +1166,9 @@ function PlaylistPanelInner({ playlistId, onClose }: { playlistId: string; onClo
                             Preview
                         </Button>
                         <Button size="small" startIcon={<Add />} onClick={() => setAddMediaOpen(true)}>
-                            Thêm
+                            {t('common.add')}
                         </Button>
-                        <Tooltip title="Đóng panel">
+                        <Tooltip title={t('playlists.closePanel')}>
                             <IconButton size="small" onClick={onClose}>
                                 <Close sx={{ fontSize: 16 }} />
                             </IconButton>
@@ -1179,9 +1186,9 @@ function PlaylistPanelInner({ playlistId, onClose }: { playlistId: string; onClo
                 ) : !localItems.length ? (
                     <Box textAlign="center" py={6}>
                         <QueueMusic sx={{ fontSize: 40, color: 'text.secondary', mb: 1 }} />
-                        <Typography variant="body2" color="text.secondary">Playlist chưa có media</Typography>
+                        <Typography variant="body2" color="text.secondary">{t('playlists.emptyPlaylist')}</Typography>
                         <Button size="small" variant="outlined" startIcon={<Add />} onClick={() => setAddMediaOpen(true)} sx={{ mt: 1.5 }}>
-                            Thêm Media
+                            {t('playlists.addMediaBtn')}
                         </Button>
                     </Box>
                 ) : (
@@ -1247,6 +1254,7 @@ function PlaylistPanelInner({ playlistId, onClose }: { playlistId: string; onClo
 function CreatePlaylistDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
     const dispatch = useAppDispatch();
     const qc = useQueryClient();
+    const { t } = useTranslation();
     const [name, setName] = useState('');
     const [description, setDescription] = useState('');
 
@@ -1254,25 +1262,25 @@ function CreatePlaylistDialog({ open, onClose }: { open: boolean; onClose: () =>
         mutationFn: () => playlistsApi.create({ name, description: description || undefined }),
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: ['playlists'] });
-            dispatch(pushToast({ severity: 'success', message: `Playlist "${name}" đã được tạo!` }));
+            dispatch(pushToast({ severity: 'success', message: t('playlists.createdSuccess', { name }) }));
             setName(''); setDescription('');
             onClose();
         },
-        onError: (err) => dispatch(pushToast({ severity: 'error', message: getApiError(err, 'Tạo playlist thất bại') })),
+        onError: (err) => dispatch(pushToast({ severity: 'error', message: getApiError(err, t('playlists.createFailed')) })),
     });
 
     return (
         <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-            <DialogTitle fontWeight={700}>Tạo Playlist mới</DialogTitle>
+            <DialogTitle fontWeight={700}>{t('playlists.newPlaylistTitle')}</DialogTitle>
             <DialogContent dividers>
                 <Stack spacing={2.5} pt={0.5}>
-                    <TextField label="Tên" value={name} onChange={(e) => setName(e.target.value)} fullWidth required size="small" />
-                    <TextField label="Mô tả" value={description} onChange={(e) => setDescription(e.target.value)} fullWidth multiline rows={2} size="small" />
+                    <TextField label={t('common.name')} value={name} onChange={(e) => setName(e.target.value)} fullWidth required size="small" />
+                    <TextField label={t('common.description')} value={description} onChange={(e) => setDescription(e.target.value)} fullWidth multiline rows={2} size="small" />
                 </Stack>
             </DialogContent>
             <DialogActions sx={{ px: 3, pb: 2 }}>
-                <Button size="small" onClick={onClose}>Huỷ</Button>
-                <Button size="small" disabled={!name || mutation.isPending} onClick={() => mutation.mutate()}>Tạo</Button>
+                <Button size="small" onClick={onClose}>{t('common.cancel')}</Button>
+                <Button size="small" disabled={!name || mutation.isPending} onClick={() => mutation.mutate()}>{t('common.create')}</Button>
             </DialogActions>
         </Dialog>
     );
@@ -1285,6 +1293,7 @@ function EditPlaylistDialog({ playlist, open, onClose, onDeleted }: {
 }) {
     const dispatch = useAppDispatch();
     const qc = useQueryClient();
+    const { t } = useTranslation();
     const [name, setName] = useState(playlist.name);
     const [description, setDescription] = useState(playlist.description ?? '');
     const [confirmDel, setConfirmDel] = useState(false);
@@ -1299,54 +1308,54 @@ function EditPlaylistDialog({ playlist, open, onClose, onDeleted }: {
         mutationFn: () => playlistsApi.update(playlist.id, { name, description: description || undefined }),
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: ['playlists'] });
-            dispatch(pushToast({ severity: 'success', message: 'Playlist đã được cập nhật' }));
+            dispatch(pushToast({ severity: 'success', message: t('playlists.updateSuccess') }));
             onClose();
         },
-        onError: (err) => dispatch(pushToast({ severity: 'error', message: getApiError(err, 'Cập nhật thất bại') })),
+        onError: (err) => dispatch(pushToast({ severity: 'error', message: getApiError(err, t('playlists.updateFailed')) })),
     });
 
     const deleteMutation = useMutation({
         mutationFn: () => playlistsApi.delete(playlist.id),
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: ['playlists'] });
-            dispatch(pushToast({ severity: 'success', message: 'Đã xoá playlist' }));
+            dispatch(pushToast({ severity: 'success', message: t('playlists.deleteSuccess') }));
             onDeleted?.();
             onClose();
         },
-        onError: (err) => dispatch(pushToast({ severity: 'error', message: getApiError(err, 'Xoá thất bại') })),
+        onError: (err) => dispatch(pushToast({ severity: 'error', message: getApiError(err, t('playlists.deleteFailed')) })),
     });
 
     const isPending = mutation.isPending || deleteMutation.isPending;
 
     return (
         <Dialog open={open} onClose={isPending ? undefined : onClose} maxWidth="xs" fullWidth TransitionProps={{ onEnter: handleEnter }}>
-            <DialogTitle fontWeight={700}>Chỉnh sửa Playlist</DialogTitle>
+            <DialogTitle fontWeight={700}>{t('playlists.editTitle')}</DialogTitle>
             <DialogContent dividers>
                 <Stack spacing={2.5} sx={{ mt: 0.5 }}>
-                    <TextField label="Tên playlist" value={name} onChange={(e) => setName(e.target.value)} fullWidth required autoFocus />
-                    <TextField label="Mô tả (tuỳ chọn)" value={description} onChange={(e) => setDescription(e.target.value)} fullWidth multiline rows={3} />
+                    <TextField label={t('playlists.playlistName')} value={name} onChange={(e) => setName(e.target.value)} fullWidth required autoFocus />
+                    <TextField label={`${t('common.description')} (${t('common.optional')})`} value={description} onChange={(e) => setDescription(e.target.value)} fullWidth multiline rows={3} />
                 </Stack>
             </DialogContent>
             <DialogActions sx={{ px: 3, pb: 2, justifyContent: 'space-between' }}>
                 <Box>
                     {confirmDel ? (
                         <Stack direction="row" spacing={1} alignItems="center">
-                            <Typography variant="body2" color="error">Xoá playlist này?</Typography>
+                            <Typography variant="body2" color="error">{t('playlists.deleteConfirm')}</Typography>
                             <Button size="small" color="error" disabled={deleteMutation.isPending}
                                 startIcon={deleteMutation.isPending ? <CircularProgress size={14} color="inherit" /> : undefined}
-                                onClick={() => deleteMutation.mutate()}>Xoá</Button>
-                            <Button size="small" onClick={() => setConfirmDel(false)} disabled={deleteMutation.isPending}>Không</Button>
+                                onClick={() => deleteMutation.mutate()}>{t('common.delete')}</Button>
+                            <Button size="small" onClick={() => setConfirmDel(false)} disabled={deleteMutation.isPending}>{t('common.no')}</Button>
                         </Stack>
                     ) : (
                         <Button size="small" color="error" startIcon={<Delete />} onClick={() => setConfirmDel(true)}>
-                            Xoá
+                            {t('common.delete')}
                         </Button>
                     )}
                 </Box>
                 <Box sx={{ display: 'flex', gap: 1 }}>
-                    <Button size="small" onClick={onClose} disabled={isPending}>Huỷ</Button>
+                    <Button size="small" onClick={onClose} disabled={isPending}>{t('common.cancel')}</Button>
                     <Button size="small" disabled={!name.trim() || isPending} onClick={() => mutation.mutate()}>
-                        {mutation.isPending ? 'Đang lưu...' : 'Lưu'}
+                        {mutation.isPending ? t('common.saving') : t('common.save')}
                     </Button>
                 </Box>
             </DialogActions>
@@ -1361,16 +1370,17 @@ function DeleteConfirmDialog({ target, onClose, onConfirm, loading, errorMsg }: 
     onClose: () => void; onConfirm: (id: string) => void;
     loading: boolean; errorMsg: string | null;
 }) {
+    const { t } = useTranslation();
     return (
         <Dialog open={!!target} onClose={loading ? undefined : onClose} maxWidth="xs" fullWidth>
             <DialogTitle fontWeight={700}>
                 <Stack direction="row" alignItems="center" gap={1}>
-                    <WarningAmber color="error" /> Xoá playlist
+                    <WarningAmber color="error" /> {t('playlists.deletePlaylistTitle')}
                 </Stack>
             </DialogTitle>
             <DialogContent dividers>
                 <Typography variant="body2" mb={errorMsg ? 2 : 0}>
-                    Bạn có chắc muốn xoá playlist <strong>&ldquo;{target?.name}&rdquo;</strong>? Hành động này không thể hoàn tác.
+                    {t('playlists.deleteConfirmFull', { name: target?.name })}
                 </Typography>
                 {errorMsg && (
                     <Box sx={{ mt: 1, p: 1.5, borderRadius: 1, border: '1px solid', borderColor: 'error.main', color: 'error.main', fontSize: 13 }}>
@@ -1379,9 +1389,9 @@ function DeleteConfirmDialog({ target, onClose, onConfirm, loading, errorMsg }: 
                 )}
             </DialogContent>
             <DialogActions sx={{ px: 3, pb: 2 }}>
-                <Button size="small" onClick={onClose} disabled={loading}>Huỷ</Button>
+                <Button size="small" onClick={onClose} disabled={loading}>{t('common.cancel')}</Button>
                 <Button color="error" size="small" disabled={loading} startIcon={loading ? <CircularProgress size={14} color="inherit" /> : <Delete />} onClick={() => target && onConfirm(target.id)}>
-                    {loading ? 'Đang xoá…' : 'Xoá'}
+                    {loading ? t('common.deleting') : t('common.delete')}
                 </Button>
             </DialogActions>
         </Dialog>
@@ -1423,7 +1433,7 @@ function PlaylistRow({ playlist, selected, onSelect, onDeleted }: {
                     <Typography variant="body2" color="text.secondary" noWrap>{new Date(playlist.updatedAt).toLocaleDateString('vi-VN')}</Typography>
                 </TableCell>
                 <TableCell align="center" onClick={(e) => e.stopPropagation()}>
-                    <Tooltip title="Chỉnh sửa">
+                    <Tooltip title={t('playlists.editTooltip')}>
                         <IconButton size="small" onClick={() => setEditOpen(true)}><Edit sx={{ fontSize: 14 }} /></IconButton>
                     </Tooltip>
                 </TableCell>
@@ -1443,6 +1453,7 @@ function PlaylistRow({ playlist, selected, onSelect, onDeleted }: {
 export default function PlaylistsPage() {
     const dispatch = useAppDispatch();
     const qc = useQueryClient();
+    const { t } = useTranslation();
     const [page, setPage] = useState(1);
     const [limit, setLimit] = useState(10);
     const [search, setSearch] = useState('');
@@ -1479,10 +1490,10 @@ export default function PlaylistsPage() {
         <Box>
             <Stack direction="row" justifyContent="space-between" alignItems="center" mb={3}>
                 <Box>
-                    <Typography variant="h4" fontWeight={700}>Playlists</Typography>
-                    <Typography variant="body2" color="text.secondary">{data?.total ?? 0} playlists</Typography>
+                    <Typography variant="h4" fontWeight={700}>{t('playlists.title')}</Typography>
+                    <Typography variant="body2" color="text.secondary">{data?.total ?? 0} {t('playlists.title').toLowerCase()}</Typography>
                 </Box>
-                <Button startIcon={<Add />} onClick={() => setCreateOpen(true)}>New Playlist</Button>
+                <Button startIcon={<Add />} onClick={() => setCreateOpen(true)}>{t('playlists.createPlaylist')}</Button>
             </Stack>
 
             <Box mb={2}>
@@ -1501,8 +1512,8 @@ export default function PlaylistsPage() {
                         <Table size="small">
                             <TableHead>
                                 <TableRow sx={{ '& th': { fontWeight: 700, bgcolor: 'action.hover' } }}>
-                                    <TableCell align="center">Tên</TableCell>
-                                    <TableCell align="center">Mô tả</TableCell>
+                                    <TableCell align="center">{t('common.name')}</TableCell>
+                                    <TableCell align="center">{t('common.description')}</TableCell>
                                     <TableCell align="center" sx={{ width: 60 }}>Items</TableCell>
                                     <TableCell
                                         align="center"
@@ -1510,7 +1521,7 @@ export default function PlaylistsPage() {
                                         onClick={() => toggleSort('createdAt')}
                                     >
                                         <Stack direction="row" alignItems="center" justifyContent="center" gap={0.5}>
-                                            Ngày tạo
+                                            {t('common.createdAt')}
                                             {sortField === 'createdAt' && (sortDir === 'asc' ? <ArrowUpward sx={{ fontSize: 12 }} /> : <ArrowDownward sx={{ fontSize: 12 }} />)}
                                         </Stack>
                                     </TableCell>
@@ -1520,11 +1531,11 @@ export default function PlaylistsPage() {
                                         onClick={() => toggleSort('updatedAt')}
                                     >
                                         <Stack direction="row" alignItems="center" justifyContent="center" gap={0.5}>
-                                            Cập nhật
+                                            {t('common.updatedAt')}
                                             {sortField === 'updatedAt' && (sortDir === 'asc' ? <ArrowUpward sx={{ fontSize: 12 }} /> : <ArrowDownward sx={{ fontSize: 12 }} />)}
                                         </Stack>
                                     </TableCell>
-                                    <TableCell align="center" sx={{ width: 80 }}>Thao tác</TableCell>
+                                    <TableCell align="center" sx={{ width: 80 }}>{t('common.actions')}</TableCell>
                                 </TableRow>
                             </TableHead>
                             <TableBody>
@@ -1542,7 +1553,7 @@ export default function PlaylistsPage() {
                                                 <TableCell colSpan={6} sx={{ textAlign: 'center', py: 6 }}>
                                                     <QueueMusic sx={{ fontSize: 40, color: 'text.secondary', mb: 1, display: 'block', mx: 'auto' }} />
                                                     <Typography variant="body2" color="text.secondary">
-                                                        {search ? 'Không tìm thấy playlist' : 'Chưa có playlist nào'}
+                                                        {search ? t('playlists.noPlaylistMatch') : t('playlists.noPlaylists')}
                                                     </Typography>
                                                 </TableCell>
                                             </TableRow>
@@ -1570,8 +1581,8 @@ export default function PlaylistsPage() {
                             rowsPerPage={limit}
                             onRowsPerPageChange={e => { setLimit(Number(e.target.value)); setPage(1); }}
                             rowsPerPageOptions={[10, 25, 50, 100]}
-                            labelRowsPerPage="Mỗi trang:"
-                            labelDisplayedRows={({ from, to, count }) => `${from}–${to} / ${count}`}
+                            labelRowsPerPage={t("common.perPage")}
+                            labelDisplayedRows={({ from, to, count }) => t('common.displayedRows', { from, to, count })}
                         />
                     )}
                 </Box>

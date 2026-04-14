@@ -2,6 +2,8 @@ import { useState, useEffect, useRef, type ReactNode } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useQueryClient, useQuery, useMutation } from '@tanstack/react-query';
 import { useSocket } from '@hooks/useSocket';
+import { useTranslation } from 'react-i18next';
+import { LANGUAGES } from '@/i18n';
 import {
     Box, Drawer, AppBar, Toolbar, Typography, IconButton, Avatar,
     List, ListItemButton, ListItemIcon, ListItemText, Tooltip,
@@ -101,9 +103,16 @@ function findLabel(entries: NavEntry[], pathname: string): string {
 
 // ── Notification helpers ──────────────────────────────────────────────────────
 
-function timeAgo(iso: string): string {
+function timeAgo(iso: string, lang = 'vi'): string {
     const diff = Date.now() - new Date(iso).getTime();
     const m = Math.floor(diff / 60_000);
+    if (lang === 'en') {
+        if (m < 1)  return 'just now';
+        if (m < 60) return `${m}m ago`;
+        const h = Math.floor(m / 60);
+        if (h < 24) return `${h}h ago`;
+        return `${Math.floor(h / 24)}d ago`;
+    }
     if (m < 1)  return 'vừa xong';
     if (m < 60) return `${m} phút trước`;
     const h = Math.floor(m / 60);
@@ -120,6 +129,7 @@ function NotificationItem({ n, onRead, onDelete }: {
     onRead: (id: string) => void;
     onDelete: (id: string) => void;
 }) {
+    const { i18n } = useTranslation();
     const meta = NOTIF_META[n.type] ?? { label: n.type, color: 'info' as const };
     const dotColor = NOTIF_ICON_COLOR[meta.color];
     return (
@@ -146,7 +156,7 @@ function NotificationItem({ n, onRead, onDelete }: {
                 <Stack direction="row" alignItems="center" justifyContent="space-between" mt={0.3}>
                     <Chip label={meta.label} size="small" color={meta.color}
                         sx={{ height: 16, fontSize: '0.6rem', '& .MuiChip-label': { px: 0.8 } }} />
-                    <Typography variant="caption" color="text.disabled">{timeAgo(n.createdAt)}</Typography>
+                    <Typography variant="caption" color="text.disabled">{timeAgo(n.createdAt, i18n.language)}</Typography>
                 </Stack>
             </Box>
             <IconButton size="small" sx={{ mt: -0.5, opacity: 0.4, '&:hover': { opacity: 1 } }}
@@ -163,6 +173,7 @@ function NotificationPanel({ anchorEl, onClose }: {
 }) {
     const qc = useQueryClient();
     const dispatch = useAppDispatch();
+    const { t, i18n } = useTranslation();
 
     const { data, isLoading } = useQuery({
         queryKey: ['notifications'],
@@ -201,7 +212,7 @@ function NotificationPanel({ anchorEl, onClose }: {
             <Box sx={{ px: 2, py: 1.5, borderBottom: '1px solid', borderColor: 'divider',
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <Stack direction="row" alignItems="center" gap={1}>
-                    <Typography variant="subtitle1" fontWeight={700}>Thông báo</Typography>
+                    <Typography variant="subtitle1" fontWeight={700}>{t('notifications.title')}</Typography>
                     {unread > 0 && (
                         <Chip label={unread} size="small" color="error"
                             sx={{ height: 18, fontSize: '0.65rem', '& .MuiChip-label': { px: 0.8 } }} />
@@ -210,7 +221,7 @@ function NotificationPanel({ anchorEl, onClose }: {
                 {unread > 0 && (
                     <Button size="small" onClick={() => readAllMut.mutate()} disabled={readAllMut.isPending}
                         sx={{ fontSize: '0.72rem' }}>
-                        Đọc tất cả
+                        {t('layout.markAllRead')}
                     </Button>
                 )}
             </Box>
@@ -224,7 +235,7 @@ function NotificationPanel({ anchorEl, onClose }: {
                 ) : notifications.length === 0 ? (
                     <Box sx={{ py: 6, textAlign: 'center' }}>
                         <NotificationsNone sx={{ fontSize: 40, color: 'text.disabled', mb: 1 }} />
-                        <Typography variant="body2" color="text.secondary">Không có thông báo</Typography>
+                        <Typography variant="body2" color="text.secondary">{t('notifications.noNotifications')}</Typography>
                     </Box>
                 ) : (
                     notifications.map(n => (
@@ -247,6 +258,7 @@ export default function DashboardLayout() {
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
+    const { t, i18n } = useTranslation();
     const sidebarOpen = useAppSelector((s) => s.ui.sidebarOpen);
     const colorMode = useAppSelector((s) => s.ui.colorMode);
     const user = useAppSelector((s) => s.auth.user);
@@ -564,10 +576,10 @@ export default function DashboardLayout() {
                 </Box>
                 <Box flex={1}>
                     <Typography variant="subtitle1" fontWeight={700} lineHeight={1.2}>
-                        Chuyển tổ chức
+                        {t('layout.switchOrg')}
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
-                        {allOrgs.length} tổ chức
+                        {t('layout.orgCount', { count: allOrgs.length })}
                     </Typography>
                 </Box>
                 <IconButton size="small" onClick={() => { setOrgPickerOpen(false); setOrgSearch(''); }}>
@@ -579,7 +591,7 @@ export default function DashboardLayout() {
                 <TextField
                     size="small"
                     fullWidth
-                    placeholder="Tìm tổ chức..."
+                    placeholder={t('common.search') + '...'}
                     value={orgSearch}
                     onChange={e => setOrgSearch(e.target.value)}
                     autoFocus
@@ -662,7 +674,7 @@ export default function DashboardLayout() {
                     {allOrgs.filter(o => o.name.toLowerCase().includes(orgSearch.toLowerCase()) || o.slug?.toLowerCase().includes(orgSearch.toLowerCase())).length === 0 && (
                         <Box sx={{ py: 4, textAlign: 'center' }}>
                             <Typography variant="body2" color="text.secondary">
-                                Không tìm thấy tổ chức nào
+                                {t('layout.noOrgsFound')}
                             </Typography>
                         </Box>
                     )}
@@ -680,7 +692,7 @@ export default function DashboardLayout() {
                             onClick={() => { handleExitOrg(); setOrgPickerOpen(false); }}
                             sx={{ borderRadius: 2 }}
                         >
-                            Thoát quản lý
+                            {t('layout.exitManaging')}
                         </Button>
                     </DialogActions>
                 </>
@@ -755,7 +767,7 @@ export default function DashboardLayout() {
                                 variant="caption" color="error.main" fontWeight={700}
                                 sx={{ px: 2, py: 0.5, display: 'block', textTransform: 'uppercase', letterSpacing: 1 }}
                             >
-                                System
+                                {t('nav.system')}
                             </Typography>
                         )}
                         {superAdminItems.map((item) => {
@@ -796,7 +808,7 @@ export default function DashboardLayout() {
                                             <ListItemText
                                                 primary={item.label}
                                                 primaryTypographyProps={{ fontWeight: active ? 600 : 400 }}
-                                                secondary={showPendingBadge ? `${pendingRequestCount} chờ duyệt` : undefined}
+                                                secondary={showPendingBadge ? t('superAdmin.pendingRequests', { count: pendingRequestCount }) : undefined}
                                                 secondaryTypographyProps={{ color: 'error.main', fontSize: '0.7rem', fontWeight: 600 }}
                                             />
                                         )}
@@ -841,7 +853,7 @@ export default function DashboardLayout() {
             </Box>
             <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={() => setAnchorEl(null)}>
                 <MenuItem onClick={handleLogout}>
-                    <Logout fontSize="small" sx={{ mr: 1 }} /> Logout
+                    <Logout fontSize="small" sx={{ mr: 1 }} /> {t('auth.logout')}
                 </MenuItem>
             </Menu>
         </Box>
@@ -908,8 +920,8 @@ export default function DashboardLayout() {
                                 title={
                                     user?.role === 'SUPER_ADMIN'
                                         ? isSwitched
-                                            ? 'Đang quản lý org này — click để đổi'
-                                            : 'Chuyển tổ chức'
+                                            ? `${t('layout.managing')} — ${t('layout.switchOrg')}`
+                                            : t('layout.switchOrg')
                                         : orgData?.name ?? ''
                                 }
                                 placement="bottom"
@@ -954,8 +966,20 @@ export default function DashboardLayout() {
                             </Tooltip>
                         )}
 
+                        {/* Language switcher */}
+                        <Tooltip title={t('layout.language')}>
+                            <IconButton
+                                onClick={() => i18n.changeLanguage(i18n.language === 'vi' ? 'en' : 'vi')}
+                                sx={{ fontSize: '0.8rem', fontWeight: 700, width: 36, height: 36 }}
+                            >
+                                <Typography variant="caption" fontWeight={700} sx={{ fontSize: '0.75rem', lineHeight: 1 }}>
+                                    {i18n.language === 'vi' ? 'EN' : 'VI'}
+                                </Typography>
+                            </IconButton>
+                        </Tooltip>
+
                         {/* Dark/light toggle */}
-                        <Tooltip title={colorMode === 'dark' ? 'Light mode' : 'Dark mode'}>
+                        <Tooltip title={colorMode === 'dark' ? t('layout.lightMode') : t('layout.darkMode')}>
                             <IconButton onClick={() => dispatch(toggleColorMode())}>
                                 {colorMode === 'dark' ? <LightMode /> : <DarkMode />}
                             </IconButton>
@@ -963,7 +987,7 @@ export default function DashboardLayout() {
 
                         {/* Notifications */}
                         {!isPlatformAdmin && (
-                            <Tooltip title="Thông báo">
+                            <Tooltip title={t('layout.notifications')}>
                                 <IconButton onClick={e => setNotifAnchor(e.currentTarget)}>
                                     <Badge badgeContent={unreadCount || undefined} color="error" max={99}>
                                         {unreadCount > 0 ? <NotificationsActive /> : <NotificationsNone />}

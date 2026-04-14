@@ -11,12 +11,13 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import contentHistoryApi from '@api/content-history.api';
 import type { ContentDevice } from '@api/content-history.api';
+import { useTranslation } from 'react-i18next';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function fmtDateTime(iso: string | null): string {
+function fmtDateTime(iso: string | null, lang = 'vi'): string {
     if (!iso) return '—';
-    return new Date(iso).toLocaleString('vi-VN', { hour12: false });
+    return new Date(iso).toLocaleString(lang === 'vi' ? 'vi-VN' : 'en-US', { hour12: false });
 }
 
 function fmtDate(iso: string): string {
@@ -39,6 +40,7 @@ function statusChip(status: string) {
 const PAGE_SIZE = 100;
 
 function DeviceLogsPanel({ device }: { device: ContentDevice }) {
+    const { t } = useTranslation();
     const [dateFrom, setDateFrom] = useState('');
     const [dateTo, setDateTo] = useState('');
     const [offset, setOffset] = useState(0);
@@ -90,7 +92,7 @@ function DeviceLogsPanel({ device }: { device: ContentDevice }) {
                     </Box>
                     <Chip
                         icon={<AccessTime sx={{ fontSize: 12 }} />}
-                        label={`${total} lần đổi playlist`}
+                        label={t('history.content.changeCount', { count: total })}
                         size="small" variant="outlined" color="primary"
                         sx={{ fontSize: '0.65rem' }}
                     />
@@ -99,19 +101,19 @@ function DeviceLogsPanel({ device }: { device: ContentDevice }) {
 
             {/* Filters */}
             <Box sx={{ px: 3, py: 1, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
-                <TextField size="small" type="date" label="Từ ngày" value={dateFrom}
+                <TextField size="small" type="date" label={t('history.content.fromDate')} value={dateFrom}
                     onChange={e => { setDateFrom(e.target.value); setOffset(0); }}
                     sx={{ width: 160 }} InputLabelProps={{ shrink: true }}
                     inputProps={{ style: { fontSize: '0.8rem' } }}
                 />
-                <TextField size="small" type="date" label="Đến ngày" value={dateTo}
+                <TextField size="small" type="date" label={t('history.content.toDate')} value={dateTo}
                     onChange={e => { setDateTo(e.target.value); setOffset(0); }}
                     sx={{ width: 160 }} InputLabelProps={{ shrink: true }}
                     inputProps={{ style: { fontSize: '0.8rem' } }}
                 />
                 {(dateFrom || dateTo) && (
                     <Button size="small" onClick={() => { setDateFrom(''); setDateTo(''); setOffset(0); }}>
-                        Xóa bộ lọc
+                        {t('history.content.clearFilter')}
                     </Button>
                 )}
             </Box>
@@ -125,7 +127,7 @@ function DeviceLogsPanel({ device }: { device: ContentDevice }) {
                 ) : logs.length === 0 ? (
                     <Box sx={{ textAlign: 'center', pt: 8, color: 'text.disabled' }}>
                         <QueueMusic sx={{ fontSize: 48, mb: 1, opacity: 0.2 }} />
-                        <Typography variant="body2">Chưa có lịch sử đổi playlist</Typography>
+                        <Typography variant="body2">{t('history.content.noHistory')}</Typography>
                     </Box>
                 ) : (
                     <>
@@ -137,7 +139,7 @@ function DeviceLogsPanel({ device }: { device: ContentDevice }) {
                                             {group.date}
                                         </Typography>
                                         <Typography variant="caption" color="text.disabled">
-                                            · {group.logs.length} lần
+                                            · {t('history.content.syncCount', { count: group.logs.length })}
                                         </Typography>
                                     </Stack>
                                 </Box>
@@ -152,7 +154,7 @@ function DeviceLogsPanel({ device }: { device: ContentDevice }) {
                                                 </TableCell>
                                                 <TableCell sx={{ py: 0.75 }}>
                                                     <Typography variant="body2" fontWeight={600} sx={{ fontSize: '0.8rem' }}>
-                                                        {log.playlistName ?? <span style={{ color: '#9e9e9e' }}>Không có playlist</span>}
+                                                        {log.playlistName ?? <span style={{ color: '#9e9e9e' }}>{t('history.content.noPlaylist')}</span>}
                                                     </Typography>
                                                     {log.scheduleName && (
                                                         <Typography variant="caption" color="text.disabled">
@@ -171,14 +173,14 @@ function DeviceLogsPanel({ device }: { device: ContentDevice }) {
                             <Stack direction="row" justifyContent="center" gap={1} py={2}>
                                 <Button size="small" disabled={curPage === 1}
                                     onClick={() => setOffset(o => Math.max(0, o - PAGE_SIZE))}>
-                                    ← Trước
+                                    ← {t('common.back')}
                                 </Button>
                                 <Typography variant="body2" sx={{ lineHeight: '30px', color: 'text.secondary' }}>
                                     {curPage} / {pages}
                                 </Typography>
                                 <Button size="small" disabled={curPage >= pages}
                                     onClick={() => setOffset(o => o + PAGE_SIZE)}>
-                                    Tiếp →
+                                    {t('common.next')} →
                                 </Button>
                             </Stack>
                         )}
@@ -192,6 +194,7 @@ function DeviceLogsPanel({ device }: { device: ContentDevice }) {
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function ContentHistoryPage() {
+    const { t } = useTranslation();
     const [selectedDevice, setSelectedDevice] = useState<ContentDevice | null>(null);
     const [search, setSearch] = useState('');
 
@@ -216,8 +219,8 @@ export default function ContentHistoryPage() {
             {/* Top bar */}
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                 <PlayCircleOutline color="primary" />
-                <Typography variant="h6" fontWeight={700}>Content History</Typography>
-                <Chip label={`${devices.length} thiết bị`} size="small" variant="outlined" />
+                <Typography variant="h6" fontWeight={700}>{t('history.content.title')}</Typography>
+                <Chip label={t('history.content.deviceCount', { count: devices.length })} size="small" variant="outlined" />
             </Box>
 
             {/* Two-panel layout */}
@@ -227,7 +230,7 @@ export default function ContentHistoryPage() {
                 <Paper variant="outlined" sx={{ width: 380, flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                     <Box sx={{ px: 1.5, py: 1, borderBottom: '1px solid', borderColor: 'divider' }}>
                         <TextField
-                            size="small" fullWidth value={search} placeholder="Tìm tên thiết bị, playlist…"
+                            size="small" fullWidth value={search} placeholder={t('history.content.searchPlaceholder')}
                             onChange={e => setSearch(e.target.value)}
                             InputProps={{ startAdornment: <InputAdornment position="start"><Search sx={{ fontSize: 16 }} /></InputAdornment> }}
                             sx={{ '& .MuiInputBase-input': { fontSize: '0.8rem' } }}
@@ -241,15 +244,15 @@ export default function ContentHistoryPage() {
                             </Box>
                         ) : filtered.length === 0 ? (
                             <Box sx={{ textAlign: 'center', pt: 6, color: 'text.disabled' }}>
-                                <Typography variant="body2">Không có thiết bị</Typography>
+                                <Typography variant="body2">{t('history.content.noDevices')}</Typography>
                             </Box>
                         ) : (
                             <Table size="small" stickyHeader>
                                 <TableHead>
                                     <TableRow>
-                                        <TableCell sx={{ fontSize: '0.7rem', fontWeight: 700, py: 0.75 }}>Tên</TableCell>
-                                        <TableCell sx={{ fontSize: '0.7rem', fontWeight: 700, py: 0.75 }}>Playlist hiện tại</TableCell>
-                                        <TableCell sx={{ fontSize: '0.7rem', fontWeight: 700, py: 0.75, width: 60 }}>Chi tiết</TableCell>
+                                        <TableCell sx={{ fontSize: '0.7rem', fontWeight: 700, py: 0.75 }}>{t('common.name')}</TableCell>
+                                        <TableCell sx={{ fontSize: '0.7rem', fontWeight: 700, py: 0.75 }}>{t('history.content.currentPlaylist')}</TableCell>
+                                        <TableCell sx={{ fontSize: '0.7rem', fontWeight: 700, py: 0.75, width: 60 }}>{t('common.detail')}</TableCell>
                                     </TableRow>
                                 </TableHead>
                                 <TableBody>
@@ -288,7 +291,7 @@ export default function ContentHistoryPage() {
                                                     )}
                                                 </TableCell>
                                                 <TableCell sx={{ py: 0.75, textAlign: 'center' }}>
-                                                    <Tooltip title={isSelected ? 'Ẩn' : 'Xem lịch sử'}>
+                                                    <Tooltip title={isSelected ? t('history.content.hideTooltip') : t('history.content.viewHistory')}>
                                                         <IconButton
                                                             size="small"
                                                             color={isSelected ? 'primary' : 'default'}
@@ -314,8 +317,8 @@ export default function ContentHistoryPage() {
                     ) : (
                         <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'text.disabled' }}>
                             <QueueMusic sx={{ fontSize: 56, mb: 2, opacity: 0.15 }} />
-                            <Typography variant="body1" fontWeight={500}>Chọn thiết bị để xem lịch sử playlist</Typography>
-                            <Typography variant="body2" mt={0.5}>Nhấn icon <strong>con mắt</strong> ở cột Chi tiết bên trái</Typography>
+                            <Typography variant="body1" fontWeight={500}>{t('history.content.selectDevice')}</Typography>
+                            <Typography variant="body2" mt={0.5}>{t('common.detail')}</Typography>
                         </Box>
                     )}
                 </Paper>

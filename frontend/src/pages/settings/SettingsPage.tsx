@@ -10,6 +10,7 @@ import {
     VideoFile, CalendarMonth, People, CheckCircle, Lock,
 } from '@mui/icons-material';
 
+import { useTranslation } from 'react-i18next';
 import { useAppDispatch, useAppSelector } from '@store/hooks';
 import { pushToast } from '@store/slices/uiSlice';
 import { organizationsApi } from '@api/organizations.api';
@@ -72,6 +73,7 @@ function StatRow({ icon, label, value, color = 'text.secondary' }: {
 export default function SettingsPage() {
     const dispatch = useAppDispatch();
     const qc = useQueryClient();
+    const { t } = useTranslation();
     const currentUser = useAppSelector(s => s.auth.user);
     const isAdmin = currentUser?.role === 'ADMIN' || currentUser?.role === 'SUPER_ADMIN';
 
@@ -94,10 +96,10 @@ export default function SettingsPage() {
         mutationFn: () => organizationsApi.updateMe({ name: orgName.trim() }),
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: ['org-me'] });
-            dispatch(pushToast({ severity: 'success', message: 'Đã lưu thông tin tổ chức' }));
+            dispatch(pushToast({ severity: 'success', message: t('settings.orgSaved') }));
         },
         onError: (e: any) => {
-            dispatch(pushToast({ severity: 'error', message: e?.response?.data?.message ?? 'Lưu thất bại' }));
+            dispatch(pushToast({ severity: 'error', message: e?.response?.data?.message ?? t('common.failedAction') }));
         },
     });
 
@@ -113,10 +115,10 @@ export default function SettingsPage() {
         mutationFn: () => organizationsApi.updateDevicePin(newPin),
         onSuccess: () => {
             setNewPin('');
-            dispatch(pushToast({ severity: 'success', message: 'PIN thiết bị đã được cập nhật' }));
+            dispatch(pushToast({ severity: 'success', message: t('settings.pinUpdated') }));
         },
         onError: (e: any) => {
-            dispatch(pushToast({ severity: 'error', message: e?.response?.data?.message ?? 'Cập nhật PIN thất bại' }));
+            dispatch(pushToast({ severity: 'error', message: e?.response?.data?.message ?? t('settings.pinFailed') }));
         },
     });
 
@@ -124,9 +126,9 @@ export default function SettingsPage() {
         <Box>
             {/* Header */}
             <Box mb={3}>
-                <Typography variant="h4" fontWeight={700}>Settings</Typography>
+                <Typography variant="h4" fontWeight={700}>{t('settings.title')}</Typography>
                 <Typography variant="body2" color="text.secondary">
-                    Cài đặt tổ chức và thông tin tài khoản
+                    {t('settings.subtitle')}
                 </Typography>
             </Box>
 
@@ -139,17 +141,17 @@ export default function SettingsPage() {
                         {/* Organization Profile */}
                         <Section
                             icon={<Business />}
-                            title="Thông tin tổ chức"
-                            subtitle="Tên hiển thị và thông tin cơ bản"
+                            title={t('settings.orgInfo')}
+                            subtitle={t('settings.orgInfoSub')}
                         >
                             <Stack spacing={2.5}>
                                 <TextField
-                                    label="Tên tổ chức"
+                                    label={t('settings.orgName')}
                                     value={orgName}
                                     onChange={e => setOrgName(e.target.value)}
                                     fullWidth
                                     disabled={!isAdmin || loadingOrg}
-                                    helperText={!isAdmin ? 'Chỉ Admin mới có thể chỉnh sửa' : ''}
+                                    helperText={!isAdmin ? t('settings.adminOnly') : ''}
                                     inputProps={{ maxLength: 100 }}
                                 />
 
@@ -157,7 +159,7 @@ export default function SettingsPage() {
                                     label="Slug"
                                     value={loadingOrg ? '…' : (org?.slug ?? '')}
                                     fullWidth disabled
-                                    helperText="Slug không thể thay đổi sau khi tạo"
+                                    helperText={t('settings.slugNote')}
                                 />
 
                                 <Stack direction="row" justifyContent="space-between" alignItems="center">
@@ -169,7 +171,7 @@ export default function SettingsPage() {
                                             icon={<CheckCircle sx={{ fontSize: 12 }} />}
                                         />
                                         <Chip
-                                            label={`Tạo: ${org ? new Date(org.createdAt).toLocaleDateString('vi-VN') : '…'}`}
+                                            label={t('settings.createdChip', { date: org ? new Date(org.createdAt).toLocaleDateString() : '…' })}
                                             size="small"
                                             variant="outlined"
                                         />
@@ -183,7 +185,7 @@ export default function SettingsPage() {
                                             onClick={() => saveMutation.mutate()}
                                             size="small"
                                         >
-                                            {saveMutation.isPending ? 'Đang lưu…' : 'Lưu'}
+                                            {saveMutation.isPending ? t('common.loading') : t('settings.saveSettings')}
                                         </Button>
                                     )}
                                 </Stack>
@@ -193,8 +195,8 @@ export default function SettingsPage() {
                         {/* Account Info */}
                         <Section
                             icon={<Person />}
-                            title="Tài khoản của bạn"
-                            subtitle="Thông tin tài khoản đang đăng nhập"
+                            title={t('settings.accountInfo')}
+                            subtitle={t('settings.accountInfoSub')}
                         >
                             <Stack spacing={2}>
                                 <TextField
@@ -209,7 +211,7 @@ export default function SettingsPage() {
                                         sx={{ flex: 1 }} disabled
                                     />
                                     <TextField
-                                        label="Trạng thái"
+                                        label={t('common.status')}
                                         value={currentUser?.status ?? ''}
                                         sx={{ flex: 1 }} disabled
                                     />
@@ -217,7 +219,7 @@ export default function SettingsPage() {
 
                                 {!isAdmin && (
                                     <Alert severity="info" sx={{ borderRadius: 2 }}>
-                                        Bạn không có quyền Admin — một số cài đặt bị ẩn.
+                                        {t('settings.noAdminAlert')}
                                     </Alert>
                                 )}
                             </Stack>
@@ -227,22 +229,21 @@ export default function SettingsPage() {
                         {isAdmin && (
                             <Section
                                 icon={<Lock />}
-                                title="PIN admin thiết bị"
-                                subtitle="PIN để thoát kiosk mode trên TV (4–8 chữ số)"
+                                title={t('settings.pinSection')}
+                                subtitle={t('settings.pinSectionSub')}
                             >
                                 <Stack spacing={2}>
                                     <Alert severity="info" sx={{ borderRadius: 2 }}>
-                                        PIN được đồng bộ tự động đến tất cả thiết bị trong lần heartbeat tiếp theo.
-                                        Mặc định: <strong>0000</strong>
+                                        {t('settings.pinSyncNote', { default: '0000' })}
                                     </Alert>
                                     <Stack direction="row" gap={1.5} alignItems="flex-start">
                                         <TextField
-                                            label="PIN mới"
+                                            label={t('settings.updatePin')}
                                             value={newPin}
                                             onChange={e => setNewPin(e.target.value.replace(/\D/g, '').slice(0, 8))}
                                             type={showPin ? 'text' : 'password'}
                                             inputProps={{ maxLength: 8, inputMode: 'numeric' }}
-                                            helperText="4–8 chữ số"
+                                            helperText={t('settings.pinHelperText')}
                                             error={newPin.length > 0 && !pinValid}
                                             sx={{ flex: 1 }}
                                         />
@@ -252,7 +253,7 @@ export default function SettingsPage() {
                                             sx={{ mt: 0.5, minWidth: 80 }}
                                             size="small"
                                         >
-                                            {showPin ? 'Ẩn' : 'Hiện'}
+                                            {showPin ? t('settings.hidePin') : t('settings.showPin')}
                                         </Button>
                                         <Button
                                            
@@ -261,7 +262,7 @@ export default function SettingsPage() {
                                             sx={{ mt: 0.5 }}
                                             size="small"
                                         >
-                                            {pinMutation.isPending ? 'Đang lưu…' : 'Cập nhật PIN'}
+                                            {pinMutation.isPending ? t('common.saving') : t('settings.updatePin')}
                                         </Button>
                                     </Stack>
                                 </Stack>
@@ -278,8 +279,8 @@ export default function SettingsPage() {
                         {/* Usage stats */}
                         <Section
                             icon={<Storage />}
-                            title="Tài nguyên sử dụng"
-                            subtitle="Thống kê nội dung trong tổ chức"
+                            title={t('settings.resourceUsage')}
+                            subtitle={t('settings.resourceUsageSub')}
                         >
                             {loadingStats ? (
                                 <Stack gap={1.5}>
@@ -289,14 +290,14 @@ export default function SettingsPage() {
                                 <Stack divider={<Divider />}>
                                     <StatRow
                                         icon={<Tv fontSize="inherit" />}
-                                        label="Thiết bị"
-                                        value={`${stats?.onlineDevices ?? 0} online / ${stats?.totalDevices ?? 0} tổng`}
+                                        label={t('settings.devicesLabel')}
+                                        value={`${stats?.onlineDevices ?? 0} online / ${stats?.totalDevices ?? 0} ${t('common.total')}`}
                                         color={(stats?.onlineDevices ?? 0) > 0 ? 'success.main' : 'text.secondary'}
                                     />
                                     <StatRow
                                         icon={<People fontSize="inherit" />}
                                         label="Users"
-                                        value={`${stats?.activeUsers ?? 0} active / ${stats?.totalUsers ?? 0} tổng`}
+                                        value={`${stats?.activeUsers ?? 0} active / ${stats?.totalUsers ?? 0} ${t('common.total')}`}
                                     />
                                     <StatRow
                                         icon={<Image fontSize="inherit" />}
@@ -321,14 +322,14 @@ export default function SettingsPage() {
                         <Card sx={{ bgcolor: alpha('#FF6584', 0.05), border: '1px solid', borderColor: alpha('#FF6584', 0.15) }}>
                             <CardContent sx={{ p: 2.5 }}>
                                 <Typography variant="subtitle2" fontWeight={700} color="error.main" mb={1.5}>
-                                    Thông tin hệ thống
+                                    {t('settings.sysInfo')}
                                 </Typography>
                                 <Stack spacing={0.75}>
                                     {[
                                         { label: 'Org ID', value: org?.id?.slice(0, 16) + '…' },
                                         { label: 'Version', value: 'DMS Signage v1.0' },
                                         { label: 'Backend', value: 'Node.js + PostgreSQL' },
-                                        { label: 'Môi trường', value: import.meta.env.MODE },
+                                        { label: t('settings.environment'), value: import.meta.env.MODE },
                                     ].map(({ label, value }) => (
                                         <Stack key={label} direction="row" justifyContent="space-between">
                                             <Typography variant="caption" color="text.secondary">{label}</Typography>

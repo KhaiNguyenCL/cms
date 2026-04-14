@@ -5,6 +5,7 @@ import {
     IconButton, InputAdornment, Alert, CircularProgress, Stack, Chip,
 } from '@mui/material';
 import { Visibility, VisibilityOff, AdminPanelSettings } from '@mui/icons-material';
+import { useTranslation } from 'react-i18next';
 import { useAppDispatch } from '@store/hooks';
 import { setPlatformAdminCredentials } from '@store/slices/authSlice';
 import { platformAuthApi } from '@api/platform-auth.api';
@@ -12,6 +13,7 @@ import { platformAuthApi } from '@api/platform-auth.api';
 export default function PlatformLoginPage() {
     const dispatch = useAppDispatch();
     const navigate = useNavigate();
+    const { t } = useTranslation();
 
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
@@ -33,7 +35,7 @@ export default function PlatformLoginPage() {
             navigate('/super-admin', { replace: true });
         } catch (err: unknown) {
             const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
-            setError(msg ?? 'Email hoặc mật khẩu không đúng');
+            setError(msg ?? t('auth.loginFailed'));
         } finally {
             setLoading(false);
         }
@@ -95,7 +97,7 @@ export default function PlatformLoginPage() {
                             }}
                         />
                         <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.4)' }}>
-                            Đăng nhập quản trị hệ thống
+                            {t('auth.platformLogin')}
                         </Typography>
                     </Stack>
 
@@ -164,7 +166,7 @@ export default function PlatformLoginPage() {
                                     '&:hover': { background: 'linear-gradient(135deg, #e74c3c, #9b59b6)' },
                                 }}
                             >
-                                {loading ? <CircularProgress size={22} color="inherit" /> : 'Đăng nhập'}
+                                {loading ? <CircularProgress size={22} color="inherit" /> : t('auth.loginButton')}
                             </Button>
                         </Stack>
                     </form>

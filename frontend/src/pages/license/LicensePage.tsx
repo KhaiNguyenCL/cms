@@ -17,11 +17,12 @@ import licenseApi from '@api/license.api';
 import type { DeviceLicenseRow, LicenseHistoryRow, PurchaseRequestRow, PackageType } from '@api/license.api';
 import { storageQuotaApi } from '@api/storage-quota.api';
 import type { StoragePurchaseRequest } from '@api/storage-quota.api';
+import { useTranslation } from 'react-i18next';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const PKG_LABELS: Record<PackageType, string> = {
-    '12M': '12 tháng', '24M': '24 tháng', '36M': '36 tháng',
+const PKG_LABEL_KEYS: Record<PackageType, string> = {
+    '12M': 'license.pkg12m', '24M': 'license.pkg24m', '36M': 'license.pkg36m',
 };
 const PKG_TYPES: PackageType[] = ['12M', '24M', '36M'];
 
@@ -35,29 +36,34 @@ function fmtDateTime(s: string | null) {
 }
 
 function LicenseStatusChip({ row }: { row: DeviceLicenseRow }) {
-    if (!row.expiresAt) return <Chip label="Chưa có" size="small" />;
-    if (!row.isLicensed) return <Chip label="Hết hạn" size="small" color="error" />;
+    const { t } = useTranslation();
+    if (!row.expiresAt) return <Chip label={t('license.noLicense')} size="small" />;
+    if (!row.isLicensed) return <Chip label={t('license.expired')} size="small" color="error" />;
     if ((row.daysRemaining ?? 0) <= 7)
-        return <Chip label={`${row.daysRemaining}d`} size="small" color="warning" />;
-    return <Chip label="Active" size="small" color="success" icon={<CheckCircle fontSize="inherit" />} />;
+        return <Chip label={t('license.daysLeft', { days: row.daysRemaining })} size="small" color="warning" />;
+    return <Chip label={t('license.active')} size="small" color="success" icon={<CheckCircle fontSize="inherit" />} />;
 }
 
 function ActionChip({ action }: { action: string }) {
-    const map: Record<string, { label: string; color: 'success' | 'error' | 'warning' | 'info' | 'default' }> = {
-        ASSIGN:        { label: 'Cấp',     color: 'success' },
-        TRANSFER:      { label: 'Chuyển',  color: 'info' },
-        ADJUST_EXPIRY: { label: 'Sửa hạn', color: 'warning' },
-        REVOKE:        { label: 'Thu hồi', color: 'error' },
-        EDIT_POOL:     { label: 'Sửa kho', color: 'default' },
+    const { t } = useTranslation();
+    const map: Record<string, { labelKey: string; color: 'success' | 'error' | 'warning' | 'info' | 'default' }> = {
+        ASSIGN:        { labelKey: 'license.actionAssign',       color: 'success' },
+        TRANSFER:      { labelKey: 'license.actionTransfer',     color: 'info' },
+        ADJUST_EXPIRY: { labelKey: 'license.actionAdjustExpiry', color: 'warning' },
+        REVOKE:        { labelKey: 'license.actionRevoke',       color: 'error' },
+        EDIT_POOL:     { labelKey: 'license.actionEditPool',     color: 'default' },
     };
-    const cfg = map[action] ?? { label: action, color: 'default' as const };
-    return <Chip label={cfg.label} size="small" color={cfg.color} />;
+    const cfg = map[action];
+    const label = cfg ? t(cfg.labelKey) : action;
+    const color = cfg?.color ?? 'default' as const;
+    return <Chip label={label} size="small" color={color} />;
 }
 
 function RequestStatusChip({ status }: { status: string }) {
-    if (status === 'APPROVED') return <Chip label="Đã duyệt" size="small" color="success" />;
-    if (status === 'REJECTED') return <Chip label="Từ chối"  size="small" color="error" />;
-    return <Chip label="Chờ duyệt" size="small" color="warning" icon={<HourglassEmpty fontSize="inherit" />} />;
+    const { t } = useTranslation();
+    if (status === 'APPROVED') return <Chip label={t('license.statusApproved')} size="small" color="success" />;
+    if (status === 'REJECTED') return <Chip label={t('license.statusRejected')} size="small" color="error" />;
+    return <Chip label={t('license.statusPending')} size="small" color="warning" icon={<HourglassEmpty fontSize="inherit" />} />;
 }
 
 // ─── Stat Card ────────────────────────────────────────────────────────────────
@@ -95,6 +101,7 @@ function StatCard({
 // ─── Overview Tab ─────────────────────────────────────────────────────────────
 
 function OverviewTab() {
+    const { t } = useTranslation();
     const { data: stats, isLoading } = useQuery({
         queryKey: ['license-stats'], queryFn: licenseApi.getStats,
     });
@@ -124,15 +131,15 @@ function OverviewTab() {
         <Box>
             {/* Pool counts */}
             <Typography variant="overline" color="text.secondary" display="block" mb={1}>
-                Kho gói
+                {t('license.pool')}
             </Typography>
             <Stack direction="row" gap={1.5} flexWrap="wrap" mb={3}>
-                {([['12M', pool.pkg12m], ['24M', pool.pkg24m], ['36M', pool.pkg36m]] as [PackageType, number][]).map(([t, n]) => (
+                {([['12M', pool.pkg12m], ['24M', pool.pkg24m], ['36M', pool.pkg36m]] as [PackageType, number][]).map(([pkg, n]) => (
                     <StatCard
-                        key={t}
-                        label={`Gói ${PKG_LABELS[t]}`}
+                        key={pkg}
+                        label={`${t('license.package')} ${t(PKG_LABEL_KEYS[pkg])}`}
                         value={n}
-                        sub="trong kho"
+                        sub={t('license.inPool')}
                         accent={n > 0 ? 'success.main' : undefined}
                     />
                 ))}
@@ -140,15 +147,15 @@ function OverviewTab() {
 
             {/* Device stats */}
             <Typography variant="overline" color="text.secondary" display="block" mb={1}>
-                Trạng thái thiết bị
+                {t('common.status')}
             </Typography>
             <Stack direction="row" gap={1.5} flexWrap="wrap" mb={3}>
-                <StatCard label="Tổng thiết bị"  value={stats.totalDevices}      />
-                <StatCard label="Active"          value={stats.activeDevices}     accent="#16A34A" />
-                <StatCard label="Hết hạn"         value={stats.expiredDevices}    accent="#DC2626" />
-                <StatCard label="Chưa có license" value={stats.unlicensedDevices} accent="text.disabled" />
-                <StatCard label="Hết hạn ≤ 7 ngày"  value={stats.expiringIn7}    accent="#D97706" />
-                <StatCard label="Hết hạn ≤ 30 ngày" value={stats.expiringIn30}   accent="#F59E0B" />
+                <StatCard label={t('common.total')}         value={stats.totalDevices}      />
+                <StatCard label={t('license.active')}       value={stats.activeDevices}     accent="#16A34A" />
+                <StatCard label={t('license.expired')}      value={stats.expiredDevices}    accent="#DC2626" />
+                <StatCard label={t('license.noLicense')}    value={stats.unlicensedDevices} accent="text.disabled" />
+                <StatCard label={`${t('license.expired')} ≤ 7d`}  value={stats.expiringIn7}    accent="#D97706" />
+                <StatCard label={`${t('license.expired')} ≤ 30d`} value={stats.expiringIn30}   accent="#F59E0B" />
             </Stack>
 
             {/* Request alerts */}
@@ -156,10 +163,10 @@ function OverviewTab() {
                 <Box>
                     <Stack direction="row" alignItems="center" justifyContent="space-between" mb={1}>
                         <Typography variant="overline" color="text.secondary">
-                            Thông báo yêu cầu ({recentlyResolved.length})
+                            {t('license.requestAlerts', { count: recentlyResolved.length })}
                         </Typography>
                         <Chip
-                            label={sortAsc ? '↑ Cũ trước' : '↓ Mới trước'}
+                            label={sortAsc ? t('license.sortOldFirst') : t('license.sortNewFirst')}
                             size="small"
                             onClick={() => setSortAsc(v => !v)}
                             sx={{ cursor: 'pointer' }}
@@ -170,8 +177,8 @@ function OverviewTab() {
                             <Alert key={r.id} severity={r.status === 'APPROVED' ? 'success' : 'warning'} variant="outlined">
                                 <Stack direction="row" alignItems="flex-start" justifyContent="space-between" gap={2}>
                                     <Box>
-                                        Yêu cầu <strong>{r.quantity}× {PKG_LABELS[r.packageType as PackageType] ?? r.packageType}</strong>
-                                        {' '}{r.status === 'APPROVED' ? 'đã được duyệt' : 'bị từ chối'}
+                                        {t('license.requests')}: <strong>{r.quantity}× {t(PKG_LABEL_KEYS[r.packageType as PackageType] ?? r.packageType)}</strong>
+                                        {' '}{r.status === 'APPROVED' ? t('license.statusApproved') : t('license.statusRejected')}
                                         {r.adminNote ? ` — "${r.adminNote}"` : ''}.
                                     </Box>
                                     <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'nowrap', mt: 0.2 }}>
@@ -191,6 +198,7 @@ function OverviewTab() {
 
 function DevicesTab() {
     const qc = useQueryClient();
+    const { t } = useTranslation();
     const invalidate = () => {
         qc.invalidateQueries({ queryKey: ['license-devices'] });
         qc.invalidateQueries({ queryKey: ['license-stats'] });
@@ -238,12 +246,12 @@ function DevicesTab() {
             <Table size="small">
                 <TableHead>
                     <TableRow>
-                        <TableCell>Thiết bị</TableCell>
-                        <TableCell>Trạng thái</TableCell>
-                        <TableCell>Gói</TableCell>
-                        <TableCell>Kích hoạt</TableCell>
-                        <TableCell>Hết hạn</TableCell>
-                        <TableCell align="right">Thao tác</TableCell>
+                        <TableCell>{t('devices.title')}</TableCell>
+                        <TableCell>{t('common.status')}</TableCell>
+                        <TableCell>{t('license.package')}</TableCell>
+                        <TableCell>{t('license.activatedAt')}</TableCell>
+                        <TableCell>{t('license.expiresAt')}</TableCell>
+                        <TableCell align="right">{t('common.actions')}</TableCell>
                     </TableRow>
                 </TableHead>
                 <TableBody>
@@ -266,14 +274,14 @@ function DevicesTab() {
                             <TableCell><LicenseStatusChip row={row} /></TableCell>
                             <TableCell>
                                 <Typography variant="body2">
-                                    {row.packageType ? PKG_LABELS[row.packageType as PackageType] ?? row.packageType : '—'}
+                                    {row.packageType ? t(PKG_LABEL_KEYS[row.packageType as PackageType] ?? row.packageType) : '—'}
                                 </Typography>
                             </TableCell>
                             <TableCell>
                                 <Typography variant="body2">{fmtDate(row.activatedAt)}</Typography>
                                 {row.activatedByName && (
                                     <Typography variant="caption" color="text.secondary" display="block">
-                                        bởi {row.activatedByName}
+                                        {t('license.activatedBy')}: {row.activatedByName}
                                     </Typography>
                                 )}
                             </TableCell>
@@ -292,14 +300,14 @@ function DevicesTab() {
                                 </Typography>
                                 {row.daysRemaining != null && row.isLicensed && (
                                     <Typography variant="caption" color="text.secondary">
-                                        còn {row.daysRemaining}d
+                                        {t('license.daysLeft', { days: row.daysRemaining })}
                                     </Typography>
                                 )}
                             </TableCell>
                             <TableCell align="right">
                                 <Stack direction="row" gap={0.5} justifyContent="flex-end">
                                     {(!row.expiresAt || !row.isLicensed) && pool && (
-                                        <Tooltip title="Cấp license">
+                                        <Tooltip title={t('license.assignLicense')}>
                                             <span>
                                                 <IconButton size="small" color="success"
                                                     disabled={(pool.pkg12m + pool.pkg24m + pool.pkg36m) === 0}
@@ -310,14 +318,14 @@ function DevicesTab() {
                                         </Tooltip>
                                     )}
                                     {row.isLicensed && row.expiresAt && (
-                                        <Tooltip title="Chuyển sang thiết bị khác">
+                                        <Tooltip title={t('license.transferToOther')}>
                                             <IconButton size="small"
                                                 onClick={() => { setTransferDev(row); setToDeviceId(''); }}>
                                                 <SwapHoriz fontSize="inherit" />
                                             </IconButton>
                                         </Tooltip>
                                     )}
-                                    <Tooltip title="Lịch sử license">
+                                    <Tooltip title={t('license.licenseHistory')}>
                                         <IconButton size="small" onClick={() => setHistoryDev(row)}>
                                             <ManageSearch fontSize="inherit" />
                                         </IconButton>
@@ -329,7 +337,7 @@ function DevicesTab() {
                     {data.length === 0 && (
                         <TableRow>
                             <TableCell colSpan={6} align="center" sx={{ py: 4, color: 'text.disabled' }}>
-                                Không có thiết bị
+                                {t('license.noDevices')}
                             </TableCell>
                         </TableRow>
                     )}
@@ -343,55 +351,55 @@ function DevicesTab() {
                 rowsPerPage={rowsPerPage}
                 onRowsPerPageChange={e => { setRowsPerPage(parseInt(e.target.value)); setPage(0); }}
                 rowsPerPageOptions={[5, 10, 25, 50]}
-                labelRowsPerPage="Mỗi trang:"
-                labelDisplayedRows={({ from, to, count }) => `${from}–${to} / ${count}`}
+                labelRowsPerPage={t("common.perPage")}
+                labelDisplayedRows={({ from, to, count }) => t('common.displayedRows', { from, to, count })}
             />
 
             {/* Assign Dialog */}
             <Dialog open={!!assignDev} onClose={() => setAssignDev(null)} maxWidth="xs" fullWidth>
-                <DialogTitle>Cấp license — {assignDev?.deviceName}</DialogTitle>
+                <DialogTitle>{t('license.assign')} — {assignDev?.deviceName}</DialogTitle>
                 <DialogContent dividers>
-                    <TextField select fullWidth label="Chọn gói" value={selPkg}
+                    <TextField select fullWidth label={t('license.packageType')} value={selPkg}
                         onChange={e => setSelPkg(e.target.value as PackageType)} size="small" sx={{ mt: 0.5 }}>
-                        {PKG_TYPES.map(t => {
-                            const cnt = pool ? { '12M': pool.pkg12m, '24M': pool.pkg24m, '36M': pool.pkg36m }[t] : 0;
+                        {PKG_TYPES.map(pkg => {
+                            const cnt = pool ? { '12M': pool.pkg12m, '24M': pool.pkg24m, '36M': pool.pkg36m }[pkg] : 0;
                             return (
-                                <MenuItem key={t} value={t} disabled={cnt === 0}>
-                                    {PKG_LABELS[t]} — còn {cnt} gói
+                                <MenuItem key={pkg} value={pkg} disabled={cnt === 0}>
+                                    {t(PKG_LABEL_KEYS[pkg])} — {t('license.remaining')}: {cnt}
                                 </MenuItem>
                             );
                         })}
                     </TextField>
                 </DialogContent>
                 <DialogActions>
-                    <Button size="small" onClick={() => setAssignDev(null)}>Hủy</Button>
-                    <Button size="small" disabled={assignMut.isPending} onClick={() => assignMut.mutate()}>Cấp</Button>
+                    <Button size="small" onClick={() => setAssignDev(null)}>{t('common.cancel')}</Button>
+                    <Button size="small" disabled={assignMut.isPending} onClick={() => assignMut.mutate()}>{t('common.assign')}</Button>
                 </DialogActions>
             </Dialog>
 
             {/* Transfer Dialog */}
             <Dialog open={!!transferDev} onClose={() => setTransferDev(null)} maxWidth="xs" fullWidth>
-                <DialogTitle>Chuyển license — {transferDev?.deviceName}</DialogTitle>
+                <DialogTitle>{t('license.transfer')} — {transferDev?.deviceName}</DialogTitle>
                 <DialogContent dividers>
                     <Stack gap={2} pt={0.5}>
                         <Typography variant="body2" color="text.secondary">
-                            Gói {transferDev?.packageType && PKG_LABELS[transferDev.packageType as PackageType]},
-                            hết hạn {fmtDate(transferDev?.expiresAt ?? null)} sẽ được chuyển sang thiết bị đích.
+                            {t('license.package')}: {transferDev?.packageType && t(PKG_LABEL_KEYS[transferDev.packageType as PackageType])},
+                            {t('license.expiresAt')}: {fmtDate(transferDev?.expiresAt ?? null)}
                         </Typography>
-                        <TextField select fullWidth label="Thiết bị đích" value={toDeviceId}
+                        <TextField select fullWidth label={t('sites.targetSite')} value={toDeviceId}
                             onChange={e => setToDeviceId(e.target.value)} size="small">
                             {availableTargets.map(d => (
                                 <MenuItem key={d.deviceId} value={d.deviceId}>{d.deviceName}</MenuItem>
                             ))}
                             {availableTargets.length === 0 && (
-                                <MenuItem disabled>Không có thiết bị đủ điều kiện</MenuItem>
+                                <MenuItem disabled>{t('common.noData')}</MenuItem>
                             )}
                         </TextField>
                     </Stack>
                 </DialogContent>
                 <DialogActions>
-                    <Button size="small" onClick={() => setTransferDev(null)}>Hủy</Button>
-                    <Button size="small" disabled={!toDeviceId || transferMut.isPending} onClick={() => transferMut.mutate()}>Chuyển</Button>
+                    <Button size="small" onClick={() => setTransferDev(null)}>{t('common.cancel')}</Button>
+                    <Button size="small" disabled={!toDeviceId || transferMut.isPending} onClick={() => transferMut.mutate()}>{t('common.transfer')}</Button>
                 </DialogActions>
             </Dialog>
 
@@ -400,7 +408,7 @@ function DevicesTab() {
                 <DialogTitle>
                     <Stack direction="row" alignItems="center" gap={1}>
                         <History fontSize="small" color="primary" />
-                        Lịch sử license — {historyDev?.deviceName}
+                        {t('license.history')} — {historyDev?.deviceName}
                     </Stack>
                 </DialogTitle>
                 <DialogContent sx={{ p: 0 }}>
@@ -413,41 +421,41 @@ function DevicesTab() {
                                 ? (historyDev.daysRemaining ?? 999) <= 7 ? 'warning.main' : 'success.main'
                                 : 'error.main',
                         }}>
-                            <Typography variant="subtitle2" fontWeight={600} mb={0.5}>License hiện tại</Typography>
+                            <Typography variant="subtitle2" fontWeight={600} mb={0.5}>{t('license.active')}</Typography>
                             <Stack direction="row" gap={2} flexWrap="wrap">
-                                <Typography variant="body2">Gói: <strong>{historyDev.packageType ? PKG_LABELS[historyDev.packageType as PackageType] : '—'}</strong></Typography>
-                                <Typography variant="body2">Kích hoạt: <strong>{fmtDate(historyDev.activatedAt)}</strong></Typography>
-                                <Typography variant="body2">Hết hạn: <strong>{fmtDate(historyDev.expiresAt)}</strong></Typography>
+                                <Typography variant="body2">{t('license.package')}: <strong>{historyDev.packageType ? t(PKG_LABEL_KEYS[historyDev.packageType as PackageType]) : '—'}</strong></Typography>
+                                <Typography variant="body2">{t('license.activatedAt')}: <strong>{fmtDate(historyDev.activatedAt)}</strong></Typography>
+                                <Typography variant="body2">{t('license.expiresAt')}: <strong>{fmtDate(historyDev.expiresAt)}</strong></Typography>
                                 {historyDev.daysRemaining != null && historyDev.isLicensed && (
-                                    <Chip label={`Còn ${historyDev.daysRemaining} ngày`} size="small"
+                                    <Chip label={t('license.daysRemaining', { days: historyDev.daysRemaining })} size="small"
                                         color={historyDev.daysRemaining <= 7 ? 'error' : historyDev.daysRemaining <= 30 ? 'warning' : 'success'} />
                                 )}
-                                {!historyDev.isLicensed && <Chip label="Đã hết hạn" size="small" color="error" />}
+                                {!historyDev.isLicensed && <Chip label={t('license.expired')} size="small" color="error" />}
                             </Stack>
                             {historyDev.activatedByName && (
                                 <Typography variant="caption" color="text.secondary" display="block" mt={0.5}>
-                                    Cấp bởi: {historyDev.activatedByName}
-                                    {historyDev.transferredFromDeviceName && ` (chuyển từ ${historyDev.transferredFromDeviceName})`}
+                                    {t('license.activatedBy')}: {historyDev.activatedByName}
+                                    {historyDev.transferredFromDeviceName && ` (${t('license.transferredFrom', { device: historyDev.transferredFromDeviceName })})`}
                                 </Typography>
                             )}
                         </Box>
                     ) : (
                         <Box sx={{ mx: 2, mt: 2, mb: 1, p: 1.5, borderRadius: 1, bgcolor: 'action.hover' }}>
-                            <Typography variant="body2" color="text.secondary">Thiết bị chưa có license</Typography>
+                            <Typography variant="body2" color="text.secondary">{t('license.noDeviceLicense')}</Typography>
                         </Box>
                     )}
                     <Box sx={{ px: 2, pb: 2 }}>
                         <Typography variant="overline" color="text.secondary" display="block" sx={{ mt: 1.5, mb: 1 }}>
-                            Lịch sử thay đổi
+                            {t('license.changeHistory')}
                         </Typography>
                         {histLoading ? <CircularProgress size={24} sx={{ m: 2 }} /> : (
                             <Table size="small">
                                 <TableHead>
                                     <TableRow>
-                                        <TableCell>Thời gian</TableCell>
-                                        <TableCell>Hành động</TableCell>
-                                        <TableCell>Chi tiết</TableCell>
-                                        <TableCell>Người thực hiện</TableCell>
+                                        <TableCell>{t('common.timestamp')}</TableCell>
+                                        <TableCell>{t('common.actionCol')}</TableCell>
+                                        <TableCell>{t('common.detail')}</TableCell>
+                                        <TableCell>{t('common.performer')}</TableCell>
                                     </TableRow>
                                 </TableHead>
                                 <TableBody>
@@ -462,13 +470,13 @@ function DevicesTab() {
                                                         : '—'}
                                                 </Typography>
                                             </TableCell>
-                                            <TableCell><Typography variant="caption">{h.performedByName ?? 'Hệ thống'}</Typography></TableCell>
+                                            <TableCell><Typography variant="caption">{h.performedByName ?? t('common.system')}</Typography></TableCell>
                                         </TableRow>
                                     ))}
                                     {devHistory.length === 0 && (
                                         <TableRow>
                                             <TableCell colSpan={4} align="center" sx={{ py: 3, color: 'text.disabled' }}>
-                                                Chưa có lịch sử
+                                                {t('license.noDeviceHistory')}
                                             </TableCell>
                                         </TableRow>
                                     )}
@@ -478,7 +486,7 @@ function DevicesTab() {
                     </Box>
                 </DialogContent>
                 <DialogActions>
-                    <Button size="small" onClick={() => setHistoryDev(null)}>Đóng</Button>
+                    <Button size="small" onClick={() => setHistoryDev(null)}>{t('common.close')}</Button>
                 </DialogActions>
             </Dialog>
         </Box>
@@ -496,6 +504,7 @@ function fmtMb(mb: number) {
 
 function RequestsTab() {
     const qc = useQueryClient();
+    const { t } = useTranslation();
 
     // ── License requests ──────────────────────────────────────────────────────
     const { data: licReqs = [], isLoading: licLoading } = useQuery({
@@ -556,11 +565,11 @@ function RequestsTab() {
             <Stack direction="row" alignItems="center" justifyContent="space-between" mb={2}>
                 <Stack direction="row" alignItems="center" gap={1}>
                     <Inventory2 fontSize="small" color="primary" />
-                    <Typography variant="subtitle1" fontWeight={700}>Yêu cầu mua gói License</Typography>
+                    <Typography variant="subtitle1" fontWeight={700}>{t('license.requestLicenseTitle')}</Typography>
                 </Stack>
                 <Button size="small" startIcon={<Add />}
                     onClick={() => { setSelPkg('12M'); setLicQty('1'); setLicNote(''); setLicOpen(true); }}>
-                    Tạo yêu cầu
+                    {t('license.createRequest')}
                 </Button>
             </Stack>
 
@@ -569,18 +578,18 @@ function RequestsTab() {
                 <Table size="small">
                     <TableHead>
                         <TableRow>
-                            <TableCell>Gói</TableCell>
-                            <TableCell>Số lượng</TableCell>
-                            <TableCell>Ghi chú</TableCell>
-                            <TableCell>Trạng thái</TableCell>
-                            <TableCell>Phản hồi admin</TableCell>
-                            <TableCell>Ngày tạo</TableCell>
+                            <TableCell>{t('license.package')}</TableCell>
+                            <TableCell>{t('license.quantity')}</TableCell>
+                            <TableCell>{t('common.note')}</TableCell>
+                            <TableCell>{t('common.status')}</TableCell>
+                            <TableCell>{t('license.adminNote')}</TableCell>
+                            <TableCell>{t('common.createdAt')}</TableCell>
                         </TableRow>
                     </TableHead>
                     <TableBody>
                         {pagedLicReqs.map((row: PurchaseRequestRow) => (
                             <TableRow key={row.id} hover>
-                                <TableCell><Typography variant="body2">{PKG_LABELS[row.packageType as PackageType] ?? row.packageType}</Typography></TableCell>
+                                <TableCell><Typography variant="body2">{t(PKG_LABEL_KEYS[row.packageType as PackageType] ?? row.packageType)}</Typography></TableCell>
                                 <TableCell><Typography variant="body2">{row.quantity}</Typography></TableCell>
                                 <TableCell><Typography variant="caption">{row.note ?? '—'}</Typography></TableCell>
                                 <TableCell><RequestStatusChip status={row.status} /></TableCell>
@@ -591,7 +600,7 @@ function RequestsTab() {
                         {licReqs.length === 0 && (
                             <TableRow>
                                 <TableCell colSpan={6} align="center" sx={{ py: 3, color: 'text.disabled' }}>
-                                    Chưa có yêu cầu nào
+                                    {t('license.noRequests')}
                                 </TableCell>
                             </TableRow>
                         )}
@@ -606,7 +615,7 @@ function RequestsTab() {
                     onRowsPerPageChange={() => {}}
                     rowsPerPageOptions={[LIC_PER_PAGE]}
                     labelRowsPerPage=""
-                    labelDisplayedRows={({ from, to, count }) => `${from}–${to} / ${count}`}
+                    labelDisplayedRows={({ from, to, count }) => t('common.displayedRows', { from, to, count })}
                 />
                 </>
             )}
@@ -617,11 +626,11 @@ function RequestsTab() {
             <Stack direction="row" alignItems="center" justifyContent="space-between" mb={2}>
                 <Stack direction="row" alignItems="center" gap={1}>
                     <Storage fontSize="small" color="primary" />
-                    <Typography variant="subtitle1" fontWeight={700}>Yêu cầu mua gói Dung lượng</Typography>
+                    <Typography variant="subtitle1" fontWeight={700}>{t('license.requestStorageTitle')}</Typography>
                 </Stack>
                 <Button size="small" startIcon={<Add />}
                     onClick={() => { setStorPkg(50); setStorQty('1'); setStorNote(''); setStorOpen(true); }}>
-                    Tạo yêu cầu
+                    {t('license.createRequest')}
                 </Button>
             </Stack>
 
@@ -629,7 +638,7 @@ function RequestsTab() {
             {storUsage && (
                 <Box sx={{ mb: 2, p: 1.5, borderRadius: 1.5, border: '1px solid', borderColor: 'divider', bgcolor: 'action.hover' }}>
                     <Stack direction="row" justifyContent="space-between" alignItems="center" mb={0.5}>
-                        <Typography variant="caption" color="text.secondary">Dung lượng hiện tại</Typography>
+                        <Typography variant="caption" color="text.secondary">{t('license.currentStorage')}</Typography>
                         <Typography variant="caption" fontWeight={700}
                             color={storUsage.percentUsed >= 90 ? 'error.main' : storUsage.percentUsed >= 70 ? 'warning.main' : 'text.primary'}>
                             {fmtMb(storUsage.usedMb)} / {fmtMb(storUsage.totalQuotaMb)} · {storUsage.percentUsed}%
@@ -646,13 +655,13 @@ function RequestsTab() {
                 <Table size="small">
                     <TableHead>
                         <TableRow>
-                            <TableCell>Gói</TableCell>
-                            <TableCell>Số lượng</TableCell>
-                            <TableCell>Tổng</TableCell>
-                            <TableCell>Ghi chú</TableCell>
-                            <TableCell>Trạng thái</TableCell>
-                            <TableCell>Phản hồi admin</TableCell>
-                            <TableCell>Ngày tạo</TableCell>
+                            <TableCell>{t('license.package')}</TableCell>
+                            <TableCell>{t('license.quantity')}</TableCell>
+                            <TableCell>{t('common.total')}</TableCell>
+                            <TableCell>{t('common.note')}</TableCell>
+                            <TableCell>{t('common.status')}</TableCell>
+                            <TableCell>{t('license.adminNote')}</TableCell>
+                            <TableCell>{t('common.createdAt')}</TableCell>
                         </TableRow>
                     </TableHead>
                     <TableBody>
@@ -670,7 +679,7 @@ function RequestsTab() {
                         {storReqs.length === 0 && (
                             <TableRow>
                                 <TableCell colSpan={7} align="center" sx={{ py: 3, color: 'text.disabled' }}>
-                                    Chưa có yêu cầu nào
+                                    {t('license.noRequests')}
                                 </TableCell>
                             </TableRow>
                         )}
@@ -685,31 +694,31 @@ function RequestsTab() {
                     onRowsPerPageChange={() => {}}
                     rowsPerPageOptions={[STOR_PER_PAGE]}
                     labelRowsPerPage=""
-                    labelDisplayedRows={({ from, to, count }) => `${from}–${to} / ${count}`}
+                    labelDisplayedRows={({ from, to, count }) => t('common.displayedRows', { from, to, count })}
                 />
                 </>
             )}
 
             {/* ── Dialog: tạo yêu cầu license ── */}
             <Dialog open={licOpen} onClose={() => setLicOpen(false)} maxWidth="xs" fullWidth>
-                <DialogTitle>Tạo yêu cầu mua gói License</DialogTitle>
+                <DialogTitle>{t('license.requestLicense')}</DialogTitle>
                 <DialogContent dividers>
                     <Stack gap={2} pt={0.5}>
-                        <TextField select fullWidth label="Loại gói" value={selPkg}
+                        <TextField select fullWidth label={t('license.packageType')} value={selPkg}
                             onChange={e => setSelPkg(e.target.value as PackageType)} size="small">
-                            {PKG_TYPES.map(t => <MenuItem key={t} value={t}>{PKG_LABELS[t]}</MenuItem>)}
+                            {PKG_TYPES.map(pkg => <MenuItem key={pkg} value={pkg}>{t(PKG_LABEL_KEYS[pkg])}</MenuItem>)}
                         </TextField>
-                        <TextField fullWidth label="Số lượng" type="number" size="small"
+                        <TextField fullWidth label={t('license.quantity')} type="number" size="small"
                             value={licQty} onChange={e => setLicQty(e.target.value)}
                             inputProps={{ min: 1, max: 100 }} />
-                        <TextField fullWidth label="Ghi chú / Lý do" size="small" multiline rows={2}
+                        <TextField fullWidth label={t('common.note')} size="small" multiline rows={2}
                             value={licNote} onChange={e => setLicNote(e.target.value)} />
                     </Stack>
                 </DialogContent>
                 <DialogActions>
-                    <Button size="small" onClick={() => setLicOpen(false)}>Hủy</Button>
+                    <Button size="small" onClick={() => setLicOpen(false)}>{t('common.cancel')}</Button>
                     <Button size="small" disabled={!licQty || licCreateMut.isPending}
-                        onClick={() => licCreateMut.mutate()}>Gửi yêu cầu</Button>
+                        onClick={() => licCreateMut.mutate()}>{t('common.send')}</Button>
                 </DialogActions>
             </Dialog>
 
@@ -718,40 +727,40 @@ function RequestsTab() {
                 <DialogTitle>
                     <Stack direction="row" alignItems="center" gap={1}>
                         <Storage fontSize="small" />
-                        Tạo yêu cầu mua Dung lượng
+                        {t('license.requestStorage')}
                     </Stack>
                 </DialogTitle>
                 <DialogContent dividers>
                     <Stack gap={2} pt={0.5}>
-                        <TextField select fullWidth label="Gói dung lượng" value={storPkg}
+                        <TextField select fullWidth label={t('license.storagePackage')} value={storPkg}
                             onChange={e => setStorPkg(Number(e.target.value) as StoragePackageMb)} size="small">
                             {STORAGE_PACKAGES.map(mb => (
                                 <MenuItem key={mb} value={mb}>+{mb} MB</MenuItem>
                             ))}
                         </TextField>
-                        <TextField fullWidth label="Số lượng" type="number" size="small"
+                        <TextField fullWidth label={t('license.quantity')} type="number" size="small"
                             value={storQty} onChange={e => setStorQty(e.target.value)}
                             inputProps={{ min: 1, max: 100 }}
-                            helperText={`Tổng: +${fmtMb(storPreviewMb)}`} />
-                        <TextField fullWidth label="Ghi chú / Lý do" size="small" multiline rows={2}
+                            helperText={t('license.storageTotal', { size: fmtMb(storPreviewMb) })} />
+                        <TextField fullWidth label={t('common.note')} size="small" multiline rows={2}
                             value={storNote} onChange={e => setStorNote(e.target.value)} />
                         {storUsage && (
                             <Box sx={{ p: 1.5, borderRadius: 1.5, bgcolor: 'action.hover', border: '1px solid', borderColor: 'divider' }}>
                                 <Typography variant="caption" color="text.secondary" display="block" mb={0.5}>
-                                    Sau khi duyệt
+                                    {t('license.afterApproval')}
                                 </Typography>
                                 <Typography variant="body2" fontWeight={600}>
                                     {fmtMb(currentUsedMb)} / <span style={{ color: '#16A34A' }}>{fmtMb(afterMb)}</span>
-                                    {' '}({Math.round((currentUsedMb / afterMb) * 100)}% đã dùng)
+                                    {' '}({t('license.usedPct', { pct: Math.round((currentUsedMb / afterMb) * 100) })})
                                 </Typography>
                             </Box>
                         )}
                     </Stack>
                 </DialogContent>
                 <DialogActions>
-                    <Button size="small" onClick={() => setStorOpen(false)}>Hủy</Button>
+                    <Button size="small" onClick={() => setStorOpen(false)}>{t('common.cancel')}</Button>
                     <Button size="small" disabled={!storQty || storCreateMut.isPending}
-                        onClick={() => storCreateMut.mutate()}>Gửi yêu cầu</Button>
+                        onClick={() => storCreateMut.mutate()}>{t('common.send')}</Button>
                 </DialogActions>
             </Dialog>
         </Box>
@@ -761,6 +770,7 @@ function RequestsTab() {
 // ─── History Tab ──────────────────────────────────────────────────────────────
 
 function HistoryTab() {
+    const { t } = useTranslation();
     const [page, setPage]               = useState(0);
     const [rowsPerPage, setRowsPerPage] = useState(25);
     const { data = [], isLoading, refetch } = useQuery({
@@ -783,11 +793,11 @@ function HistoryTab() {
                 <Table size="small">
                     <TableHead>
                         <TableRow>
-                            <TableCell>Thời gian</TableCell>
-                            <TableCell>Hành động</TableCell>
-                            <TableCell>Thiết bị</TableCell>
-                            <TableCell>Chi tiết</TableCell>
-                            <TableCell>Người thực hiện</TableCell>
+                            <TableCell>{t('common.timestamp')}</TableCell>
+                            <TableCell>{t('common.actionCol')}</TableCell>
+                            <TableCell>{t('devices.title')}</TableCell>
+                            <TableCell>{t('common.detail')}</TableCell>
+                            <TableCell>{t('common.performer')}</TableCell>
                         </TableRow>
                     </TableHead>
                     <TableBody>
@@ -809,7 +819,7 @@ function HistoryTab() {
                         {data.length === 0 && (
                             <TableRow>
                                 <TableCell colSpan={5} align="center" sx={{ py: 4, color: 'text.disabled' }}>
-                                    Chưa có lịch sử
+                                    {t('license.noHistory')}
                                 </TableCell>
                             </TableRow>
                         )}
@@ -823,8 +833,8 @@ function HistoryTab() {
                     rowsPerPage={rowsPerPage}
                     onRowsPerPageChange={e => { setRowsPerPage(parseInt(e.target.value)); setPage(0); }}
                     rowsPerPageOptions={[10, 25, 50, 100]}
-                    labelRowsPerPage="Mỗi trang:"
-                    labelDisplayedRows={({ from, to, count }) => `${from}–${to} / ${count}`}
+                    labelRowsPerPage={t("common.perPage")}
+                    labelDisplayedRows={({ from, to, count }) => t('common.displayedRows', { from, to, count })}
                 />
                 </>
             )}
@@ -836,24 +846,25 @@ function HistoryTab() {
 
 export default function LicensePage() {
     const [tab, setTab] = useState(0);
+    const { t } = useTranslation();
 
     return (
         <Box sx={{ p: 3 }}>
             {/* Header — consistent with other pages */}
             <Stack direction="row" justifyContent="space-between" alignItems="flex-start" mb={3}>
                 <Box>
-                    <Typography variant="h4" fontWeight={700}>License</Typography>
+                    <Typography variant="h4" fontWeight={700}>{t('license.title')}</Typography>
                     <Typography variant="body2" color="text.secondary">
-                        Quản lý giấy phép thiết bị
+                        {t('license.subtitle')}
                     </Typography>
                 </Box>
             </Stack>
 
             <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mb: 3 }}>
-                <Tab icon={<Inventory2 fontSize="small" />} iconPosition="start" label="Tổng quan" />
-                <Tab icon={<DevicesOther fontSize="small" />} iconPosition="start" label="Thiết bị" />
-                <Tab icon={<Add fontSize="small" />} iconPosition="start" label="Yêu cầu mua" />
-                <Tab icon={<History fontSize="small" />} iconPosition="start" label="Lịch sử" />
+                <Tab icon={<Inventory2 fontSize="small" />} iconPosition="start" label={t('license.overview')} />
+                <Tab icon={<DevicesOther fontSize="small" />} iconPosition="start" label={t('license.devices')} />
+                <Tab icon={<Add fontSize="small" />} iconPosition="start" label={t('license.requests')} />
+                <Tab icon={<History fontSize="small" />} iconPosition="start" label={t('license.history')} />
             </Tabs>
 
             {tab === 0 && <OverviewTab />}

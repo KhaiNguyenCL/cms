@@ -11,6 +11,7 @@ import {
     Add, PlayArrow, Stop, Replay, Delete, Edit, Tv,
     Circle, SyncAlt,
 } from '@mui/icons-material';
+import { useTranslation } from 'react-i18next';
 import { sitesApi as syncGroupsApi } from '@api/sites.api';
 import { devicesApi } from '@api/devices.api';
 import { apiClient } from '@api/client';
@@ -28,6 +29,7 @@ function formatDuration(ms: number | null): string {
 }
 
 function SyncProgress({ group }: { group: SyncGroup }) {
+    const { t } = useTranslation();
     const [tick, setTick] = React.useState(0);
     React.useEffect(() => {
         if (!group.startEpoch || !group.totalDurationMs) return;
@@ -43,7 +45,7 @@ function SyncProgress({ group }: { group: SyncGroup }) {
     return (
         <Box mt={1}>
             <Stack direction="row" justifyContent="space-between" mb={0.5}>
-                <Typography variant="caption" color="text.secondary">Tiến độ vòng lặp</Typography>
+                <Typography variant="caption" color="text.secondary">{t('syncGroups.loopProgress')}</Typography>
                 <Typography variant="caption" color="text.secondary">
                     {Math.floor(elapsedSec / 60)}:{String(elapsedSec % 60).padStart(2, '0')} / {Math.floor(totalSec / 60)}:{String(totalSec % 60).padStart(2, '0')}
                 </Typography>
@@ -62,6 +64,7 @@ interface GroupDialogProps {
 }
 
 function GroupDialog({ open, editing, onClose }: GroupDialogProps) {
+    const { t } = useTranslation();
     const dispatch = useAppDispatch();
     const qc = useQueryClient();
     const [name, setName] = useState('');
@@ -90,10 +93,10 @@ function GroupDialog({ open, editing, onClose }: GroupDialogProps) {
             : syncGroupsApi.create({ name, description: description || undefined, playlistId: playlistId ?? undefined }),
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: ['sites'] });
-            dispatch(pushToast({ severity: 'success', message: editing ? 'Đã cập nhật' : 'Đã tạo sync group' }));
+            dispatch(pushToast({ severity: 'success', message: editing ? t('syncGroups.updateSuccess') : t('syncGroups.createSuccess') }));
             onClose();
         },
-        onError: () => dispatch(pushToast({ severity: 'error', message: 'Có lỗi xảy ra' })),
+        onError: () => dispatch(pushToast({ severity: 'error', message: t('syncGroups.genericError') })),
     });
 
     const playlistOptions = playlists ?? [];
@@ -101,11 +104,11 @@ function GroupDialog({ open, editing, onClose }: GroupDialogProps) {
 
     return (
         <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-            <DialogTitle fontWeight={700}>{editing ? 'Chỉnh sửa Sync Group' : 'Tạo Sync Group mới'}</DialogTitle>
+            <DialogTitle fontWeight={700}>{editing ? t('syncGroups.editTitle') : t('syncGroups.createTitle')}</DialogTitle>
             <DialogContent dividers>
                 <Stack spacing={2.5} pt={0.5}>
-                    <TextField label="Tên nhóm *" value={name} onChange={e => setName(e.target.value)} fullWidth size="small" />
-                    <TextField label="Mô tả" value={description} onChange={e => setDescription(e.target.value)} fullWidth multiline rows={2} size="small" />
+                    <TextField label={t('syncGroups.groupName')} value={name} onChange={e => setName(e.target.value)} fullWidth size="small" />
+                    <TextField label={t('syncGroups.description')} value={description} onChange={e => setDescription(e.target.value)} fullWidth multiline rows={2} size="small" />
                     <Autocomplete
                         options={playlistOptions}
                         getOptionLabel={o => o.name}
@@ -113,15 +116,15 @@ function GroupDialog({ open, editing, onClose }: GroupDialogProps) {
                         inputValue={playlistInput}
                         onInputChange={(_, v) => setPlaylistInput(v)}
                         onChange={(_, v) => setPlaylistId(v?.id ?? null)}
-                        renderInput={params => <TextField {...params} label="Playlist (có thể gán sau)" size="small" />}
+                        renderInput={params => <TextField {...params} label={t('syncGroups.playlistOptional')} size="small" />}
                     />
                 </Stack>
             </DialogContent>
             <DialogActions sx={{ px: 3, pb: 2 }}>
-                <Button size="small" onClick={onClose}>Hủy</Button>
+                <Button size="small" onClick={onClose}>{t('common.cancel')}</Button>
                 <Button size="small" disabled={!name.trim() || mutation.isPending}
                     onClick={() => mutation.mutate()}>
-                    {mutation.isPending ? <CircularProgress size={18} /> : (editing ? 'Lưu' : 'Tạo')}
+                    {mutation.isPending ? <CircularProgress size={18} /> : (editing ? t('common.save') : t('common.create'))}
                 </Button>
             </DialogActions>
         </Dialog>
@@ -131,6 +134,7 @@ function GroupDialog({ open, editing, onClose }: GroupDialogProps) {
 // ─── Device Assignment Dialog ─────────────────────────────────────────────────
 
 function DeviceDialog({ group, onClose }: { group: SyncGroup; onClose: () => void }) {
+    const { t } = useTranslation();
     const dispatch = useAppDispatch();
     const qc = useQueryClient();
 
@@ -144,9 +148,9 @@ function DeviceDialog({ group, onClose }: { group: SyncGroup; onClose: () => voi
             syncGroupsApi.updateDevices(group.id, body),
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: ['sites'] });
-            dispatch(pushToast({ severity: 'success', message: 'Đã cập nhật danh sách thiết bị' }));
+            dispatch(pushToast({ severity: 'success', message: t('syncGroups.devicesUpdated') }));
         },
-        onError: () => dispatch(pushToast({ severity: 'error', message: 'Có lỗi xảy ra' })),
+        onError: () => dispatch(pushToast({ severity: 'error', message: t('syncGroups.genericError') })),
     });
 
     const memberIds = new Set(group.devices?.map(d => d.id) ?? []);
@@ -162,10 +166,10 @@ function DeviceDialog({ group, onClose }: { group: SyncGroup; onClose: () => voi
 
     return (
         <Dialog open onClose={onClose} maxWidth="sm" fullWidth>
-            <DialogTitle fontWeight={700}>Thiết bị trong nhóm: {group.name}</DialogTitle>
+            <DialogTitle fontWeight={700}>{t('syncGroups.devicesTitle', { name: group.name })}</DialogTitle>
             <DialogContent dividers>
                 <Alert severity="info" sx={{ mb: 2 }}>
-                    Chỉ hiển thị thiết bị chưa thuộc nhóm sync khác.
+                    {t('syncGroups.devicesHint')}
                 </Alert>
                 <List dense>
                     {available.map((d: Device) => {
@@ -179,7 +183,7 @@ function DeviceDialog({ group, onClose }: { group: SyncGroup; onClose: () => voi
                                         color={isMember ? 'error' : 'primary'}
                                         disabled={mutation.isPending}
                                         onClick={() => toggle(d)}>
-                                        {isMember ? 'Xóa' : 'Thêm'}
+                                        {isMember ? t('common.delete') : t('common.add')}
                                     </Button>
                                 </ListItemSecondaryAction>
                             </ListItem>
@@ -187,13 +191,13 @@ function DeviceDialog({ group, onClose }: { group: SyncGroup; onClose: () => voi
                     })}
                     {available.length === 0 && (
                         <Typography variant="body2" color="text.secondary" sx={{ p: 2, textAlign: 'center' }}>
-                            Không có thiết bị khả dụng
+                            {t('syncGroups.noDevicesAvailable')}
                         </Typography>
                     )}
                 </List>
             </DialogContent>
             <DialogActions sx={{ px: 3, pb: 2 }}>
-                <Button size="small" onClick={onClose}>Đóng</Button>
+                <Button size="small" onClick={onClose}>{t('common.close')}</Button>
             </DialogActions>
         </Dialog>
     );
@@ -202,6 +206,7 @@ function DeviceDialog({ group, onClose }: { group: SyncGroup; onClose: () => voi
 // ─── Group Card ───────────────────────────────────────────────────────────────
 
 function GroupCard({ group, onEdit }: { group: SyncGroup; onEdit: (g: SyncGroup) => void }) {
+    const { t } = useTranslation();
     const dispatch = useAppDispatch();
     const qc = useQueryClient();
     const [showDevices, setShowDevices] = useState(false);
@@ -210,23 +215,23 @@ function GroupCard({ group, onEdit }: { group: SyncGroup; onEdit: (g: SyncGroup)
 
     const start = useMutation({
         mutationFn: () => syncGroupsApi.start(group.id),
-        onSuccess: () => { qc.invalidateQueries({ queryKey: ['sites'] }); dispatch(pushToast({ severity: 'success', message: 'Đã bắt đầu sync' })); },
-        onError: (e: any) => dispatch(pushToast({ severity: 'error', message: e?.response?.data?.message ?? 'Lỗi' })),
+        onSuccess: () => { qc.invalidateQueries({ queryKey: ['sites'] }); dispatch(pushToast({ severity: 'success', message: t('syncGroups.startSuccess') })); },
+        onError: (e: any) => dispatch(pushToast({ severity: 'error', message: e?.response?.data?.message ?? t('syncGroups.genericError') })),
     });
     const restart = useMutation({
         mutationFn: () => syncGroupsApi.restart(group.id),
-        onSuccess: () => { qc.invalidateQueries({ queryKey: ['sites'] }); dispatch(pushToast({ severity: 'success', message: 'Đã restart sync' })); },
-        onError: () => dispatch(pushToast({ severity: 'error', message: 'Lỗi' })),
+        onSuccess: () => { qc.invalidateQueries({ queryKey: ['sites'] }); dispatch(pushToast({ severity: 'success', message: t('syncGroups.restartSuccess') })); },
+        onError: () => dispatch(pushToast({ severity: 'error', message: t('syncGroups.genericError') })),
     });
     const stop = useMutation({
         mutationFn: () => syncGroupsApi.stop(group.id),
-        onSuccess: () => { qc.invalidateQueries({ queryKey: ['sites'] }); dispatch(pushToast({ severity: 'success', message: 'Đã dừng sync' })); },
-        onError: () => dispatch(pushToast({ severity: 'error', message: 'Lỗi' })),
+        onSuccess: () => { qc.invalidateQueries({ queryKey: ['sites'] }); dispatch(pushToast({ severity: 'success', message: t('syncGroups.stopSuccess') })); },
+        onError: () => dispatch(pushToast({ severity: 'error', message: t('syncGroups.genericError') })),
     });
     const del = useMutation({
         mutationFn: () => syncGroupsApi.delete(group.id),
-        onSuccess: () => { qc.invalidateQueries({ queryKey: ['sites'] }); dispatch(pushToast({ severity: 'success', message: 'Đã xóa' })); },
-        onError: () => dispatch(pushToast({ severity: 'error', message: 'Lỗi' })),
+        onSuccess: () => { qc.invalidateQueries({ queryKey: ['sites'] }); dispatch(pushToast({ severity: 'success', message: t('syncGroups.deleteSuccess') })); },
+        onError: () => dispatch(pushToast({ severity: 'error', message: t('syncGroups.genericError') })),
     });
 
     return (
@@ -247,12 +252,12 @@ function GroupCard({ group, onEdit }: { group: SyncGroup; onEdit: (g: SyncGroup)
                             </Box>
                         </Stack>
                         <Stack direction="row" spacing={0.5}>
-                            <Tooltip title="Chỉnh sửa">
+                            <Tooltip title={t('common.edit')}>
                                 <IconButton size="small" onClick={() => onEdit(group)}><Edit fontSize="small" /></IconButton>
                             </Tooltip>
-                            <Tooltip title="Xóa">
+                            <Tooltip title={t('common.delete')}>
                                 <IconButton size="small" color="error" disabled={del.isPending}
-                                    onClick={() => window.confirm(`Xóa "${group.name}"?`) && del.mutate()}>
+                                    onClick={() => window.confirm(t('syncGroups.deleteConfirm', { name: group.name })) && del.mutate()}>
                                     <Delete fontSize="small" />
                                 </IconButton>
                             </Tooltip>
@@ -261,7 +266,7 @@ function GroupCard({ group, onEdit }: { group: SyncGroup; onEdit: (g: SyncGroup)
 
                     <Stack direction="row" spacing={1} mt={1.5} flexWrap="wrap" useFlexGap>
                         <Chip
-                            label={isPlaying ? 'Đang phát' : 'Dừng'}
+                            label={isPlaying ? t('syncGroups.playing') : t('syncGroups.stopped')}
                             color={isPlaying ? 'success' : 'default'}
                             size="small" icon={isPlaying ? <PlayArrow sx={{ fontSize: '14px !important' }} /> : undefined}
                         />
@@ -313,6 +318,7 @@ function GroupCard({ group, onEdit }: { group: SyncGroup; onEdit: (g: SyncGroup)
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function SyncGroupsPage() {
+    const { t } = useTranslation();
     const [dialogOpen, setDialogOpen] = useState(false);
     const [editing, setEditing] = useState<SyncGroup | null>(null);
 
@@ -331,13 +337,13 @@ export default function SyncGroupsPage() {
         <Box>
             <Stack direction="row" justifyContent="space-between" alignItems="center" mb={3}>
                 <Box>
-                    <Typography variant="h5" fontWeight={700}>Sync Groups</Typography>
+                    <Typography variant="h5" fontWeight={700}>{t('syncGroups.title')}</Typography>
                     <Typography variant="body2" color="text.secondary">
-                        Đồng bộ phát nội dung trên nhiều màn hình cùng lúc
+                        {t('syncGroups.subtitle')}
                     </Typography>
                 </Box>
                 <Button startIcon={<Add />} onClick={openCreate}>
-                    Tạo nhóm mới
+                    {t('syncGroups.createGroup')}
                 </Button>
             </Stack>
 
@@ -348,12 +354,12 @@ export default function SyncGroupsPage() {
             ) : groups.length === 0 ? (
                 <Box sx={{ textAlign: 'center', py: 8 }}>
                     <SyncAlt sx={{ fontSize: 56, color: 'text.disabled', mb: 2 }} />
-                    <Typography variant="h6" color="text.secondary">Chưa có sync group nào</Typography>
+                    <Typography variant="h6" color="text.secondary">{t('syncGroups.noGroups')}</Typography>
                     <Typography variant="body2" color="text.disabled" mb={3}>
-                        Tạo nhóm để đồng bộ phát nội dung trên nhiều màn hình
+                        {t('syncGroups.noGroupsSubtitle')}
                     </Typography>
                     <Button startIcon={<Add />} onClick={openCreate}>
-                        Tạo nhóm đầu tiên
+                        {t('syncGroups.createFirst')}
                     </Button>
                 </Box>
             ) : (

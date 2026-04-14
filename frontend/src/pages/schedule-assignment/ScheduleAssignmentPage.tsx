@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
     Box, Typography, Stack, Button, Chip, Tooltip, IconButton,
@@ -34,15 +35,15 @@ import type { Schedule, Device, Site } from '@/types';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const DAY_LABELS = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
-
 function DaysChips({ days }: { days: number[] | null | undefined }) {
+    const { t } = useTranslation();
+    const dayLabels = [0, 1, 2, 3, 4, 5, 6].map(i => t(`scheduleAssignment.day${i}`));
     if (!days || days.length === 0)
-        return <Chip label="Hàng ngày" size="small" color="primary" variant="outlined"
+        return <Chip label={t('scheduleAssignment.daily')} size="small" color="primary" variant="outlined"
             sx={{ fontSize: '0.6rem', height: 18 }} />;
     return (
         <Stack direction="row" spacing={0.25} flexWrap="wrap">
-            {DAY_LABELS.map((d, i) => (
+            {dayLabels.map((d, i) => (
                 <Chip key={i} label={d} size="small" sx={{
                     fontSize: '0.6rem', height: 18, fontWeight: 700,
                     bgcolor: days.includes(i) ? 'primary.main' : 'action.disabledBackground',
@@ -54,11 +55,12 @@ function DaysChips({ days }: { days: number[] | null | undefined }) {
 }
 
 function TimeRange({ start, end }: { start?: string | null; end?: string | null }) {
+    const { t } = useTranslation();
     if (!start && !end)
         return (
             <Stack direction="row" alignItems="center" spacing={0.5}>
                 <AllInclusive sx={{ fontSize: 14, color: 'success.main' }} />
-                <Typography variant="caption" color="success.main">Cả ngày</Typography>
+                <Typography variant="caption" color="success.main">{t('scheduleAssignment.allDay')}</Typography>
             </Stack>
         );
     return (
@@ -88,6 +90,7 @@ function AddScheduleDialog({
     existingSiteScheduleIds: Set<string>;
     deviceConflicts: Map<string, DeviceConflict[]>;
 }) {
+    const { t } = useTranslation();
     const [search, setSearch] = useState('');
 
     const { data, isLoading } = useQuery({
@@ -104,11 +107,11 @@ function AddScheduleDialog({
 
     return (
         <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-            <DialogTitle fontWeight={700}>Thêm Schedule</DialogTitle>
+            <DialogTitle fontWeight={700}>{t('scheduleAssignment.addSchedule')}</DialogTitle>
             <DialogContent sx={{ p: 0 }}>
                 <Box sx={{ px: 2, pt: 1, pb: 1 }}>
                     <TextField
-                        size="small" fullWidth autoFocus placeholder="Tìm schedule…"
+                        size="small" fullWidth autoFocus placeholder={t('scheduleAssignment.searchSchedule')}
                         value={search} onChange={e => setSearch(e.target.value)}
                         InputProps={{
                             startAdornment: (
@@ -127,7 +130,7 @@ function AddScheduleDialog({
                     {!isLoading && schedules.length === 0 && (
                         <Typography variant="body2" color="text.secondary"
                             sx={{ p: 2, textAlign: 'center' }}>
-                            Không có schedule nào
+                            {t('scheduleAssignment.noSchedules')}
                         </Typography>
                     )}
                     {schedules.map(s => {
@@ -155,7 +158,7 @@ function AddScheduleDialog({
                                                 {s.name}
                                             </Typography>
                                             {alreadySite && (
-                                                <Chip label="Đã assign site" size="small"
+                                                <Chip label={t('scheduleAssignment.alreadyAssigned')} size="small"
                                                     color="success"
                                                     sx={{ fontSize: '0.6rem', height: 18 }} />
                                             )}
@@ -165,7 +168,7 @@ function AddScheduleDialog({
                                                         <Box>
                                                             <Typography variant="caption"
                                                                 fontWeight={700}>
-                                                                Đã assign trực tiếp cho:
+                                                                {t('scheduleAssignment.conflictTitle')}
                                                             </Typography>
                                                             {conflicts.map(c => (
                                                                 <Typography key={c.deviceId}
@@ -178,8 +181,7 @@ function AddScheduleDialog({
                                                                 display="block"
                                                                 sx={{ mt: 0.5,
                                                                     fontStyle: 'italic' }}>
-                                                                Device schedule có độ ưu tiên cao
-                                                                hơn site schedule.
+                                                                {t('scheduleAssignment.conflictNote')}
                                                             </Typography>
                                                         </Box>
                                                     }
@@ -188,7 +190,7 @@ function AddScheduleDialog({
                                                     <Chip
                                                         icon={<WarningAmber
                                                             sx={{ fontSize: '12px !important' }} />}
-                                                        label={`${conflicts.length} device đã có`}
+                                                        label={t('scheduleAssignment.conflictCount', { count: conflicts.length })}
                                                         size="small"
                                                         color="warning"
                                                         variant="outlined"
@@ -208,7 +210,7 @@ function AddScheduleDialog({
                 </List>
             </DialogContent>
             <DialogActions sx={{ px: 3, pb: 2 }}>
-                <Button size="small" onClick={onClose}>Đóng</Button>
+                <Button size="small" onClick={onClose}>{t('common.close')}</Button>
             </DialogActions>
         </Dialog>
     );
@@ -229,6 +231,7 @@ function SortableRow({
     deleting: boolean;
     inheritedFromSite?: boolean;
 }) {
+    const { t } = useTranslation();
     const {
         attributes, listeners, setNodeRef, transform, transition, isDragging,
     } = useSortable({ id: assignment.id });
@@ -267,7 +270,7 @@ function SortableRow({
                         </Typography>
                         {inheritedFromSite && (
                             <Typography variant="caption" color="text.disabled" sx={{ fontStyle: 'italic' }}>
-                                kế thừa từ site
+                                {t('scheduleAssignment.inheritedFromSite')}
                             </Typography>
                         )}
                     </Box>
@@ -285,12 +288,12 @@ function SortableRow({
                     <Typography variant="caption" color="text.secondary" noWrap>
                         {assignment.scheduleStartDate
                             ? new Date(assignment.scheduleStartDate)
-                                .toLocaleDateString('vi-VN')
+                                .toLocaleDateString()
                             : '—'}
                         {' – '}
                         {assignment.scheduleEndDate
                             ? new Date(assignment.scheduleEndDate)
-                                .toLocaleDateString('vi-VN')
+                                .toLocaleDateString()
                             : '—'}
                     </Typography>
                 ) : (
@@ -299,7 +302,7 @@ function SortableRow({
             </TableCell>
             <TableCell sx={{ width: 44, px: 0.5 }}>
                 {!inheritedFromSite && (
-                    <Tooltip title="Xóa">
+                    <Tooltip title={t('common.delete')}>
                         <span>
                             <IconButton size="small" color="error" disabled={deleting}
                                 onClick={() => onDelete(assignment.id)}>
@@ -316,6 +319,7 @@ function SortableRow({
 // ─── Schedule table header ────────────────────────────────────────────────────
 
 function ScheduleTableHeader({ showDrag = true }: { showDrag?: boolean }) {
+    const { t } = useTranslation();
     return (
         <TableHead>
             <TableRow>
@@ -324,9 +328,9 @@ function ScheduleTableHeader({ showDrag = true }: { showDrag?: boolean }) {
                     #
                 </TableCell>
                 <TableCell sx={{ fontWeight: 700 }}>Schedule</TableCell>
-                <TableCell sx={{ fontWeight: 700 }}>Giờ phát</TableCell>
-                <TableCell sx={{ fontWeight: 700 }}>Ngày phát</TableCell>
-                <TableCell sx={{ fontWeight: 700 }}>Khoảng ngày</TableCell>
+                <TableCell sx={{ fontWeight: 700 }}>{t('scheduleAssignment.colTime')}</TableCell>
+                <TableCell sx={{ fontWeight: 700 }}>{t('scheduleAssignment.colDays')}</TableCell>
+                <TableCell sx={{ fontWeight: 700 }}>{t('scheduleAssignment.colDateRange')}</TableCell>
                 {showDrag && <TableCell sx={{ width: 44 }} />}
             </TableRow>
         </TableHead>
@@ -348,6 +352,7 @@ function ScheduleListPanel({
     siteId?: string | null;
     siteName?: string | null;
 }) {
+    const { t } = useTranslation();
     const dispatch = useAppDispatch();
     const qc = useQueryClient();
     const [addOpen, setAddOpen] = useState(false);
@@ -549,9 +554,9 @@ function ScheduleListPanel({
 
             setDraft(null);
             qc.invalidateQueries({ queryKey });
-            dispatch(pushToast({ message: 'Đã lưu thay đổi', severity: 'success' }));
+            dispatch(pushToast({ message: t('scheduleAssignment.saveSuccess'), severity: 'success' }));
         } catch {
-            dispatch(pushToast({ message: 'Lưu thất bại', severity: 'error' }));
+            dispatch(pushToast({ message: t('scheduleAssignment.saveFailed'), severity: 'error' }));
         } finally {
             setSaving(false);
         }
@@ -587,11 +592,11 @@ function ScheduleListPanel({
                 {isDirty && (
                     <>
                         <Button size="small" startIcon={<Undo />} onClick={handleDiscard} disabled={saving}>
-                            Huỷ
+                            {t('common.cancel')}
                         </Button>
                         <Button size="small" variant="contained" startIcon={<Save />}
                             onClick={handleSave} disabled={saving}>
-                            {saving ? 'Đang lưu…' : 'Lưu'}
+                            {saving ? t('common.saving') : t('common.save')}
                         </Button>
                     </>
                 )}
@@ -600,7 +605,7 @@ function ScheduleListPanel({
                     onClick={() => setAddOpen(true)}
                     disabled={saving}
                 >
-                    Thêm
+                    {t('common.add')}
                 </Button>
             </Box>
 
@@ -614,10 +619,10 @@ function ScheduleListPanel({
                 ) : displayItems.length === 0 ? (
                     <Stack alignItems="center" spacing={1} sx={{ py: 4, color: 'text.disabled' }}>
                         <CalendarMonth sx={{ fontSize: 40 }} />
-                        <Typography variant="body2">Chưa có schedule nào</Typography>
+                        <Typography variant="body2">{t('scheduleAssignment.noSchedules')}</Typography>
                         <Button variant="outlined" size="small" startIcon={<Add />}
                             onClick={() => setAddOpen(true)}>
-                            Thêm
+                            {t('common.add')}
                         </Button>
                     </Stack>
                 ) : (
@@ -656,7 +661,7 @@ function ScheduleListPanel({
                                 sx={{ textTransform: 'uppercase', letterSpacing: 1 }}>
                                 Device Schedules
                             </Typography>
-                            <Tooltip title="Schedule gán trực tiếp cho device có độ ưu tiên CAO HƠN site schedules trong cùng khung giờ.">
+                            <Tooltip title={t('scheduleAssignment.deviceOverridesNote')}>
                                 <InfoOutlined sx={{ fontSize: 14, color: 'text.disabled' }} />
                             </Tooltip>
                         </Stack>
@@ -669,7 +674,7 @@ function ScheduleListPanel({
                         ) : deviceGroups.length === 0 ? (
                             <Typography variant="caption" color="text.disabled"
                                 sx={{ display: 'block', py: 1 }}>
-                                Không có device nào trong site này được assign schedule trực tiếp
+                                {t('scheduleAssignment.noDeviceOverrides')}
                             </Typography>
                         ) : (
                             deviceGroups.map(group => (
@@ -748,12 +753,12 @@ function ScheduleListPanel({
                                                                     color="text.secondary" noWrap>
                                                                     {a.scheduleStartDate
                                                                         ? new Date(a.scheduleStartDate)
-                                                                            .toLocaleDateString('vi-VN')
+                                                                            .toLocaleDateString()
                                                                         : '—'}
                                                                     {' – '}
                                                                     {a.scheduleEndDate
                                                                         ? new Date(a.scheduleEndDate)
-                                                                            .toLocaleDateString('vi-VN')
+                                                                            .toLocaleDateString()
                                                                         : '—'}
                                                                 </Typography>
                                                             ) : (
@@ -802,8 +807,9 @@ function TargetListPanel({
     onSelect,
 }: {
     selected: TargetInfo | null;
-    onSelect: (t: TargetInfo) => void;
+    onSelect: (info: TargetInfo) => void;
 }) {
+    const { t } = useTranslation();
     const [tab, setTab] = useState<TabType>('devices');
     const [search, setSearch] = useState('');
 
@@ -854,7 +860,7 @@ function TargetListPanel({
                 </Tabs>
                 <TextField
                     size="small" fullWidth
-                    placeholder={`Tìm ${tab === 'devices' ? 'device' : 'site'}…`}
+                    placeholder={tab === 'devices' ? t('scheduleAssignment.searchDevice') : t('scheduleAssignment.searchSite')}
                     value={search} onChange={e => setSearch(e.target.value)}
                     sx={{ mb: 1 }}
                     InputProps={{
@@ -879,7 +885,7 @@ function TargetListPanel({
                         ? devices.length === 0
                             ? <Typography variant="body2" color="text.secondary"
                                 sx={{ p: 2, textAlign: 'center' }}>
-                                Không có device
+                                {t('scheduleAssignment.noDevices')}
                             </Typography>
                             : devices.map(d => (
                                 <ListItemButton
@@ -901,7 +907,7 @@ function TargetListPanel({
                                         secondary={
                                             <Typography variant="caption" color="text.secondary"
                                                 noWrap>
-                                                {d.siteName ?? 'Chưa thuộc site'}
+                                                {d.siteName ?? t('scheduleAssignment.noSiteAssigned')}
                                             </Typography>
                                         }
                                     />
@@ -910,7 +916,7 @@ function TargetListPanel({
                         : sites.length === 0
                             ? <Typography variant="body2" color="text.secondary"
                                 sx={{ p: 2, textAlign: 'center' }}>
-                                Không có site
+                                {t('scheduleAssignment.noSites')}
                             </Typography>
                             : sites.map(s => (
                                 <ListItemButton
@@ -945,6 +951,7 @@ function TargetListPanel({
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function ScheduleAssignmentPage() {
+    const { t } = useTranslation();
     const [selected, setSelected] = useState<TargetInfo | null>(null);
 
     return (
@@ -983,9 +990,9 @@ export default function ScheduleAssignmentPage() {
                         <Stack alignItems="center" justifyContent="center" spacing={1.5}
                             sx={{ height: '100%', color: 'text.disabled' }}>
                             <CalendarMonth sx={{ fontSize: 56 }} />
-                            <Typography variant="body1">Chọn một Device hoặc Site</Typography>
+                            <Typography variant="body1">{t('scheduleAssignment.selectTarget')}</Typography>
                             <Typography variant="body2" color="text.disabled">
-                                để xem và quản lý schedule assignment
+                                {t('scheduleAssignment.selectTargetSubtitle')}
                             </Typography>
                         </Stack>
                     )}

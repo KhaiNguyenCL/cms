@@ -5,6 +5,7 @@ import {
     IconButton, InputAdornment, Alert, CircularProgress, Stack,
 } from '@mui/material';
 import { Visibility, VisibilityOff } from '@mui/icons-material';
+import { useTranslation } from 'react-i18next';
 import { useAppDispatch } from '@store/hooks';
 import { setCredentials } from '@store/slices/authSlice';
 import { authApi } from '@api/auth.api';
@@ -12,6 +13,7 @@ import { authApi } from '@api/auth.api';
 export default function LoginPage() {
     const dispatch = useAppDispatch();
     const navigate = useNavigate();
+    const { t } = useTranslation();
     const from = '/dashboard';
 
     const [email, setEmail]       = useState('');
@@ -33,7 +35,7 @@ export default function LoginPage() {
             navigate(from, { replace: true });
         } catch (err: unknown) {
             const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
-            setError(msg ?? 'Email hoặc mật khẩu không đúng');
+            setError(msg ?? t('auth.loginFailed'));
         } finally {
             setLoading(false);
         }
@@ -74,7 +76,7 @@ export default function LoginPage() {
                         DMS Signage
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
-                        Đăng nhập để tiếp tục
+                        {t('auth.login')}
                     </Typography>
                 </Stack>
 
@@ -87,7 +89,7 @@ export default function LoginPage() {
                 <form onSubmit={handleSubmit}>
                     <Stack spacing={2}>
                         <TextField
-                            label="Email"
+                            label={t('auth.email')}
                             type="email"
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
@@ -109,7 +111,7 @@ export default function LoginPage() {
                         />
 
                         <TextField
-                            label="Mật khẩu"
+                            label={t('auth.password')}
                             type={showPw ? 'text' : 'password'}
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
@@ -154,7 +156,7 @@ export default function LoginPage() {
                                 fontSize: '0.9375rem',
                             }}
                         >
-                            {loading ? <CircularProgress size={22} color="inherit" /> : 'Đăng nhập'}
+                            {loading ? <CircularProgress size={22} color="inherit" /> : t('auth.loginButton')}
                         </Button>
                     </Stack>
                 </form>

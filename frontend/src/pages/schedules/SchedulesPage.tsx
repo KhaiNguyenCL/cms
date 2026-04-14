@@ -16,6 +16,7 @@ import {
 import { schedulesApi, type CreateSchedulePayload } from '@api/schedules.api';
 import { playlistsApi } from '@api/playlists.api';
 import { getApiError } from '@api/client';
+import { useTranslation } from 'react-i18next';
 import { useAppDispatch } from '@store/hooks';
 import { pushToast } from '@store/slices/uiSlice';
 import type { Schedule } from '@/types';
@@ -36,6 +37,7 @@ function TimeSelect({ label, value, onChange, helperText, error }: {
     helperText?: string;
     error?: boolean;
 }) {
+    const { t } = useTranslation();
     const [h, m] = value ? value.split(':').map(Number) : [null, null];
 
     const setHour = (newH: number) => {
@@ -53,10 +55,10 @@ function TimeSelect({ label, value, onChange, helperText, error }: {
             </Typography>
             <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
                 <FormControl size="small" sx={{ flex: 1 }} error={error}>
-                    <InputLabel>Giờ</InputLabel>
+                    <InputLabel>{t('schedules.hour')}</InputLabel>
                     <Select
                         value={h ?? ''}
-                        label="Giờ"
+                        label={t('schedules.hour')}
                         onChange={(e) => setHour(Number(e.target.value))}
                         MenuProps={{ PaperProps: { sx: { maxHeight: 220 } } }}
                     >
@@ -67,10 +69,10 @@ function TimeSelect({ label, value, onChange, helperText, error }: {
                 </FormControl>
                 <Typography variant="body1" fontWeight={700}>:</Typography>
                 <FormControl size="small" sx={{ flex: 1 }} error={error}>
-                    <InputLabel>Phút</InputLabel>
+                    <InputLabel>{t('schedules.minute')}</InputLabel>
                     <Select
                         value={m ?? ''}
-                        label="Phút"
+                        label={t('schedules.minute')}
                         onChange={(e) => setMinute(Number(e.target.value))}
                         MenuProps={{ PaperProps: { sx: { maxHeight: 220 } } }}
                     >
@@ -80,7 +82,7 @@ function TimeSelect({ label, value, onChange, helperText, error }: {
                     </Select>
                 </FormControl>
                 {value && (
-                    <Tooltip title="Xoá">
+                    <Tooltip title={t('common.delete')}>
                         <IconButton size="small" onClick={clear}><Close fontSize="small" /></IconButton>
                     </Tooltip>
                 )}
@@ -100,25 +102,26 @@ function TimeRangeField({ startTime, endTime, onChange, error }: {
     onChange: (start: string | null, end: string | null) => void;
     error?: string | null;
 }) {
+    const { t } = useTranslation();
     const isAllDay = !startTime && !endTime;
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
             <Box sx={{ display: 'flex', gap: 2, width: '100%', alignItems: 'flex-start' }}>
                 <TimeSelect
-                    label="Giờ bắt đầu"
+                    label={t('schedules.startTime')}
                     value={startTime}
                     onChange={(s) => onChange(s, endTime)}
-                    helperText={isAllDay ? '✓ Đang phát cả ngày' : undefined}
+                    helperText={isAllDay ? `✓ ${t('schedules.playingAllDay')}` : undefined}
                     error={!!error}
                 />
                 <TimeSelect
-                    label="Giờ kết thúc"
+                    label={t('schedules.endTime')}
                     value={endTime}
                     onChange={(e) => onChange(startTime, e)}
                     helperText={error ?? undefined}
                     error={!!error}
                 />
-                <Tooltip title={isAllDay ? 'Đang phát cả ngày' : 'Xoá giờ → phát cả ngày'}>
+                <Tooltip title={isAllDay ? t('schedules.playingAllDay') : t('schedules.clearTimeTooltip')}>
                     <Button
                         size="medium"
                         variant={isAllDay ? 'contained' : 'outlined'}
@@ -127,7 +130,7 @@ function TimeRangeField({ startTime, endTime, onChange, error }: {
                         startIcon={<AllInclusive sx={{ fontSize: 15 }} />}
                         sx={{ mt: 2.5, whiteSpace: 'nowrap', minWidth: 90 }}
                     >
-                        Cả ngày
+                        {t('schedules.allDay')}
                     </Button>
                 </Tooltip>
             </Box>
@@ -201,6 +204,7 @@ function ScheduleFormDialog({
     editing: Schedule | null;
     onDeleted?: () => void;
 }) {
+    const { t } = useTranslation();
     const dispatch = useAppDispatch();
     const qc = useQueryClient();
     const [confirmDel, setConfirmDel] = useState(false);
@@ -268,7 +272,7 @@ function ScheduleFormDialog({
         mutationFn: () => schedulesApi.delete(editing!.id),
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: ['schedules'] });
-            dispatch(pushToast({ severity: 'success', message: 'Đã xoá schedule' }));
+            dispatch(pushToast({ severity: 'success', message: t('schedules.deleteSuccess') }));
             onDeleted?.();
             onClose();
         },
@@ -288,7 +292,7 @@ function ScheduleFormDialog({
         setForm(prev => ({ ...prev, [key]: value }));
 
     const timeError = form.startTime && form.endTime && form.startTime >= form.endTime
-        ? 'Giờ kết thúc phải sau giờ bắt đầu'
+        ? t('schedules.timeError')
         : null;
 
     const isValid = form.name && form.startDate && !!form.playlistId && !timeError;
@@ -299,7 +303,7 @@ function ScheduleFormDialog({
                 <Typography fontWeight={700}>{editing ? 'Edit Schedule' : 'New Schedule'}</Typography>
                 <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
                     <Button size="small" onClick={onClose} disabled={mutation.isPending || deleteMutation.isPending}>
-                        Hủy
+                        {t('common.cancel')}
                     </Button>
                     <Button
                         size="small"
@@ -307,7 +311,7 @@ function ScheduleFormDialog({
                         disabled={!isValid || mutation.isPending || deleteMutation.isPending}
                         onClick={() => mutation.mutate()}
                     >
-                        {mutation.isPending ? 'Saving...' : editing ? 'Lưu' : 'Tạo mới'}
+                        {mutation.isPending ? t('common.saving') : editing ? t('common.save') : t('common.create')}
                     </Button>
                 </Box>
             </DialogTitle>
@@ -338,7 +342,7 @@ function ScheduleFormDialog({
                                 </MuiMenuItem>
                             ))}
                         </Select>
-                        <FormHelperText>Media trong playlist sẽ phát theo thứ tự, lặp lại</FormHelperText>
+                        <FormHelperText>{t('schedules.playlistHelper')}</FormHelperText>
                     </FormControl>
 
                     {/* Date range */}
@@ -375,10 +379,10 @@ function ScheduleFormDialog({
                     {/* Days of week */}
                     <Box>
                         <Typography variant="caption" color="text.secondary" display="block" mb={0.5}>
-                            Ngày trong tuần — không chọn = chạy mỗi ngày trong khoảng ngày
+                            {t('schedules.daysOfWeek')} — {t('schedules.daysHelper')}
                         </Typography>
                         <Typography variant="caption" color="warning.main" display="block" mb={1}>
-                            Chọn cụ thể (VD: T2, T6) → các ngày còn lại trong khoảng ngày sẽ không chạy schedule này
+                            {t('schedules.daysSpecificHint')}
                         </Typography>
                         <ToggleButtonGroup size="small">
                             {DAY_LABELS.map((d, i) => (
@@ -418,14 +422,14 @@ function ScheduleFormDialog({
                 <DialogActions sx={{ px: 3, pb: 2, justifyContent: 'flex-start' }}>
                     {confirmDel ? (
                         <Stack direction="row" spacing={1} alignItems="center">
-                            <Typography variant="body2" color="error">Xoá schedule này?</Typography>
+                            <Typography variant="body2" color="error">{t('schedules.confirmDelete')}</Typography>
                             <Button size="small" color="error" disabled={deleteMutation.isPending}
                                 startIcon={deleteMutation.isPending ? <CircularProgress size={14} color="inherit" /> : undefined}
-                                onClick={() => deleteMutation.mutate()}>Xoá</Button>
-                            <Button size="small" onClick={() => setConfirmDel(false)} disabled={deleteMutation.isPending}>Không</Button>
+                                onClick={() => deleteMutation.mutate()}>{t('common.delete')}</Button>
+                            <Button size="small" onClick={() => setConfirmDel(false)} disabled={deleteMutation.isPending}>{t('common.no')}</Button>
                         </Stack>
                     ) : (
-                        <Button size="small" color="error" startIcon={<Delete />} onClick={() => setConfirmDel(true)}>Xoá</Button>
+                        <Button size="small" color="error" startIcon={<Delete />} onClick={() => setConfirmDel(true)}>{t('common.delete')}</Button>
                     )}
                 </DialogActions>
             )}
@@ -438,6 +442,7 @@ function ScheduleFormDialog({
 export default function SchedulesPage() {
     const dispatch = useAppDispatch();
     const qc = useQueryClient();
+    const { t } = useTranslation();
     const [page, setPage] = useState(1);
     const [limit, setLimit] = useState(15);
     const [search, setSearch] = useState('');
@@ -481,13 +486,13 @@ export default function SchedulesPage() {
             {/* Header */}
             <Stack direction="row" justifyContent="space-between" alignItems="center" mb={3}>
                 <Box>
-                    <Typography variant="h4" fontWeight={700}>Schedules</Typography>
+                    <Typography variant="h4" fontWeight={700}>{t('schedules.title')}</Typography>
                     <Typography variant="body2" color="text.secondary">
-                        {data?.total ?? 0} schedules
+                        {data?.total ?? 0} {t('schedules.title').toLowerCase()}
                     </Typography>
                 </Box>
                 <Button startIcon={<Add />} onClick={() => setCreateOpen(true)}>
-                    New Schedule
+                    {t('schedules.createSchedule')}
                 </Button>
             </Stack>
 
@@ -518,13 +523,13 @@ export default function SchedulesPage() {
                 <Table size="medium">
                     <TableHead>
                         <TableRow sx={{ '& th': { fontWeight: 700, bgcolor: 'action.hover' } }}>
-                            <TableCell>Active</TableCell>
-                            <TableCell>Name</TableCell>
-                            <TableCell>Playlist</TableCell>
-                            <TableCell>Bắt đầu</TableCell>
-                            <TableCell>Kết thúc</TableCell>
-                            <TableCell>Days</TableCell>
-                            <TableCell align="right">Actions</TableCell>
+                            <TableCell>{t('schedules.isActive')}</TableCell>
+                            <TableCell>{t('common.name')}</TableCell>
+                            <TableCell>{t('schedules.playlist')}</TableCell>
+                            <TableCell>{t('schedules.startTime')}</TableCell>
+                            <TableCell>{t('schedules.endTime')}</TableCell>
+                            <TableCell>{t('schedules.daysOfWeek')}</TableCell>
+                            <TableCell align="right">{t('common.actions')}</TableCell>
                         </TableRow>
                     </TableHead>
                     <TableBody>
@@ -646,23 +651,23 @@ export default function SchedulesPage() {
                     <EventNote sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
                     {filterActive !== 'all' || search ? (
                         <>
-                            <Typography variant="h6" gutterBottom>Không tìm thấy schedule nào</Typography>
+                            <Typography variant="h6" gutterBottom>{t('schedules.noSchedulesFound')}</Typography>
                             <Typography variant="body2" color="text.secondary">
                                 {filterActive === 'inactive'
-                                    ? 'Không có schedule nào đang Inactive.'
+                                    ? t('schedules.noInactive')
                                     : filterActive === 'active'
-                                        ? 'Không có schedule nào đang Active.'
-                                        : `Không có kết quả cho "${search}".`}
+                                        ? t('schedules.noActive')
+                                        : t('schedules.noResults', { search })}
                             </Typography>
                         </>
                     ) : (
                         <>
-                            <Typography variant="h6" gutterBottom>Chưa có schedule nào</Typography>
+                            <Typography variant="h6" gutterBottom>{t('schedules.noSchedulesYet')}</Typography>
                             <Typography variant="body2" color="text.secondary" mb={2}>
-                                Tạo schedule để tự động đẩy playlist đến thiết bị.
+                                {t('schedules.noSchedulesSubtitle')}
                             </Typography>
                             <Button startIcon={<Add />} onClick={() => setCreateOpen(true)}>
-                                Tạo Schedule đầu tiên
+                                {t('schedules.createFirst')}
                             </Button>
                         </>
                     )}
@@ -678,8 +683,8 @@ export default function SchedulesPage() {
                     rowsPerPage={limit}
                     onRowsPerPageChange={e => { setLimit(Number(e.target.value)); setPage(1); }}
                     rowsPerPageOptions={[10, 15, 25, 50]}
-                    labelRowsPerPage="Mỗi trang:"
-                    labelDisplayedRows={({ from, to, count }) => `${from}–${to} / ${count}`}
+                    labelRowsPerPage={t("common.perPage")}
+                    labelDisplayedRows={({ from, to, count }) => t('common.displayedRows', { from, to, count })}
                 />
             )}
 

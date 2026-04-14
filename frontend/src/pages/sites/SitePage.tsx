@@ -15,6 +15,7 @@ import {
     AddToHomeScreen,
     AddToQueue,
 } from '@mui/icons-material';
+import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { sitesApi } from '@/api/sites.api';
 import { devicesApi } from '@/api/devices.api';
@@ -50,6 +51,7 @@ interface TimezoneAutocompleteProps {
 }
 
 function TimezoneAutocomplete({ value, onChange, label = 'Timezone', helperText }: TimezoneAutocompleteProps) {
+    const { t } = useTranslation();
     return (
         <Autocomplete<string>
             options={TIMEZONE_LIST}
@@ -69,7 +71,7 @@ function TimezoneAutocomplete({ value, onChange, label = 'Timezone', helperText 
                 const q = inputValue.toLowerCase();
                 return opts.filter(o => o.toLowerCase().includes(q)).slice(0, 100);
             }}
-            noOptionsText="Không tìm thấy timezone"
+            noOptionsText={t('sites.noTimezone')}
             isOptionEqualToValue={(o, v) => o === v}
             fullWidth
         />
@@ -79,15 +81,15 @@ function TimezoneAutocomplete({ value, onChange, label = 'Timezone', helperText 
 // ─── Column visibility ────────────────────────────────────────────────────────
 
 const ALL_COLUMNS = [
-    { id: 'name',       label: 'Tên Site' },
-    { id: 'address',    label: 'Địa chỉ' },
-    { id: 'contact',    label: 'Liên hệ' },
-    { id: 'timezone',   label: 'Timezone' },
-    { id: 'timeOn',     label: 'Time ON' },
-    { id: 'timeOff',    label: 'Time OFF' },
-    { id: 'deployDate', label: 'Triển khai' },
-    { id: 'devices',    label: 'Devices' },
-    { id: 'actions',    label: 'Thao tác' },
+    { id: 'name',       labelKey: 'sites.siteName' },
+    { id: 'address',    labelKey: 'sites.address' },
+    { id: 'contact',    labelKey: 'sites.contact' },
+    { id: 'timezone',   labelKey: 'sites.timezone' },
+    { id: 'timeOn',     labelKey: 'sites.timeOnLabel' },
+    { id: 'timeOff',    labelKey: 'sites.timeOffLabel' },
+    { id: 'deployDate', labelKey: 'sites.deployDate' },
+    { id: 'devices',    labelKey: 'sites.devices' },
+    { id: 'actions',    labelKey: 'common.actions' },
 ] as const;
 
 type ColId = (typeof ALL_COLUMNS)[number]['id'];
@@ -97,7 +99,7 @@ const DEFAULT_VISIBLE = new Set<ColId>(['name', 'address', 'timezone', 'timeOn',
 
 function fmtDate(d: string | null) {
     if (!d) return '—';
-    return new Intl.DateTimeFormat('vi-VN').format(new Date(d));
+    return new Intl.DateTimeFormat().format(new Date(d));
 }
 
 function fmtTime(t: string | null) {
@@ -130,6 +132,7 @@ interface ColumnPickerProps {
 }
 
 function ColumnPicker({ visible, onChange }: ColumnPickerProps) {
+    const { t } = useTranslation();
     const [anchor, setAnchor] = useState<HTMLElement | null>(null);
 
     const toggle = (id: ColId) => {
@@ -147,7 +150,7 @@ function ColumnPicker({ visible, onChange }: ColumnPickerProps) {
                 startIcon={<ViewColumn />}
                 onClick={e => setAnchor(e.currentTarget)}
             >
-                Cột hiển thị
+                {t('sites.colPickerBtn')}
             </Button>
             <Popover
                 open={Boolean(anchor)}
@@ -158,7 +161,7 @@ function ColumnPicker({ visible, onChange }: ColumnPickerProps) {
             >
                 <Box sx={{ p: 1.5, minWidth: 180 }}>
                     <Typography variant="caption" color="text.secondary" sx={{ px: 1, display: 'block', mb: 0.5 }}>
-                        Chọn cột hiển thị
+                        {t('sites.colPickerTitle')}
                     </Typography>
                     <Divider sx={{ mb: 0.5 }} />
                     {ALL_COLUMNS.map(col => (
@@ -172,7 +175,7 @@ function ColumnPicker({ visible, onChange }: ColumnPickerProps) {
                                         disabled={col.id === 'name' || col.id === 'actions'}
                                     />
                                 }
-                                label={<Typography variant="body2">{col.label}</Typography>}
+                                label={<Typography variant="body2">{t(col.labelKey)}</Typography>}
                                 sx={{ display: 'flex', mx: 0 }}
                             />
                         </Box>
@@ -195,6 +198,7 @@ function pickerSx(dark: boolean) {
 }
 
 function AddSiteDialog({ open, onClose }: AddSiteDialogProps) {
+    const { t } = useTranslation();
     const theme = useTheme();
     const dark  = theme.palette.mode === 'dark';
     const qc = useQueryClient();
@@ -219,7 +223,7 @@ function AddSiteDialog({ open, onClose }: AddSiteDialogProps) {
             setErrorMsg(null);
             onClose();
         },
-        onError: (err) => setErrorMsg(getApiError(err, 'Tạo site thất bại. Vui lòng thử lại.')),
+        onError: (err) => setErrorMsg(getApiError(err, t('sites.createFailed'))),
     });
 
     const handleClose = () => {
@@ -231,21 +235,21 @@ function AddSiteDialog({ open, onClose }: AddSiteDialogProps) {
 
     return (
         <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
-            <DialogTitle fontWeight={700}>Thêm Site</DialogTitle>
+            <DialogTitle fontWeight={700}>{t('sites.addSiteTitle')}</DialogTitle>
             <DialogContent dividers>
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 0.5 }}>
-                    <TextField label="Tên Site *" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} fullWidth autoFocus size="small" />
-                    <TextField label="Địa chỉ" value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} fullWidth size="small" />
-                    <TextField label="Liên hệ" value={form.contact} onChange={e => setForm(f => ({ ...f, contact: e.target.value }))} fullWidth size="small" />
-                    <TimezoneAutocomplete value={form.timezone} onChange={tz => setForm(f => ({ ...f, timezone: tz }))} helperText="Múi giờ — devices trong site kế thừa nếu chưa set" />
+                    <TextField label={`${t('sites.siteName')} *`} value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} fullWidth autoFocus size="small" />
+                    <TextField label={t('sites.address')} value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} fullWidth size="small" />
+                    <TextField label={t('sites.contact')} value={form.contact} onChange={e => setForm(f => ({ ...f, contact: e.target.value }))} fullWidth size="small" />
+                    <TimezoneAutocomplete value={form.timezone} onChange={tz => setForm(f => ({ ...f, timezone: tz }))} helperText={t('sites.timezone')} />
                     <Box sx={{ display: 'flex', gap: 2 }}>
-                        <TextField label="Time ON" type="time" value={form.timeOn} onChange={e => setForm(f => ({ ...f, timeOn: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} helperText="Giờ bật màn hình" size="small" sx={pickerSx(dark)} />
-                        <TextField label="Time OFF" type="time" value={form.timeOff} onChange={e => setForm(f => ({ ...f, timeOff: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} helperText="Giờ tắt màn hình" size="small" sx={pickerSx(dark)} />
-                        <TextField label="Triển khai" type="date" value={form.deployDate} onChange={e => setForm(f => ({ ...f, deployDate: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} helperText="Ngày bắt đầu triển khai" size="small" sx={pickerSx(dark)} />
+                        <TextField label="Time ON" type="time" value={form.timeOn} onChange={e => setForm(f => ({ ...f, timeOn: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} helperText={t('sites.timeOnHelper')} size="small" sx={pickerSx(dark)} />
+                        <TextField label="Time OFF" type="time" value={form.timeOff} onChange={e => setForm(f => ({ ...f, timeOff: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} helperText={t('sites.timeOffHelper')} size="small" sx={pickerSx(dark)} />
+                        <TextField label={t('sites.deployDate')} type="date" value={form.deployDate} onChange={e => setForm(f => ({ ...f, deployDate: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} helperText={t('sites.deployDateHelper')} size="small" sx={pickerSx(dark)} />
                     </Box>
                     <Box>
                         <Typography variant="body2" gutterBottom>
-                            Độ lệch cảnh báo: <strong>{form.alarmToleranceMin} phút</strong>
+                            {t('sites.alarmToleranceLabel', { min: form.alarmToleranceMin })}
                         </Typography>
                         <Slider
                             value={form.alarmToleranceMin}
@@ -256,16 +260,16 @@ function AddSiteDialog({ open, onClose }: AddSiteDialogProps) {
                             size="small"
                         />
                         <Typography variant="caption" color="text.secondary">
-                            Thiết bị offline trong giờ hoạt động ± {form.alarmToleranceMin} phút mới gửi thông báo
+                            {t('sites.alarmToleranceHelper', { min: form.alarmToleranceMin })}
                         </Typography>
                     </Box>
                     {errorMsg && <Alert severity="error">{errorMsg}</Alert>}
                 </Box>
             </DialogContent>
             <DialogActions sx={{ px: 3, pb: 2 }}>
-                <Button size="small" onClick={handleClose}>Huỷ</Button>
+                <Button size="small" onClick={handleClose}>{t('common.cancel')}</Button>
                 <Button size="small" onClick={() => createMutation.mutate()} disabled={!form.name.trim() || createMutation.isPending} startIcon={createMutation.isPending ? <CircularProgress size={16} /> : undefined}>
-                    Tạo
+                    {t('common.create')}
                 </Button>
             </DialogActions>
         </Dialog>
@@ -282,6 +286,7 @@ interface TransferDeviceDialogProps {
 }
 
 function TransferDeviceDialog({ device, currentSiteId, open, onClose }: TransferDeviceDialogProps) {
+    const { t } = useTranslation();
     const qc = useQueryClient();
     const [targetSiteId, setTargetSiteId] = useState('');
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -303,33 +308,33 @@ function TransferDeviceDialog({ device, currentSiteId, open, onClose }: Transfer
             qc.invalidateQueries({ queryKey: ['devices'] });
             onClose();
         },
-        onError: (err) => setErrorMsg(getApiError(err, 'Chuyển site thất bại')),
+        onError: (err) => setErrorMsg(getApiError(err, t('sites.transferFailed'))),
     });
 
     return (
         <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
-            <DialogTitle fontWeight={700}>Chuyển thiết bị sang Site khác</DialogTitle>
+            <DialogTitle fontWeight={700}>{t('sites.transferTitle')}</DialogTitle>
             <DialogContent dividers>
                 <Box sx={{ pt: 0.5, display: 'flex', flexDirection: 'column', gap: 2 }}>
                     <Typography variant="body2">
-                        Thiết bị: <strong>{device.name}</strong>
+                        {t('common.name')}: <strong>{device.name}</strong>
                     </Typography>
                     <Autocomplete<Site>
                         options={otherSites}
                         getOptionLabel={s => s.name}
                         onChange={(_, v) => { setTargetSiteId(v?.id ?? ''); setErrorMsg(null); }}
                         isOptionEqualToValue={(o, v) => o.id === v.id}
-                        renderInput={params => <TextField {...params} label="Site đích *" size="small" />}
+                        renderInput={params => <TextField {...params} label={`${t('sites.targetSite')} *`} size="small" />}
                         size="small"
-                        noOptionsText="Không có site nào khác"
+                        noOptionsText={t('sites.noOtherSites')}
                     />
                     {errorMsg && <Alert severity="error" sx={{ py: 0.5 }}>{errorMsg}</Alert>}
                 </Box>
             </DialogContent>
             <DialogActions sx={{ px: 3, pb: 2 }}>
-                <Button size="small" onClick={onClose}>Huỷ</Button>
+                <Button size="small" onClick={onClose}>{t('common.cancel')}</Button>
                 <Button size="small" disabled={!targetSiteId || transferMutation.isPending} startIcon={transferMutation.isPending ? <CircularProgress size={16} /> : <SwapHoriz />} onClick={() => transferMutation.mutate()}>
-                    Chuyển
+                    {t('common.transfer')}
                 </Button>
             </DialogActions>
         </Dialog>
@@ -345,6 +350,7 @@ interface EditSiteDialogProps {
 }
 
 function EditSiteDialog({ site, open, onClose }: EditSiteDialogProps) {
+    const { t } = useTranslation();
     const theme = useTheme();
     const dark  = theme.palette.mode === 'dark';
     const qc = useQueryClient();
@@ -398,7 +404,7 @@ function EditSiteDialog({ site, open, onClose }: EditSiteDialogProps) {
             qc.invalidateQueries({ queryKey: ['sites-list-for-assign'] });
             onClose();
         },
-        onError: (err) => setErrorMsg(getApiError(err, 'Cập nhật site thất bại. Vui lòng thử lại.')),
+        onError: (err) => setErrorMsg(getApiError(err, t('sites.updateFailed'))),
     });
 
     const addDeviceMutation = useMutation({
@@ -410,7 +416,7 @@ function EditSiteDialog({ site, open, onClose }: EditSiteDialogProps) {
             setSelectedDevice(null);
             setAddDeviceError(null);
         },
-        onError: (err) => setAddDeviceError(getApiError(err, 'Thêm device thất bại')),
+        onError: (err) => setAddDeviceError(getApiError(err, t('sites.addDeviceFailed'))),
     });
 
     const removeDeviceMutation = useMutation({
@@ -436,26 +442,26 @@ function EditSiteDialog({ site, open, onClose }: EditSiteDialogProps) {
 
     return (
         <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
-            <DialogTitle fontWeight={700}>Chỉnh sửa Site — {site.name}</DialogTitle>
+            <DialogTitle fontWeight={700}>{t('sites.editSiteTitle')} — {site.name}</DialogTitle>
             <DialogContent dividers>
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 0.5 }}>
 
                     {/* ── General info ── */}
                     <Typography variant="overline" color="text.secondary" sx={{ lineHeight: 1 }}>
-                        Thông tin chung
+                        {t('sites.generalInfo')}
                     </Typography>
-                    <TextField label="Tên Site *" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} fullWidth size="small" />
-                    <TextField label="Địa chỉ" value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} fullWidth size="small" />
-                    <TextField label="Liên hệ" value={form.contact} onChange={e => setForm(f => ({ ...f, contact: e.target.value }))} fullWidth size="small" />
-                    <TimezoneAutocomplete value={form.timezone} onChange={tz => setForm(f => ({ ...f, timezone: tz }))} helperText="Múi giờ — devices trong site kế thừa nếu chưa set" />
+                    <TextField label={`${t('sites.siteName')} *`} value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} fullWidth size="small" />
+                    <TextField label={t('sites.address')} value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} fullWidth size="small" />
+                    <TextField label={t('sites.contact')} value={form.contact} onChange={e => setForm(f => ({ ...f, contact: e.target.value }))} fullWidth size="small" />
+                    <TimezoneAutocomplete value={form.timezone} onChange={tz => setForm(f => ({ ...f, timezone: tz }))} helperText={t('sites.timezone')} />
                     <Box sx={{ display: 'flex', gap: 2 }}>
-                        <TextField label="Time ON" type="time" value={form.timeOn} onChange={e => setForm(f => ({ ...f, timeOn: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} helperText="Giờ bật màn hình" size="small" sx={pickerSx(dark)} />
-                        <TextField label="Time OFF" type="time" value={form.timeOff} onChange={e => setForm(f => ({ ...f, timeOff: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} helperText="Giờ tắt màn hình" size="small" sx={pickerSx(dark)} />
-                        <TextField label="Triển khai" type="date" value={form.deployDate} onChange={e => setForm(f => ({ ...f, deployDate: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} helperText="Ngày bắt đầu triển khai" size="small" sx={pickerSx(dark)} />
+                        <TextField label="Time ON" type="time" value={form.timeOn} onChange={e => setForm(f => ({ ...f, timeOn: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} helperText={t('sites.timeOnHelper')} size="small" sx={pickerSx(dark)} />
+                        <TextField label="Time OFF" type="time" value={form.timeOff} onChange={e => setForm(f => ({ ...f, timeOff: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} helperText={t('sites.timeOffHelper')} size="small" sx={pickerSx(dark)} />
+                        <TextField label={t('sites.deployDate')} type="date" value={form.deployDate} onChange={e => setForm(f => ({ ...f, deployDate: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} helperText={t('sites.deployDateHelper')} size="small" sx={pickerSx(dark)} />
                     </Box>
                     <Box>
                         <Typography variant="body2" gutterBottom>
-                            Độ lệch cảnh báo: <strong>{form.alarmToleranceMin} phút</strong>
+                            {t('sites.alarmToleranceLabel', { min: form.alarmToleranceMin })}
                         </Typography>
                         <Slider
                             value={form.alarmToleranceMin}
@@ -466,7 +472,7 @@ function EditSiteDialog({ site, open, onClose }: EditSiteDialogProps) {
                             size="small"
                         />
                         <Typography variant="caption" color="text.secondary">
-                            Thiết bị offline trong giờ hoạt động ± {form.alarmToleranceMin} phút mới gửi thông báo
+                            {t('sites.alarmToleranceHelper', { min: form.alarmToleranceMin })}
                         </Typography>
                     </Box>
 
@@ -474,7 +480,7 @@ function EditSiteDialog({ site, open, onClose }: EditSiteDialogProps) {
 
                     {/* ── Devices section ── */}
                     <Typography variant="overline" color="text.secondary" sx={{ lineHeight: 1 }}>
-                        Devices ({devices.length})
+                        {t('sites.devices')} ({devices.length})
                     </Typography>
 
                     <Box sx={{ display: 'flex', gap: 1 }}>
@@ -485,11 +491,11 @@ function EditSiteDialog({ site, open, onClose }: EditSiteDialogProps) {
                             onChange={(_, v) => { setSelectedDevice(v); setAddDeviceError(null); }}
                             isOptionEqualToValue={(o, v) => o.id === v.id}
                             renderInput={params => (
-                                <TextField {...params} label="Thêm device vào site" size="small" />
+                                <TextField {...params} label={t('sites.addDeviceToSite')} size="small" />
                             )}
                             size="small"
                             sx={{ flex: 1 }}
-                            noOptionsText="Không còn device chưa được giao"
+                            noOptionsText={t('sites.noAvailableDevices')}
                         />
                         <Button
                             variant="outlined"
@@ -499,7 +505,7 @@ function EditSiteDialog({ site, open, onClose }: EditSiteDialogProps) {
                             onClick={() => selectedDevice && addDeviceMutation.mutate(selectedDevice.id)}
                             sx={{ whiteSpace: 'nowrap' }}
                         >
-                            Thêm
+                            {t('common.add')}
                         </Button>
                     </Box>
                     {addDeviceError && (
@@ -512,7 +518,7 @@ function EditSiteDialog({ site, open, onClose }: EditSiteDialogProps) {
                         {devices.length === 0 ? (
                             <Box sx={{ py: 3, textAlign: 'center' }}>
                                 <Typography variant="body2" color="text.secondary">
-                                    Chưa có device nào trong site này
+                                    {t('sites.noDevicesInSite')}
                                 </Typography>
                             </Box>
                         ) : (
@@ -538,12 +544,12 @@ function EditSiteDialog({ site, open, onClose }: EditSiteDialogProps) {
                                         color={d.status === 'ONLINE' ? 'success' : 'default'}
                                         sx={{ mr: 1 }}
                                     />
-                                    <Tooltip title="Chuyển sang site khác">
+                                    <Tooltip title={t('sites.transferDevice')}>
                                         <IconButton size="small" color="primary" onClick={() => setTransferDevice(d)}>
                                             <SwapHoriz fontSize="small" />
                                         </IconButton>
                                     </Tooltip>
-                                    <Tooltip title="Xoá khỏi site">
+                                    <Tooltip title={t('sites.removeFromSite')}>
                                         <IconButton size="small" color="error" onClick={() => removeDeviceMutation.mutate(d.id)} disabled={removeDeviceMutation.isPending}>
                                             <Close fontSize="small" />
                                         </IconButton>
@@ -560,17 +566,17 @@ function EditSiteDialog({ site, open, onClose }: EditSiteDialogProps) {
                 <Box>
                     {confirmDel ? (
                         <Stack direction="row" spacing={1} alignItems="center">
-                            <Typography variant="body2" color="error">Xác nhận xóa site này?</Typography>
-                            <Button size="small" color="error" disabled={deleteSiteMutation.isPending} onClick={() => deleteSiteMutation.mutate()} startIcon={deleteSiteMutation.isPending ? <CircularProgress size={14} color="inherit" /> : undefined}>Xóa</Button>
-                            <Button size="small" onClick={() => setConfirmDel(false)} disabled={deleteSiteMutation.isPending}>Không</Button>
+                            <Typography variant="body2" color="error">{t('sites.confirmDeleteSite')}</Typography>
+                            <Button size="small" color="error" disabled={deleteSiteMutation.isPending} onClick={() => deleteSiteMutation.mutate()} startIcon={deleteSiteMutation.isPending ? <CircularProgress size={14} color="inherit" /> : undefined}>{t('common.delete')}</Button>
+                            <Button size="small" onClick={() => setConfirmDel(false)} disabled={deleteSiteMutation.isPending}>{t('common.no')}</Button>
                         </Stack>
                     ) : (
-                        <Button size="small" color="error" startIcon={<Delete />} onClick={() => setConfirmDel(true)}>Xóa Site</Button>
+                        <Button size="small" color="error" startIcon={<Delete />} onClick={() => setConfirmDel(true)}>{t('sites.deleteConfirm').replace('?', '')}</Button>
                     )}
                 </Box>
                 <Box sx={{ display: 'flex', gap: 1 }}>
-                    <Button size="small" onClick={onClose} disabled={updateMutation.isPending}>Huỷ</Button>
-                    <Button size="small" onClick={() => updateMutation.mutate()} disabled={!form.name.trim() || updateMutation.isPending} startIcon={updateMutation.isPending ? <CircularProgress size={16} /> : undefined}>Lưu</Button>
+                    <Button size="small" onClick={onClose} disabled={updateMutation.isPending}>{t('common.cancel')}</Button>
+                    <Button size="small" onClick={() => updateMutation.mutate()} disabled={!form.name.trim() || updateMutation.isPending} startIcon={updateMutation.isPending ? <CircularProgress size={16} /> : undefined}>{t('common.save')}</Button>
                 </Box>
             </DialogActions>
 
@@ -591,6 +597,7 @@ function EditSiteDialog({ site, open, onClose }: EditSiteDialogProps) {
 type SortCol = 'timeOn' | 'timeOff' | 'deployDate';
 
 export default function SitePage() {
+    const { t } = useTranslation();
     const [search, setSearch]           = useState('');
     const [page, setPage]               = useState(1);
     const [limit, setLimit]             = useState(10);
@@ -626,13 +633,13 @@ export default function SitePage() {
             {/* ── Header ── */}
             <Stack direction="row" justifyContent="space-between" alignItems="flex-start" mb={3}>
                 <Box>
-                    <Typography variant="h5" fontWeight={700}>Sites Management</Typography>
+                    <Typography variant="h5" fontWeight={700}>{t('sites.title')}</Typography>
                     <Typography variant="body2" color="text.secondary" mt={0.25}>
-                        Quản lý các chi nhánh và thiết bị thuộc site
+                        {t('sites.subtitle')}
                     </Typography>
                 </Box>
                 <Button size="small" startIcon={<Add />} onClick={() => setAddOpen(true)}>
-                    Thêm Site
+                    {t('sites.createSite')}
                 </Button>
             </Stack>
 
@@ -646,7 +653,7 @@ export default function SitePage() {
                         sx={{ px: 2, py: 1.5, borderBottom: '1px solid', borderColor: 'divider' }}
                     >
                         <TextField
-                            placeholder="Tìm kiếm site..."
+                            placeholder={t('sites.searchPlaceholder')}
                             value={search}
                             onChange={e => { setSearch(e.target.value); setPage(1); }}
                             size="small"
@@ -670,15 +677,15 @@ export default function SitePage() {
 
                     {/* ── Table ── */}
                     {isError ? (
-                        <Alert severity="error" sx={{ m: 2 }}>Tải danh sách site thất bại</Alert>
+                        <Alert severity="error" sx={{ m: 2 }}>{t('sites.loadFailed')}</Alert>
                     ) : (
                         <TableContainer>
                             <Table size="small">
                                 <TableHead>
                                     <TableRow>
-                                        {show('name')       && <TableCell sx={{ ...TH_SX, pl: 2 }}>Tên Site</TableCell>}
-                                        {show('address')    && <TableCell sx={TH_SX}>Địa chỉ</TableCell>}
-                                        {show('contact')    && <TableCell sx={TH_SX}>Liên hệ</TableCell>}
+                                        {show('name')       && <TableCell sx={{ ...TH_SX, pl: 2 }}>{t('common.siteName')}</TableCell>}
+                                        {show('address')    && <TableCell sx={TH_SX}>{t('sites.address')}</TableCell>}
+                                        {show('contact')    && <TableCell sx={TH_SX}>{t('sites.contact')}</TableCell>}
                                         {show('timezone')   && <TableCell sx={TH_SX}>Timezone</TableCell>}
                                         {show('timeOn')     && (
                                             <TableCell sx={TH_SX}>
@@ -697,12 +704,12 @@ export default function SitePage() {
                                         {show('deployDate') && (
                                             <TableCell sx={TH_SX}>
                                                 <TableSortLabel active={sortBy === 'deployDate'} direction={sortBy === 'deployDate' ? sortDir : 'asc'} onClick={() => handleSort('deployDate')}>
-                                                    Triển khai
+                                                    {t('common.createdAt')}
                                                 </TableSortLabel>
                                             </TableCell>
                                         )}
-                                        {show('devices')    && <TableCell sx={{ ...TH_SX, textAlign: 'center' }}>Devices</TableCell>}
-                                        {show('actions')    && <TableCell sx={{ ...TH_SX, textAlign: 'center', width: 80 }}>Thao tác</TableCell>}
+                                        {show('devices')    && <TableCell sx={{ ...TH_SX, textAlign: 'center' }}>{t('sites.devices')}</TableCell>}
+                                        {show('actions')    && <TableCell sx={{ ...TH_SX, textAlign: 'center', width: 80 }}>{t('common.actions')}</TableCell>}
                                     </TableRow>
                                 </TableHead>
                                 <TableBody>
@@ -720,7 +727,7 @@ export default function SitePage() {
                                                     <Box sx={{ py: 8, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1.5, color: 'text.disabled' }}>
                                                         <StoreMallDirectory sx={{ fontSize: 48 }} />
                                                         <Typography variant="body2">
-                                                            {search ? 'Không tìm thấy site nào phù hợp' : 'Chưa có site nào — nhấn Thêm Site để tạo'}
+                                                            {search ? t('sites.noMatch') : t('sites.noSiteYet')}
                                                         </Typography>
                                                     </Box>
                                                 </TableCell>
@@ -739,7 +746,7 @@ export default function SitePage() {
                                                                 )}
                                                             </Box>
                                                             {site.startEpoch ? (
-                                                                <Chip label="Đang chạy" size="small" color="success" sx={{ fontSize: '0.65rem', height: 18 }} />
+                                                                <Chip label={t('sites.running')} size="small" color="success" sx={{ fontSize: '0.65rem', height: 18 }} />
                                                             ) : null}
                                                         </Stack>
                                                     </TableCell>
@@ -790,7 +797,7 @@ export default function SitePage() {
                                                 {show('devices') && (
                                                     <TableCell align="center" sx={{ py: 1.25 }}>
                                                         <Tooltip
-                                                            title={site.deviceCount === 0 ? 'Chưa có device' : (site.deviceNames?.join(', ') || `${site.deviceCount} device`)}
+                                                            title={site.deviceCount === 0 ? t('sites.noDevicesInSite') : (site.deviceNames?.join(', ') || `${site.deviceCount} device`)}
                                                             placement="top"
                                                         >
                                                             <Stack direction="row" justifyContent="center" spacing={0.5}>
@@ -814,7 +821,7 @@ export default function SitePage() {
                                                 )}
                                                 {show('actions') && (
                                                     <TableCell align="center" sx={{ py: 1.25 }} onClick={e => e.stopPropagation()}>
-                                                        <Tooltip title="Chỉnh sửa site">
+                                                        <Tooltip title={t('sites.editTooltip')}>
                                                             <IconButton size="small" onClick={() => setEditSite(site)}>
                                                                 <Edit fontSize="small" />
                                                             </IconButton>
@@ -838,8 +845,8 @@ export default function SitePage() {
                             rowsPerPage={limit}
                             onRowsPerPageChange={e => { setLimit(Number(e.target.value)); setPage(1); }}
                             rowsPerPageOptions={[10, 25, 50, 100]}
-                            labelRowsPerPage="Mỗi trang:"
-                            labelDisplayedRows={({ from, to, count }) => `${from}–${to} / ${count}`}
+                            labelRowsPerPage={t("common.perPage")}
+                            labelDisplayedRows={({ from, to, count }) => t('common.displayedRows', { from, to, count })}
                         />
                     )}
                 </CardContent>
