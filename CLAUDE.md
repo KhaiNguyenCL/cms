@@ -118,6 +118,7 @@ org_backups           — per-org JSONB snapshots for backup/restore (PLANNED)
 Planned schema changes:
 ```
 Media         — ADD COLUMN deletedAt TIMESTAMPTZ (soft delete — PLANNED)
+Device        — ADD COLUMN deletedAt TIMESTAMPTZ (soft delete — PLANNED)
 ```
 
 ---
@@ -430,17 +431,24 @@ Tính năng lớn, chia 2 phần phụ thuộc nhau. **Phải implement Part 1 t
 
 ---
 
-### Part 1: Media Soft Delete
+### Part 1: Soft Delete — Media & Device
 
-**Mục tiêu:** Khi user "xóa" media, file vật lý vẫn còn trên disk — chỉ ẩn khỏi UI. Đây là điều kiện tiên quyết để restore hoạt động đúng (snapshot restore trỏ về file vẫn còn).
+**Mục tiêu:** Xóa media/device chỉ ẩn khỏi UI, không xóa thật. Đây là nền tảng bắt buộc để restore hoạt động đúng:
+- **Media**: file vật lý vẫn còn trên disk → snapshot restore trỏ về file hợp lệ
+- **Device**: JWT của thiết bị Android không bị revoke → sau restore thiết bị tự kết nối lại, không cần pair lại
 
 #### DB Migration
 ```sql
+-- Media soft delete
 ALTER TABLE media ADD COLUMN "deletedAt" TIMESTAMPTZ DEFAULT NULL;
 CREATE INDEX ON media ("organizationId", "deletedAt");
+
+-- Device soft delete
+ALTER TABLE devices ADD COLUMN "deletedAt" TIMESTAMPTZ DEFAULT NULL;
+CREATE INDEX ON devices ("organizationId", "deletedAt");
 ```
 
-#### Backend changes
+#### Backend changes — Media
 - `media.service.ts` `deleteMedia()` → thay hard delete bằng `UPDATE media SET "deletedAt" = NOW()` (KHÔNG xóa file vật lý)
 - Tất cả query `listMedia`, `getMediaById` → thêm `AND "deletedAt" IS NULL`
 - `checkStorageQuota` → không tính media có `deletedAt IS NOT NULL`
@@ -449,15 +457,25 @@ CREATE INDEX ON media ("organizationId", "deletedAt");
   - `POST /api/media/:id/restore` — khôi phục media (ADMIN, MANAGER, CONTENT_MANAGER)
   - `DELETE /api/media/:id/permanent` — xóa hẳn file vật lý (ADMIN only)
 
+#### Backend changes — Device
+- `devices.service.ts` `deleteDevice()` → thay hard delete bằng `UPDATE devices SET "deletedAt" = NOW()` (KHÔNG revoke JWT)
+- Tất cả query `listDevices`, `getDeviceById` → thêm `AND "deletedAt" IS NULL`
+- Heartbeat (`device-sync`) → nếu device có `deletedAt IS NOT NULL` → trả 403, thiết bị tự hiển thị màn hình "Thiết bị đã bị xóa"
+- Thêm endpoints:
+  - `GET  /api/devices/trash` — danh sách device đã xóa mềm (ADMIN)
+  - `POST /api/devices/:id/restore` — khôi phục device (ADMIN)
+  - `DELETE /api/devices/:id/permanent` — xóa hẳn DB row + revoke JWT (ADMIN only)
+
 #### BullMQ Worker mới: `media-purge`
 - Chạy nightly (cùng với `cleanup-logs`)
 - Xóa hẳn media có `deletedAt < NOW() - 30 days`: xóa file + thumbnail trên disk, sau đó DELETE DB row
-- Retention mặc định: 30 ngày (configurable qua env `MEDIA_TRASH_RETENTION_DAYS`)
+- Xóa hẳn device có `deletedAt < NOW() - 30 days`: DELETE DB row
+- Retention mặc định: 30 ngày (configurable qua env `TRASH_RETENTION_DAYS`)
 
 #### Frontend changes
-- `MediaPage.tsx`: thêm tab "Thùng rác" (icon: `DeleteOutline`)
-- Tab trash: hiển thị media đã xóa + nút Restore + nút Xóa vĩnh viễn (ADMIN only)
-- Nút delete hiện tại → đổi thành soft delete (không cần thay đổi API call, chỉ thay đổi toast message)
+- `MediaPage.tsx`: thêm tab "Thùng rác" — hiển thị media đã xóa + nút Restore + Xóa vĩnh viễn (ADMIN only)
+- `DevicesPage.tsx`: thêm tab/filter "Đã xóa" — hiển thị device đã xóa + nút Restore + Xóa vĩnh viễn (ADMIN only)
+- Nút delete ở cả hai trang → soft delete (behavior thay đổi ở backend, frontend không đổi API call)
 
 ---
 
@@ -487,6 +505,7 @@ CREATE INDEX ON org_backups ("organizationId", "createdAt" DESC);
   "sites": [...],
   "deviceGroups": [...],
   "devices": [...],
+  "deviceComments": [...],
   "media": [...],
   "playlists": [...],
   "playlistItems": [...],
@@ -494,8 +513,26 @@ CREATE INDEX ON org_backups ("organizationId", "createdAt" DESC);
   "scheduleAssignments": [...]
 }
 ```
-- **Không** snapshot: `users`, `playback_logs`, `action_history`, `device_health`, `alarm_events` (telemetry/audit — không restore)
-- Media snapshot bao gồm cả rows có `deletedAt IS NOT NULL` (để restore về đúng trạng thái)
+- **Không** snapshot: `users`, `device_licenses`, `license_history`, `purchase_requests`, `playback_logs`, `action_history`, `device_health`, `alarm_events`, `software_history`, `device_content_logs` (telemetry/audit/license — không restore)
+- Media + Device snapshot bao gồm cả rows có `deletedAt IS NOT NULL` (để restore về đúng trạng thái)
+
+#### Xử lý đặc biệt khi restore Device rows
+Device table có 3 field license: `isLicensed`, `licenseStartDate`, `licenseEndDate`.  
+Khi INSERT device rows từ snapshot, **KHÔNG dùng giá trị license từ snapshot** — thay vào đó giữ nguyên giá trị hiện tại (hoặc NULL nếu device không tồn tại trong state hiện tại).  
+Lý do: license được quản lý độc lập trong bảng `DeviceLicense` — overwrite field này sẽ gây lệch giữa device row và bảng license thực tế.
+
+```sql
+-- Khi INSERT device từ snapshot, override license fields:
+INSERT INTO devices (..., "isLicensed", "licenseStartDate", "licenseEndDate")
+VALUES (...,
+  COALESCE(
+    (SELECT "isLicensed" FROM devices WHERE id = $snapshot_device_id),
+    false   -- default nếu device không tồn tại hiện tại
+  ),
+  (SELECT "licenseStartDate" FROM devices WHERE id = $snapshot_device_id),
+  (SELECT "licenseEndDate"   FROM devices WHERE id = $snapshot_device_id)
+)
+```
 
 #### New module: `backup` (4-file pattern)
 ```
@@ -515,17 +552,21 @@ POST   /api/backup/:id/restore — restore từ snapshot (ADMIN, SUPER_ADMIN)
 ```
 
 #### Restore logic (`withTransaction`)
-Thứ tự DELETE (tôn trọng FK constraints):
+Thứ tự xóa (tôn trọng FK constraints):
 1. `schedule_assignments` WHERE `"organizationId"` (via join)
 2. `schedules`
 3. `playlist_items` (via playlist FK)
 4. `playlists`
-5. `media` — soft-delete tất cả hiện tại (`deletedAt = NOW()`) thay vì DELETE, để file không mất
-6. `device_group_members` → `device_groups`
-7. `devices`
-8. `stores` (sites)
+5. `media` — soft-delete tất cả (`deletedAt = NOW()`), KHÔNG hard delete, giữ file trên disk
+6. `device_comments`
+7. `device_group_members` → `device_groups`
+8. `devices` — soft-delete tất cả (`deletedAt = NOW()`), KHÔNG hard delete, giữ JWT hợp lệ
+9. `stores` (sites)
 
-Sau đó INSERT lại từ snapshot theo thứ tự ngược lại. Cuối cùng: gọi `invalidateContentHashForOrg()` để device re-sync.
+Sau đó INSERT lại từ snapshot theo thứ tự ngược lại (9 → 1), với xử lý đặc biệt license fields cho device.
+Cuối cùng: gọi `invalidateContentHashForOrg()` → device re-sync nội dung mới.
+
+> Lý do soft-delete thay vì hard-delete trong bước xóa: nếu restore thất bại giữa chừng và transaction rollback, các device/media vẫn còn nguyên (`deletedAt` được rollback cùng transaction). Không mất dữ liệu.
 
 #### BullMQ Worker mới: `backup-snapshot`
 - AUTO: chạy daily lúc 02:00 UTC cho **tất cả org active**
@@ -545,14 +586,29 @@ Sau đó INSERT lại từ snapshot theo thứ tự ngược lại. Cuối cùng
 ### Tại sao restore hoạt động được
 
 ```
-Org muốn restore về ngày hôm qua
-  → Snapshot ngày hôm qua có metadata media M1, M2, M3
-  → File vật lý M1.mp4, M2.jpg, M3.gif vẫn còn trên disk (soft delete giữ lại)
-  → Restore: DELETE current DB rows → INSERT snapshot rows
-  → Media rows trỏ về đúng filePath đang tồn tại → content sync hoạt động bình thường ✓
+Org muốn restore về ngày hôm qua:
 
-Edge case: Media upload SAU snapshot, bị xóa mềm, cron purge đã chạy → file mất hẳn
-  → Nhưng media đó không có trong snapshot (upload sau) → không ảnh hưởng restore ✓
+MEDIA
+  → Snapshot có metadata M1, M2, M3
+  → File M1.mp4, M2.jpg vẫn còn trên disk (soft delete giữ lại)
+  → Restore INSERT lại rows → filePath trỏ đúng file tồn tại ✓
+
+DEVICE
+  → Snapshot có device D1, D2 (D2 bị xóa sau snapshot)
+  → D2 bị soft delete → JWT của thiết bị Android D2 vẫn còn hợp lệ
+  → Restore INSERT lại D2 row → thiết bị D2 heartbeat lần sau → kết nối lại tự động ✓
+  → Không cần pair lại ✓
+
+SITE / PLAYLIST / SCHEDULE
+  → Thuần DB row, không có file hay JWT → restore hoàn toàn bình thường ✓
+
+Edge case: Device bị "Xóa vĩnh viễn" (permanent delete) trước khi restore
+  → DB row đã bị xóa hẳn, JWT bị revoke → thiết bị cần pair lại sau restore ⚠️
+  → Tránh bằng cách: không cho phép permanent delete khi tính năng Backup đang bật,
+    hoặc cảnh báo rõ khi user chọn "Xóa vĩnh viễn"
+
+Edge case: Media upload SAU snapshot, purge đã chạy → file mất hẳn
+  → Media đó không có trong snapshot → không ảnh hưởng restore ✓
 ```
 
 ---
@@ -567,7 +623,7 @@ Thêm vào bảng Backend Modules:
 Thêm 2 workers:
 ```
 | `backup-snapshot` | Daily 02:00 UTC (auto) hoặc manual trigger qua API |
-| `media-purge`     | Nightly — hard delete media có deletedAt > 30 ngày |
+| `media-purge`     | Nightly — hard delete media + device có deletedAt > 30 ngày |
 ```
 
 ---
