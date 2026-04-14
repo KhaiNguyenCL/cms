@@ -1404,6 +1404,7 @@ function PlaylistRow({ playlist, selected, onSelect, onDeleted }: {
     playlist: Playlist; selected: boolean;
     onSelect: (id: string) => void; onDeleted: (id: string) => void;
 }) {
+    const { t } = useTranslation();
     const [editOpen, setEditOpen] = useState(false);
 
     return (
@@ -1427,10 +1428,10 @@ function PlaylistRow({ playlist, selected, onSelect, onDeleted }: {
                     <Typography variant="body2" color="text.secondary">{playlist.itemCount ?? 0}</Typography>
                 </TableCell>
                 <TableCell align="center" onClick={() => onSelect(playlist.id)}>
-                    <Typography variant="body2" color="text.secondary" noWrap>{new Date(playlist.createdAt).toLocaleDateString('vi-VN')}</Typography>
+                    <Typography variant="body2" color="text.secondary" noWrap>{new Date(playlist.createdAt).toLocaleDateString()}</Typography>
                 </TableCell>
                 <TableCell align="center" onClick={() => onSelect(playlist.id)}>
-                    <Typography variant="body2" color="text.secondary" noWrap>{new Date(playlist.updatedAt).toLocaleDateString('vi-VN')}</Typography>
+                    <Typography variant="body2" color="text.secondary" noWrap>{new Date(playlist.updatedAt).toLocaleDateString()}</Typography>
                 </TableCell>
                 <TableCell align="center" onClick={(e) => e.stopPropagation()}>
                     <Tooltip title={t('playlists.editTooltip')}>

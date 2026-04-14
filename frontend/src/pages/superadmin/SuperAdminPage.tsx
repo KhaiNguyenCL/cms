@@ -515,7 +515,7 @@ function CreatePlatformAdminDialog({ onClose }: { onClose: () => void }) {
         mutationFn: () => platformAuthApi.createAdmin({ name: name.trim(), email: email.trim(), password }),
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: ['platform-admins'] });
-            dispatch(pushToast({ severity: 'success', message: `Đã tạo platform admin "${name.trim()}"` }));
+            dispatch(pushToast({ severity: 'success', message: t('superAdmin.createAdminSuccess', { name: name.trim() }) }));
             onClose();
         },
         onError: (e: any) => {
@@ -576,7 +576,7 @@ function ChangePasswordDialog({ admin, onClose }: { admin: PlatformAdmin; onClos
         mutationFn: () => platformAuthApi.updateAdmin(admin.id, { password: pw }),
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: ['platform-admins'] });
-            dispatch(pushToast({ severity: 'success', message: `Đã đổi mật khẩu "${admin.name}"` }));
+            dispatch(pushToast({ severity: 'success', message: t('superAdmin.changePwSuccess', { name: admin.name }) }));
             onClose();
         },
         onError: (e: any) => dispatch(pushToast({ severity: 'error', message: e?.response?.data?.message ?? t('common.failedAction') })),
@@ -1899,11 +1899,11 @@ function AdjustPoolDialog({ stat, onClose }: { stat: OrgStorageStat; onClose: ()
                         helperText={t('superAdmin.baseMbHelper')} />
                     <Stack direction="row" gap={1.5}>
                         <TextField label="Delta +50 MB" type="number" value={d50} onChange={e => setD50(e.target.value)} size="small" fullWidth
-                            helperText={`Hiện: ${stat.ext50mb} gói`} />
+                            helperText={t('superAdmin.currentPackCount', { count: stat.ext50mb })} />
                         <TextField label="Delta +100 MB" type="number" value={d100} onChange={e => setD100(e.target.value)} size="small" fullWidth
-                            helperText={`Hiện: ${stat.ext100mb} gói`} />
+                            helperText={t('superAdmin.currentPackCount', { count: stat.ext100mb })} />
                         <TextField label="Delta +200 MB" type="number" value={d200} onChange={e => setD200(e.target.value)} size="small" fullWidth
-                            helperText={`Hiện: ${stat.ext200mb} gói`} />
+                            helperText={t('superAdmin.currentPackCount', { count: stat.ext200mb })} />
                     </Stack>
                     <TextField label={t('common.note')} value={note} onChange={e => setNote(e.target.value)} size="small" fullWidth multiline rows={2} />
                     <Alert severity="info" icon={false}>

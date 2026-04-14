@@ -773,7 +773,10 @@
     "baseMbHelper": "Dung lượng cơ bản của tổ chức",
     "afterAdjust": "Sau điều chỉnh: tổng quota =",
     "cantLoadOrgs": "Không thể tải danh sách tổ chức.",
-    "noOrgsYet": "Chưa có tổ chức nào"
+    "noOrgsYet": "Chưa có tổ chức nào",
+    "createAdminSuccess": "Đã tạo platform admin \"{{name}}\"",
+    "changePwSuccess": "Đã đổi mật khẩu \"{{name}}\"",
+    "currentPackCount": "Hiện: {{count}} gói"
   },
   "notifications": {
     "title": "Thông báo",
@@ -918,7 +921,9 @@
     "cpuSystem": "CPU hệ thống",
     "cpuProcess": "CPU player",
     "noHealthData": "Chưa có dữ liệu health từ thiết bị",
-    "withCpuDevices": "{{count}} thiết bị có CPU player"
+    "withCpuDevices": "{{count}} thiết bị có CPU player",
+    "cpuSystemTooltip": "CPU toàn máy (/proc/loadavg)",
+    "cpuProcessTooltip": "CPU riêng process player (/proc/[pid]/stat)"
   },
   "dashboard2": {
     "todayPlays": "Lượt phát hôm nay",
@@ -1007,5 +1012,15 @@
       "testEmailSent": "✅ Đã gửi",
       "testEmailFailed": "❌ Lỗi SMTP"
     }
+  },
+  "player": {
+    "licenseExpired": "Giấy phép của tổ chức đã hết hạn.",
+    "licenseRequired": "Thiết bị này chưa được cấp phép.",
+    "contactAdmin": "Liên hệ admin để gia hạn giấy phép.",
+    "loadingContent": "Đang tải nội dung…",
+    "paused": "Đang tạm dừng",
+    "holdToResume": "Giữ màn hình để tiếp tục",
+    "cantGetToken": "Không thể lấy token: {{message}}",
+    "missingDeviceId": "Thiếu deviceId.\nThêm ?deviceId=... vào URL."
   }
 }

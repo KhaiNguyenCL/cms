@@ -773,7 +773,10 @@
     "baseMbHelper": "Base storage quota for the organization",
     "afterAdjust": "After adjustment: total quota =",
     "cantLoadOrgs": "Unable to load organization list.",
-    "noOrgsYet": "No organizations yet"
+    "noOrgsYet": "No organizations yet",
+    "createAdminSuccess": "Platform admin \"{{name}}\" created",
+    "changePwSuccess": "Password changed for \"{{name}}\"",
+    "currentPackCount": "Current: {{count}} packages"
   },
   "notifications": {
     "title": "Notifications",
@@ -918,7 +921,9 @@
     "cpuSystem": "System CPU",
     "cpuProcess": "Player CPU",
     "noHealthData": "No health data from devices",
-    "withCpuDevices": "{{count}} devices with player CPU"
+    "withCpuDevices": "{{count}} devices with player CPU",
+    "cpuSystemTooltip": "System-wide CPU (/proc/loadavg)",
+    "cpuProcessTooltip": "Player process CPU (/proc/[pid]/stat)"
   },
   "dashboard2": {
     "todayPlays": "Today's plays",
@@ -1007,5 +1012,15 @@
       "testEmailSent": "✅ Sent",
       "testEmailFailed": "❌ SMTP error"
     }
+  },
+  "player": {
+    "licenseExpired": "The organization's license has expired.",
+    "licenseRequired": "This device has not been licensed.",
+    "contactAdmin": "Contact admin to renew the license.",
+    "loadingContent": "Loading content…",
+    "paused": "Paused",
+    "holdToResume": "Hold screen to resume",
+    "cantGetToken": "Cannot get token: {{message}}",
+    "missingDeviceId": "Missing deviceId.\nAdd ?deviceId=... to URL."
   }
 }

@@ -19,6 +19,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { flushSync } from 'react-dom';
 import { Box, CircularProgress, Typography } from '@mui/material';
 import { Lock as LockIcon } from '@mui/icons-material';
+import { useTranslation } from 'react-i18next';
 
 const DEBUG = new URLSearchParams(window.location.search).get('debug') === '1';
 const DEFAULT_TRANSITION_MS = 800; // fallback when item has no transitionDuration
@@ -173,6 +174,7 @@ function calculateSyncPosition(
 // ─── License required screen ──────────────────────────────────────────────────
 
 function LicenseRequiredScreen({ status }: { status: 'LICENSE_EXPIRED' | 'LICENSE_REQUIRED' }) {
+    const { t } = useTranslation();
     return (
         <Box sx={{
             display: 'flex', flexDirection: 'column', alignItems: 'center',
@@ -182,9 +184,9 @@ function LicenseRequiredScreen({ status }: { status: 'LICENSE_EXPIRED' | 'LICENS
             <LockIcon sx={{ fontSize: 48, color: '#444' }} />
             <Typography variant="body2" sx={{ color: '#666', textAlign: 'center', maxWidth: 320 }}>
                 {status === 'LICENSE_EXPIRED'
-                    ? 'Giấy phép của tổ chức đã hết hạn.'
-                    : 'Thiết bị này chưa được cấp phép.'}
-                {'\n'}Liên hệ admin để gia hạn giấy phép.
+                    ? t('player.licenseExpired')
+                    : t('player.licenseRequired')}
+                {'\n'}{t('player.contactAdmin')}
             </Typography>
         </Box>
     );
@@ -239,6 +241,7 @@ function OfflineIndicator({ isOffline }: { isOffline: boolean }) {
 // ─── Download progress screen ─────────────────────────────────────────────────
 
 function DownloadProgressScreen({ progress }: { progress: number }) {
+    const { t } = useTranslation();
     return (
         <Box sx={{
             display: 'flex', flexDirection: 'column', alignItems: 'center',
@@ -252,7 +255,7 @@ function DownloadProgressScreen({ progress }: { progress: number }) {
                 <Box component="span" sx={{ fontSize: 32, color: '#fff' }}>⬇</Box>
             </Box>
             <Typography sx={{ color: '#6C63FF', fontWeight: 600, fontSize: 18 }}>
-                Đang tải nội dung…
+                {t('player.loadingContent')}
             </Typography>
             <Box sx={{ width: 280, bgcolor: '#222', borderRadius: 1, overflow: 'hidden', height: 8 }}>
                 <Box sx={{
@@ -277,6 +280,7 @@ function resolveMediaUrl(mediaId: string, serverUrl: string): string {
 // ─── PlayerPage ───────────────────────────────────────────────────────────────
 
 export default function PlayerPage() {
+    const { t } = useTranslation();
     const [deviceInfo, setDeviceInfo]   = useState<DeviceInfo | null>(null);
     const [syncData, setSyncData]       = useState<SyncResponse | null>(null);
     const [error, setError]             = useState<string | null>(null);
@@ -438,11 +442,11 @@ export default function PlayerPage() {
                     setDeviceToken(info.token);
                     setDeviceInfo(info);
                 })
-                .catch(e => setError(`Không thể lấy token: ${e.message}`));
+                .catch((e: Error) => setError(t('player.cantGetToken', { message: e.message })));
             return;
         }
 
-        setError('Thiếu deviceId.\nThêm ?deviceId=... vào URL.');
+        setError(t('player.missingDeviceId'));
     }, []);
 
     // ── Poll download progress while DOWNLOADING ──────────────────────────────
@@ -1270,10 +1274,10 @@ export default function PlayerPage() {
             }}>
                 <Box component="span" sx={{ fontSize: 52, lineHeight: 1, color: '#fff', mb: 1.5 }}>⏸</Box>
                 <Typography sx={{ color: '#fff', fontSize: 20, fontWeight: 700, letterSpacing: 1 }}>
-                    Đang tạm dừng
+                    {t('player.paused')}
                 </Typography>
                 <Typography sx={{ color: '#aaa', fontSize: 13, mt: 1 }}>
-                    Giữ màn hình để tiếp tục
+                    {t('player.holdToResume')}
                 </Typography>
             </Box>
         </Box>

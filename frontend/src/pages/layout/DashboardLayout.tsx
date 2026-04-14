@@ -129,8 +129,8 @@ function NotificationItem({ n, onRead, onDelete }: {
     onRead: (id: string) => void;
     onDelete: (id: string) => void;
 }) {
-    const { i18n } = useTranslation();
-    const meta = NOTIF_META[n.type] ?? { label: n.type, color: 'info' as const };
+    const { t, i18n } = useTranslation();
+    const meta = NOTIF_META[n.type] ?? { labelKey: n.type, color: 'info' as const };
     const dotColor = NOTIF_ICON_COLOR[meta.color];
     return (
         <Box
@@ -154,7 +154,7 @@ function NotificationItem({ n, onRead, onDelete }: {
                     }}>{n.body}</Typography>
                 )}
                 <Stack direction="row" alignItems="center" justifyContent="space-between" mt={0.3}>
-                    <Chip label={meta.label} size="small" color={meta.color}
+                    <Chip label={t(meta.labelKey)} size="small" color={meta.color}
                         sx={{ height: 16, fontSize: '0.6rem', '& .MuiChip-label': { px: 0.8 } }} />
                     <Typography variant="caption" color="text.disabled">{timeAgo(n.createdAt, i18n.language)}</Typography>
                 </Stack>

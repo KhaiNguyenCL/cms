@@ -171,13 +171,13 @@ function DeviceHealthCard({ dh }: { dh: DeviceHealthStat }) {
             {/* CPU system-wide */}
             <HealthBar label={t('analytics.cpuSystem')} value={dh.cpuUsage} warnAt={80}
                 errColor="error.main" okColor="primary.main"
-                tooltip="CPU toàn máy (/proc/loadavg)" />
+                tooltip={t('analytics.cpuSystemTooltip')} />
 
             {/* CPU process player — only if reported */}
             {hasProcessCpu && (
                 <HealthBar label={t('analytics.cpuProcess')} value={dh.processCpuPercent!} warnAt={60}
                     errColor="warning.main" okColor="info.main"
-                    tooltip="CPU riêng process player (/proc/[pid]/stat)" />
+                    tooltip={t('analytics.cpuProcessTooltip')} />
             )}
 
             {/* RAM */}
