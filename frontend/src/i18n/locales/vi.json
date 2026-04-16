@@ -45,6 +45,8 @@
     "perPage": "Mỗi trang:",
     "displayedRows": "{{from}}–{{to}} / {{count}}",
     "failedAction": "Thao tác thất bại",
+    "showMore": "Xem thêm {{count}} mục",
+    "showLess": "Thu gọn",
     "copy": "Sao chép",
     "upload": "Tải lên",
     "download": "Tải xuống",
@@ -84,7 +86,12 @@
     "pageNotFound": "Trang không tồn tại",
     "backHome": "Về trang chủ",
     "comingSoon": "Sắp ra mắt",
-    "upcomingFeatures": "Tính năng sẽ có:"
+    "upcomingFeatures": "Tính năng sẽ có:",
+    "restore": "Khôi phục",
+    "permanentDelete": "Xóa vĩnh viễn",
+    "trash": "Thùng rác",
+    "library": "Thư viện",
+    "deletedAt": "Ngày xóa"
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -250,7 +257,14 @@
     "commandSent": "Đã gửi lệnh {{command}}",
     "commandFailed": "Gửi lệnh thất bại",
     "noDevicesFound": "Không tìm thấy thiết bị nào.",
-    "searchPlaceholder": "Tìm kiếm thiết bị..."
+    "searchPlaceholder": "Tìm kiếm thiết bị...",
+    "macAddress": "MAC Address",
+    "serialNumber": "S/N (Android ID)",
+    "trashTab": "Đã xóa",
+    "permanentDeleteTitle": "Xóa vĩnh viễn thiết bị",
+    "restoreTitle": "Khôi phục thiết bị",
+    "permanentDeleteConfirm": "Xóa vĩnh viễn thiết bị \"{{name}}\"? JWT sẽ bị thu hồi và thiết bị sẽ cần pair lại.",
+    "restoreConfirm": "Khôi phục thiết bị \"{{name}}\" về danh sách hoạt động?"
   },
   "media": {
     "title": "Media",
@@ -292,7 +306,13 @@
     "willExceedDesc": "Còn {{free}} trống · {{count}} file bị đánh dấu đỏ sẽ vượt quá giới hạn.",
     "addFiles": "Thêm file",
     "storageProgress": "{{pct}}% đã dùng · {{count}} file",
-    "storageProgressFree": "{{pct}}% đã dùng · còn {{free}}"
+    "storageProgressFree": "{{pct}}% đã dùng · còn {{free}}",
+    "uploaded": "Ngày tải lên",
+    "permanentDeleteTitle": "Xóa vĩnh viễn media",
+    "restoreTitle": "Khôi phục media",
+    "permanentDeleteConfirm": "Xóa vĩnh viễn \"{{name}}\"? Thao tác này không thể hoàn tác.",
+    "restoreConfirm": "Khôi phục \"{{name}}\" về thư viện?",
+    "trashEmpty": "Thùng rác trống"
   },
   "playlists": {
     "title": "Playlists",
@@ -513,7 +533,8 @@
     "permViewerView": "Chỉ xem media, playlist, schedule",
     "permViewerNoEdit": "Không thể tạo, sửa, xóa",
     "permViewerNoDevice": "Không xem device & user",
-    "deleteForeverAction": "Xoá vĩnh viễn"
+    "deleteForeverAction": "Xoá vĩnh viễn",
+    "passwordHelper": "Tối thiểu 8 ký tự, bao gồm số và ký tự đặc biệt"
   },
   "license": {
     "title": "License",
@@ -568,7 +589,16 @@
     "sortOldFirst": "↑ Cũ trước",
     "sortNewFirst": "↓ Mới trước",
     "assignLicense": "Cấp license",
-    "transferToOther": "Chuyển sang thiết bị khác",
+    "transferToOther": "Yêu cầu chuyển license",
+    "requestTransfer": "Yêu cầu chuyển license",
+    "targetDevice": "Thiết bị đích",
+    "requestNote": "Lý do chuyển",
+    "requestNotePlaceholder": "Nhập lý do (tùy chọn)...",
+    "submitRequest": "Gửi yêu cầu",
+    "transferRequestTitle": "Yêu cầu chuyển License",
+    "transferRequestInfo": "Yêu cầu chuyển license sẽ được Super Admin xem xét. License sẽ giữ nguyên ngày hết hạn sau khi chuyển.",
+    "fromDevice": "Thiết bị nguồn",
+    "toDevice": "Thiết bị đích",
     "licenseHistory": "Lịch sử license",
     "noDevices": "Không có thiết bị",
     "changeHistory": "Lịch sử thay đổi",
@@ -625,7 +655,18 @@
     "rejectStorageReq": "Từ chối yêu cầu dung lượng",
     "noStorageRequests": "Không có yêu cầu dung lượng",
     "storageTotalInfo": "tổng +{{mb}} MB",
-    "errorRetry": "Có lỗi xảy ra, vui lòng thử lại"
+    "errorRetry": "Có lỗi xảy ra, vui lòng thử lại",
+    "autoPlanTitle": "Gói Backup tự động",
+    "noPlan": "Chưa có gói",
+    "changePlan": "Đổi gói",
+    "registerPlan": "Đăng ký gói",
+    "pendingApprovalAlert": "Đang có yêu cầu chờ Super Admin duyệt.",
+    "requestedPlan": "Gói yêu cầu",
+    "submittedAt": "Ngày gửi",
+    "upgradePlan": "Nâng cấp: {{from}} ngày → {{to}} ngày",
+    "downgradePlan": "Hạ cấp: {{from}} ngày → {{to}} ngày",
+    "changePlanTitle": "Đổi gói Backup",
+    "registerPlanTitle": "Đăng ký gói Backup"
   },
   "storage": {
     "title": "Dung lượng",
@@ -821,7 +862,10 @@
     "licenseRequestNew": "Yêu cầu license mới",
     "mediaReady": "Video xử lý xong",
     "mediaError": "Video xử lý lỗi",
-    "userCreated": "Người dùng mới"
+    "userCreated": "Người dùng mới",
+    "transferRequestNew": "Yêu cầu chuyển license mới",
+    "transferRequestApproved": "Yêu cầu chuyển license đã duyệt",
+    "transferRequestRejected": "Yêu cầu chuyển license bị từ chối"
   },
   "sites": {
     "title": "Sites",
@@ -1058,7 +1102,8 @@
   "player": {
     "licenseExpired": "Giấy phép của tổ chức đã hết hạn.",
     "licenseRequired": "Thiết bị này chưa được cấp phép.",
-    "contactAdmin": "Liên hệ admin để gia hạn giấy phép.",
+    "deviceDeleted": "Thiết bị này đã bị xóa.",
+    "contactAdmin": "Liên hệ admin để được hỗ trợ.",
     "loadingContent": "Đang tải nội dung…",
     "paused": "Đang tạm dừng",
     "holdToResume": "Giữ màn hình để tiếp tục",

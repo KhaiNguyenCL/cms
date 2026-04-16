@@ -72,7 +72,13 @@
       "Bash(awk '{print $NF}')",
       "Bash(cat)",
       "Bash(bash /tmp/find_vietnamese.sh)",
-      "Bash(ls /e/cms/backend/*.log)"
+      "Bash(ls /e/cms/backend/*.log)",
+      "Bash(Get-Content E:\\\\cms\\\\backend\\\\migrations\\\\add_backup_plan.sql)",
+      "Bash(sed -n '87,92p' \"E:/cms/frontend/src/i18n/locales/en.json\")",
+      "Bash(sed -n '253,259p' \"E:/cms/frontend/src/i18n/locales/en.json\")",
+      "Bash(sed -n '296,301p' \"E:/cms/frontend/src/i18n/locales/en.json\")",
+      "Bash(sed -n '516,522p' \"E:/cms/frontend/src/i18n/locales/en.json\")",
+      "Bash(sed -n '637,643p' \"E:/cms/frontend/src/i18n/locales/en.json\")"
     ],
     "additionalDirectories": [
       "E:\\player"

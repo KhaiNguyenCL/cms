@@ -10,13 +10,15 @@ import {
     AdminPanelSettings, Inventory2, CheckCircle,
     Cancel, HourglassEmpty, Edit, InfoOutlined,
     DevicesOther, History, DeleteOutline, EditCalendar,
-    SwapHoriz, WorkspacePremium, Storage,
+    SwapHoriz, WorkspacePremium, Storage, BackupOutlined,
 } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import licenseApi from '@api/license.api';
-import type { OrgPoolRow, PurchaseRequestRow, PackageType, DeviceLicenseRow, PoolBatch, LicenseHistoryRow } from '@api/license.api';
+import type { OrgPoolRow, PurchaseRequestRow, TransferRequestRow, PackageType, DeviceLicenseRow, PoolBatch, LicenseHistoryRow } from '@api/license.api';
 import { storageQuotaApi } from '@api/storage-quota.api';
 import type { StoragePurchaseRequest } from '@api/storage-quota.api';
+import { backupApi } from '@api/backup.api';
+import type { BackupPlanRequest } from '@/types';
 import { useTranslation } from 'react-i18next';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -865,6 +867,137 @@ function RequestsTab() {
     );
 }
 
+// ─── Transfer Requests Admin Tab ─────────────────────────────────────────────
+
+function TransferRequestsAdminTab() {
+    const { t } = useTranslation();
+    const qc = useQueryClient();
+    const { data = [], isLoading } = useQuery({
+        queryKey: ['license-transfer-requests'],
+        queryFn: licenseApi.getTransferRequests,
+    });
+
+    const [actionRow, setActionRow]     = useState<TransferRequestRow | null>(null);
+    const [adminNote, setAdminNote]     = useState('');
+    const [actionType, setActionType]   = useState<'approve' | 'reject'>('approve');
+    const [actionError, setActionError] = useState('');
+
+    const actionMut = useMutation({
+        mutationFn: () => actionType === 'approve'
+            ? licenseApi.approveTransferRequest(actionRow!.id, adminNote || undefined)
+            : licenseApi.rejectTransferRequest(actionRow!.id, adminNote || undefined),
+        onSuccess: () => {
+            setActionRow(null);
+            setActionError('');
+            qc.invalidateQueries({ queryKey: ['license-transfer-requests'] });
+            qc.invalidateQueries({ queryKey: ['license-transfer-requests-pending'] });
+            // Refresh device license state for both org admin and super admin views
+            qc.invalidateQueries({ queryKey: ['license-devices'] });
+            qc.invalidateQueries({ queryKey: ['license-stats'] });
+            qc.invalidateQueries({ queryKey: ['license-history'] });
+            qc.invalidateQueries({ queryKey: ['admin-org-pools'] });
+        },
+        onError: (e: unknown) => {
+            const msg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error;
+            setActionError(msg ?? t('license.errorRetry'));
+        },
+    });
+
+    const pending = data.filter(r => r.status === 'PENDING').length;
+    if (isLoading) return <CircularProgress sx={{ m: 3 }} />;
+
+    return (
+        <Box>
+            {pending > 0 && (
+                <Box sx={{ mb: 2, p: 1.5, bgcolor: alpha('#FF9800', 0.1), borderRadius: 1,
+                    border: '1px solid', borderColor: 'warning.main' }}>
+                    <Typography variant="body2" color="warning.main" fontWeight={600}>
+                        {t('license.pendingCount', { count: pending })}
+                    </Typography>
+                </Box>
+            )}
+            <Table size="small">
+                <TableHead>
+                    <TableRow>
+                        <TableCell>{t('common.org')}</TableCell>
+                        <TableCell>{t('license.fromDevice')}</TableCell>
+                        <TableCell>{t('license.toDevice')}</TableCell>
+                        <TableCell>{t('common.requestedBy')}</TableCell>
+                        <TableCell>{t('common.note')}</TableCell>
+                        <TableCell>{t('common.status')}</TableCell>
+                        <TableCell>{t('common.createdAt')}</TableCell>
+                        <TableCell align="right">{t('common.actions')}</TableCell>
+                    </TableRow>
+                </TableHead>
+                <TableBody>
+                    {data.map((row: TransferRequestRow) => (
+                        <TableRow key={row.id} hover>
+                            <TableCell><Typography variant="body2">{row.orgName ?? '—'}</Typography></TableCell>
+                            <TableCell><Typography variant="body2">{row.fromDeviceName}</Typography></TableCell>
+                            <TableCell><Typography variant="body2">{row.toDeviceName}</Typography></TableCell>
+                            <TableCell><Typography variant="caption">{row.requestedByName ?? '—'}</Typography></TableCell>
+                            <TableCell><Typography variant="caption">{row.note ?? '—'}</Typography></TableCell>
+                            <TableCell><RequestStatusChip status={row.status} /></TableCell>
+                            <TableCell><Typography variant="body2">{fmtDate(row.createdAt)}</Typography></TableCell>
+                            <TableCell align="right">
+                                {row.status === 'PENDING' && (
+                                    <Stack direction="row" gap={0.5} justifyContent="flex-end">
+                                        <Tooltip title={t('license.approveTooltip')}>
+                                            <IconButton size="small" color="success"
+                                                onClick={() => { setActionRow(row); setAdminNote(''); setActionType('approve'); }}>
+                                                <CheckCircle fontSize="small" />
+                                            </IconButton>
+                                        </Tooltip>
+                                        <Tooltip title={t('license.rejectTooltip')}>
+                                            <IconButton size="small" color="error"
+                                                onClick={() => { setActionRow(row); setAdminNote(''); setActionType('reject'); }}>
+                                                <Cancel fontSize="small" />
+                                            </IconButton>
+                                        </Tooltip>
+                                    </Stack>
+                                )}
+                            </TableCell>
+                        </TableRow>
+                    ))}
+                    {data.length === 0 && (
+                        <TableRow>
+                            <TableCell colSpan={8} align="center" sx={{ py: 3, color: 'text.disabled' }}>
+                                {t('license.noRequestsAll')}
+                            </TableCell>
+                        </TableRow>
+                    )}
+                </TableBody>
+            </Table>
+
+            <Dialog open={!!actionRow} onClose={() => setActionRow(null)} maxWidth="xs" fullWidth>
+                <DialogTitle>
+                    {actionType === 'approve' ? t('license.approveRequest') : t('license.rejectRequest')}
+                </DialogTitle>
+                <DialogContent dividers>
+                    <Stack gap={2} pt={0.5}>
+                        <Typography variant="body2">
+                            {actionRow?.fromDeviceName} → {actionRow?.toDeviceName}
+                        </Typography>
+                        <TextField fullWidth multiline rows={2} size="small"
+                            label={t('license.adminNote')}
+                            value={adminNote} onChange={e => setAdminNote(e.target.value)} />
+                        {actionError && <Alert severity="error" sx={{ py: 0.5 }}>{actionError}</Alert>}
+                    </Stack>
+                </DialogContent>
+                <DialogActions>
+                    <Button size="small" onClick={() => setActionRow(null)}>{t('common.cancel')}</Button>
+                    <Button size="small"
+                        color={actionType === 'approve' ? 'success' : 'error'}
+                        disabled={actionMut.isPending}
+                        onClick={() => actionMut.mutate()}>
+                        {actionType === 'approve' ? t('license.approveBtn') : t('license.rejectBtn')}
+                    </Button>
+                </DialogActions>
+            </Dialog>
+        </Box>
+    );
+}
+
 // ─── Storage Requests Tab ─────────────────────────────────────────────────────
 
 function StorageRequestsTab() {
@@ -1019,6 +1152,165 @@ function StorageRequestsTab() {
     );
 }
 
+// ─── Backup Plan Requests Tab ─────────────────────────────────────────────────
+
+function BackupPlanRequestsTab() {
+    const { t } = useTranslation();
+    const qc = useQueryClient();
+    const { data = [], isLoading } = useQuery({
+        queryKey: ['backup-plan-requests-all'],
+        queryFn: () => backupApi.listPlanRequests(),
+    });
+
+    const [actionRow, setActionRow]   = useState<BackupPlanRequest | null>(null);
+    const [adminNote, setAdminNote]   = useState('');
+    const [actionType, setActionType] = useState<'approve' | 'reject'>('approve');
+    const [actionError, setActionError] = useState('');
+
+    const actionMut = useMutation({
+        mutationFn: () => actionType === 'approve'
+            ? backupApi.approvePlanRequest(actionRow!.id, adminNote || undefined)
+            : backupApi.rejectPlanRequest(actionRow!.id, adminNote || undefined),
+        onSuccess: () => {
+            setActionRow(null);
+            setActionError('');
+            // Refresh tab data + badge count
+            qc.invalidateQueries({ queryKey: ['backup-plan-requests-all'] });
+            // Refresh org's plan view immediately (LicensePage RequestsTab)
+            qc.invalidateQueries({ queryKey: ['backup-plan-own'] });
+        },
+        onError: (e: unknown) => {
+            const msg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error;
+            setActionError(msg ?? t('license.errorRetry'));
+        },
+    });
+
+    const pending = data.filter(r => r.status === 'PENDING').length;
+
+    if (isLoading) return <CircularProgress sx={{ m: 3 }} />;
+
+    return (
+        <Box>
+            {pending > 0 && (
+                <Box sx={{ mb: 2, p: 1.5, bgcolor: alpha('#FF9800', 0.1), borderRadius: 1,
+                    border: '1px solid', borderColor: 'warning.main' }}>
+                    <Typography variant="body2" color="warning.main" fontWeight={600}>
+                        {pending} yêu cầu gói backup đang chờ duyệt
+                    </Typography>
+                </Box>
+            )}
+
+            <Table size="small">
+                <TableHead>
+                    <TableRow>
+                        <TableCell>{t('superAdmin.organizations')}</TableCell>
+                        <TableCell align="center">Gói yêu cầu</TableCell>
+                        <TableCell>Người gửi</TableCell>
+                        <TableCell>Ghi chú</TableCell>
+                        <TableCell align="center">{t('common.status')}</TableCell>
+                        <TableCell>{t('common.createdAt')}</TableCell>
+                        <TableCell align="right">{t('common.actions')}</TableCell>
+                    </TableRow>
+                </TableHead>
+                <TableBody>
+                    {data.length === 0 ? (
+                        <TableRow>
+                            <TableCell colSpan={7} align="center" sx={{ py: 4 }}>
+                                <Typography color="text.secondary">Không có yêu cầu nào</Typography>
+                            </TableCell>
+                        </TableRow>
+                    ) : data.map((r: BackupPlanRequest) => (
+                        <TableRow key={r.id} hover sx={r.status === 'PENDING' ? { bgcolor: alpha('#FF9800', 0.04) } : {}}>
+                            <TableCell>
+                                <Typography variant="body2" fontWeight={600}>{r.orgName}</Typography>
+                            </TableCell>
+                            <TableCell align="center">
+                                <Chip label={`${r.requestedPlan} ngày`} size="small" color="primary" variant="outlined" sx={{ fontWeight: 700 }} />
+                            </TableCell>
+                            <TableCell>
+                                <Typography variant="caption">{r.requestedByName ?? '—'}</Typography>
+                            </TableCell>
+                            <TableCell>
+                                <Typography variant="caption" color="text.secondary">{r.note ?? '—'}</Typography>
+                            </TableCell>
+                            <TableCell align="center">
+                                {r.status === 'APPROVED'
+                                    ? <Chip label={t('license.statusApproved')} size="small" color="success" />
+                                    : r.status === 'REJECTED'
+                                    ? <Chip label={t('license.statusRejected')} size="small" color="error" />
+                                    : <Chip label={t('license.statusPending')} size="small" color="warning" icon={<HourglassEmpty fontSize="inherit" />} />}
+                            </TableCell>
+                            <TableCell>
+                                <Typography variant="body2">
+                                    {new Date(r.createdAt).toLocaleDateString('vi-VN')}
+                                </Typography>
+                            </TableCell>
+                            <TableCell align="right">
+                                {r.status === 'PENDING' && (
+                                    <Stack direction="row" justifyContent="flex-end" gap={0.5}>
+                                        <Tooltip title={t('license.approveBtn')}>
+                                            <IconButton size="small" color="success"
+                                                onClick={() => { setActionRow(r); setAdminNote(''); setActionType('approve'); }}>
+                                                <CheckCircle fontSize="small" />
+                                            </IconButton>
+                                        </Tooltip>
+                                        <Tooltip title={t('license.rejectBtn')}>
+                                            <IconButton size="small" color="error"
+                                                onClick={() => { setActionRow(r); setAdminNote(''); setActionType('reject'); }}>
+                                                <Cancel fontSize="small" />
+                                            </IconButton>
+                                        </Tooltip>
+                                    </Stack>
+                                )}
+                            </TableCell>
+                        </TableRow>
+                    ))}
+                </TableBody>
+            </Table>
+
+            {/* Approve / Reject dialog */}
+            {actionRow && (
+                <Dialog open onClose={() => setActionRow(null)} maxWidth="xs" fullWidth>
+                    <DialogTitle fontWeight={700}>
+                        {actionType === 'approve' ? 'Duyệt gói backup' : 'Từ chối gói backup'}
+                    </DialogTitle>
+                    <DialogContent dividers>
+                        <Stack gap={2} pt={0.5}>
+                            <Typography variant="body2">
+                                {actionType === 'approve'
+                                    ? `Duyệt gói ${actionRow.requestedPlan} ngày cho tổ chức "${actionRow.orgName}"? Tự động backup sẽ bắt đầu sau khi duyệt.`
+                                    : `Từ chối yêu cầu gói backup của tổ chức "${actionRow.orgName}"?`}
+                            </Typography>
+                            <TextField
+                                label={t('license.adminNoteOptional')}
+                                value={adminNote}
+                                onChange={e => setAdminNote(e.target.value)}
+                                size="small"
+                                fullWidth
+                                multiline
+                                rows={2}
+                            />
+                            {actionError && <Alert severity="error">{actionError}</Alert>}
+                        </Stack>
+                    </DialogContent>
+                    <DialogActions sx={{ px: 3, pb: 2 }}>
+                        <Button size="small" onClick={() => setActionRow(null)}>{t('common.cancel')}</Button>
+                        <Button
+                            size="small"
+                            color={actionType === 'approve' ? 'success' : 'error'}
+                            disabled={actionMut.isPending}
+                            startIcon={actionMut.isPending ? <CircularProgress size={14} color="inherit" /> : undefined}
+                            onClick={() => actionMut.mutate()}
+                        >
+                            {actionType === 'approve' ? t('license.approveBtn') : t('license.rejectBtn')}
+                        </Button>
+                    </DialogActions>
+                </Dialog>
+            )}
+        </Box>
+    );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function LicenseManagementPage() {
@@ -1039,12 +1331,33 @@ export default function LicenseManagementPage() {
     });
     const pendingStorage = storageRequests.filter(r => r.status === 'PENDING').length;
 
+    const { data: backupPlanRequests = [] } = useQuery({
+        queryKey: ['backup-plan-requests-all'],
+        queryFn: () => backupApi.listPlanRequests(),
+        // No staleTime — always refetch on mount so badge count is accurate
+    });
+    const pendingBackupPlan = backupPlanRequests.filter((r: BackupPlanRequest) => r.status === 'PENDING').length;
+
+    const { data: transferRequests = [] } = useQuery({
+        queryKey: ['license-transfer-requests'],
+        queryFn: licenseApi.getTransferRequests,
+        staleTime: 60_000,
+    });
+    const pendingTransfer = transferRequests.filter(r => r.status === 'PENDING').length;
+
+    const totalPending = pendingLicense + pendingStorage + pendingBackupPlan + pendingTransfer;
+
     return (
         <Box>
-            <Stack direction="row" alignItems="center" gap={1.5} mb={3}>
+            <Stack direction="row" alignItems="center" gap={1.5} mb={totalPending > 0 ? 1 : 3}>
                 <AdminPanelSettings color="primary" />
                 <Typography variant="h5" fontWeight={700}>{t('superAdmin.licenseManagement')}</Typography>
             </Stack>
+            {totalPending > 0 && (
+                <Typography variant="body2" color="warning.main" mb={3}>
+                    {totalPending} yêu cầu đang chờ duyệt
+                </Typography>
+            )}
 
             <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mb: 3 }}>
                 <Tab icon={<Inventory2 fontSize="small" />} iconPosition="start" label={t('superAdmin.organizations')} />
@@ -1058,11 +1371,23 @@ export default function LicenseManagementPage() {
                     label={pendingStorage > 0 ? `${t('license.requestStorage')} (${pendingStorage})` : t('license.requestStorage')}
                     sx={pendingStorage > 0 ? { color: 'error.main' } : {}}
                 />
+                <Tab
+                    icon={<BackupOutlined fontSize="small" />} iconPosition="start"
+                    label={pendingBackupPlan > 0 ? `Gói Backup (${pendingBackupPlan})` : 'Gói Backup'}
+                    sx={pendingBackupPlan > 0 ? { color: 'warning.main' } : {}}
+                />
+                <Tab
+                    icon={<SwapHoriz fontSize="small" />} iconPosition="start"
+                    label={pendingTransfer > 0 ? `${t('license.transferRequestTitle')} (${pendingTransfer})` : t('license.transferRequestTitle')}
+                    sx={pendingTransfer > 0 ? { color: 'warning.main' } : {}}
+                />
             </Tabs>
 
             {tab === 0 && <OrgsTab />}
             {tab === 1 && <RequestsTab />}
             {tab === 2 && <StorageRequestsTab />}
+            {tab === 3 && <BackupPlanRequestsTab />}
+            {tab === 4 && <TransferRequestsAdminTab />}
         </Box>
     );
 }

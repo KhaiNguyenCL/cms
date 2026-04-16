@@ -29,6 +29,8 @@ import actionHistoryRoutes from '../modules/action-history/action-history.routes
 import licenseRoutes from '../modules/license/license.routes';
 import storageQuotaRoutes from '../modules/storage-quota/storage-quota.routes';
 import notificationRoutes from '../modules/notifications/notifications.routes';
+import backupRoutes from '../modules/backup/backup.routes';
+import platformRoutes from '../modules/mail-config/mail-config.routes';
 
 // Middleware imports
 import { errorHandler } from './middleware/error.middleware';
@@ -125,6 +127,8 @@ app.use('/api/action-history',    actionHistoryRoutes);
 app.use('/api/license',           licenseRoutes);
 app.use('/api/storage-quota',     storageQuotaRoutes);
 app.use('/api/notifications',     notificationRoutes);
+app.use('/api/backup',            backupRoutes);
+app.use('/api/platform',          platformRoutes);
 
 // ── Serve built frontend (SPA) ────────────────────────────────
 // In production: run `npm run build` in /frontend first.

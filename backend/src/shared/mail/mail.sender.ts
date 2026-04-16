@@ -43,7 +43,6 @@ function renderTemplate(text: string, vars: Record<string, string>): string {
 export function isWithinOperatingWindow(
     timeOn: string | null,
     timeOff: string | null,
-    toleranceMin: number,
     timezone: string | null,
     now: Date = new Date(),
 ): boolean {
@@ -60,11 +59,8 @@ export function isWithinOperatingWindow(
     const [onH, onM]   = timeOn.split(':').map(Number);
     const [offH, offM] = timeOff.split(':').map(Number);
 
-    const windowStart = onH * 60  + onM  - toleranceMin;
-    const windowEnd   = offH * 60 + offM + toleranceMin;
-
-    const start = Math.max(0, windowStart);
-    const end   = Math.min(1440, windowEnd);
+    const start = onH * 60 + onM;
+    const end   = offH * 60 + offM;
 
     return nowMin >= start && nowMin <= end;
 }

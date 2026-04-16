@@ -29,6 +29,9 @@ export const NOTIF_META: Record<string, { labelKey: string; color: 'error' | 'wa
     MEDIA_READY:              { labelKey: 'notifications.mediaReady',              color: 'success' },
     MEDIA_ERROR:              { labelKey: 'notifications.mediaError',              color: 'error' },
     USER_CREATED:             { labelKey: 'notifications.userCreated',             color: 'info' },
+    TRANSFER_REQUEST_NEW:     { labelKey: 'notifications.transferRequestNew',      color: 'info' },
+    TRANSFER_REQUEST_APPROVED:{ labelKey: 'notifications.transferRequestApproved', color: 'success' },
+    TRANSFER_REQUEST_REJECTED:{ labelKey: 'notifications.transferRequestRejected', color: 'warning' },
 };
 
 export const notificationsApi = {

@@ -62,7 +62,7 @@ export async function getStorageUsage(organizationId: string): Promise<StorageUs
         usedBytes: string;
     }>(
         `SELECT "storageBaseMb", "ext50mb", "ext100mb", "ext200mb",
-                COALESCE((SELECT SUM("fileSize") FROM media WHERE "organizationId" = $1), 0)::text AS "usedBytes"
+                COALESCE((SELECT SUM("fileSize") FROM media WHERE "organizationId" = $1 AND "deletedAt" IS NULL), 0)::text AS "usedBytes"
          FROM organizations WHERE id = $1`,
         [organizationId]
     );
@@ -143,7 +143,7 @@ export async function getAllOrgStorageStats(): Promise<OrgStorageStat[]> {
                 COALESCE(SUM(m."fileSize"), 0)::bigint AS "usedBytes",
                 COUNT(spr.id) FILTER (WHERE spr.status = 'PENDING')::int AS "pendingRequests"
          FROM organizations o
-         LEFT JOIN media m  ON m."organizationId" = o.id
+         LEFT JOIN media m  ON m."organizationId" = o.id AND m."deletedAt" IS NULL
          LEFT JOIN storage_purchase_requests spr ON spr."organizationId" = o.id
          GROUP BY o.id
          ORDER BY o.name`

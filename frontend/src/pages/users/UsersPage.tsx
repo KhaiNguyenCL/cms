@@ -223,7 +223,7 @@ function CreateUserDialog({ open, onClose }: { open: boolean; onClose: () => voi
                         type={showPw ? 'text' : 'password'}
                         value={form.password}
                         onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
-                        helperText="Min 8 chars, include digit & special char"
+                        helperText={t('users.passwordHelper')}
                         autoComplete="new-password"
                         inputProps={{ autoComplete: 'new-password' }}
                         InputProps={{

@@ -25,6 +25,10 @@ export const NOTIF_TYPES = {
     MEDIA_ERROR:                'MEDIA_ERROR',
     // License requests (for super admin)
     LICENSE_REQUEST_NEW:        'LICENSE_REQUEST_NEW',
+    // Transfer requests
+    TRANSFER_REQUEST_NEW:       'TRANSFER_REQUEST_NEW',
+    TRANSFER_REQUEST_APPROVED:  'TRANSFER_REQUEST_APPROVED',
+    TRANSFER_REQUEST_REJECTED:  'TRANSFER_REQUEST_REJECTED',
     // Users
     USER_CREATED:               'USER_CREATED',
 } as const;

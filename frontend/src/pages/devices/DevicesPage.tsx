@@ -13,7 +13,7 @@ import {
     Add, Search, Tv, CheckCircle, ErrorOutline,
     PowerSettingsNew, Refresh, Screenshot, Delete,
     LinkOff, Settings,
-    Bedtime, ExitToApp, ViewColumn,
+    Bedtime, ExitToApp, ViewColumn, Restore, DeleteForever,
 } from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
 import { devicesApi } from '@api/devices.api';
@@ -26,20 +26,20 @@ import type { Device, DeviceHealth, DeviceComment, Site, ActiveSchedule } from '
 // ── Column visibility ─────────────────────────────────────────────────────────
 
 const ALL_COLUMNS = [
-    { id: 'device',          labelKey: 'common.name' },
-    { id: 'status',          labelKey: 'common.status' },
-    { id: 'license',         labelKey: 'devices.licensed' },
-    { id: 'model',           labelKey: 'devices.model' },
-    { id: 'sn',              labelKey: 'S/N' },
-    { id: 'osVersion',       labelKey: 'devices.osVersion' },
-    { id: 'site',            labelKey: 'devices.site' },
-    { id: 'lastSeen',        labelKey: 'devices.lastSeen' },
-    { id: 'uptime',          labelKey: 'devices.uptime' },
-    { id: 'location',        labelKey: 'common.note' },
-    { id: 'licenseStartDate',labelKey: 'common.registeredAt' },
-    { id: 'licenseEndDate',  labelKey: 'common.expiredAt' },
-    { id: 'pairingCode',     labelKey: 'devices.pairingCode' },
-    { id: 'actions',         labelKey: 'common.actions' },
+    { id: 'device', labelKey: 'common.name' },
+    { id: 'status', labelKey: 'common.status' },
+    { id: 'license', labelKey: 'devices.licensed' },
+    { id: 'model', labelKey: 'devices.model' },
+    { id: 'sn', labelKey: 'S/N' },
+    { id: 'osVersion', labelKey: 'devices.osVersion' },
+    { id: 'site', labelKey: 'devices.site' },
+    { id: 'lastSeen', labelKey: 'devices.lastSeen' },
+    { id: 'uptime', labelKey: 'devices.uptime' },
+    { id: 'location', labelKey: 'common.note' },
+    { id: 'licenseStartDate', labelKey: 'common.registeredAt' },
+    { id: 'licenseEndDate', labelKey: 'common.expiredAt' },
+    { id: 'pairingCode', labelKey: 'devices.pairingCode' },
+    { id: 'actions', labelKey: 'common.actions' },
 ] as const;
 
 type ColId = (typeof ALL_COLUMNS)[number]['id'];
@@ -84,8 +84,8 @@ function ColumnPicker({ visible, onChange }: { visible: Set<ColId>; onChange: (v
                                         checked={visible.has(col.id)}
                                         onChange={() => toggle(col.id)}
                                         disabled={col.id === 'device' || col.id === 'actions' || col.id === 'status'
-                                             || col.id === 'license' || col.id === 'model' || col.id === 'sn'
-                                             || col.id === 'osVersion' || col.id === 'site' || col.id === 'pairingCode'}
+                                            || col.id === 'license' || col.id === 'model' || col.id === 'sn'
+                                            || col.id === 'osVersion' || col.id === 'site' || col.id === 'pairingCode'}
                                     />
                                 }
                                 label={<Typography variant="body2">{col.labelKey.includes('.') ? t(col.labelKey) : col.labelKey}</Typography>}
@@ -117,10 +117,11 @@ function formatUptime(lastOnlineAt: string | null, status: string): string {
 // ── License chip (read-only — quản lý tại trang License) ────────────────────
 
 function LicenseChip({ device }: { device: Device }) {
+    const { t } = useTranslation();
     const isLicensed = device.isLicensed === true;
     return (
         <Chip
-            label={isLicensed ? 'Licensed' : 'Unlicensed'}
+            label={isLicensed ? t('devices.licensed') : t('devices.unlicensed')}
             color={isLicensed ? 'success' : 'default'}
             size="small"
             sx={{ fontWeight: 600, fontSize: '0.7rem' }}
@@ -133,11 +134,11 @@ function LicenseChip({ device }: { device: Device }) {
 function StatusChip({ status }: { status: Device['status'] }) {
     const { t } = useTranslation();
     const map: Record<string, { label: string; color: 'success' | 'warning' | 'default' | 'error' | 'info'; icon: React.ReactElement }> = {
-        ONLINE:   { label: t('devices.online'),  color: 'success', icon: <CheckCircle sx={{ fontSize: 14 }} /> },
-        SLEEP:    { label: t('devices.sleep'),    color: 'info',    icon: <Bedtime sx={{ fontSize: 14 }} /> },
-        APP_EXIT: { label: t('devices.appExit'),  color: 'warning', icon: <ExitToApp sx={{ fontSize: 14 }} /> },
-        OFFLINE:  { label: t('devices.offline'),  color: 'default', icon: <ErrorOutline sx={{ fontSize: 14 }} /> },
-        ERROR:    { label: t('devices.error'),    color: 'error',   icon: <ErrorOutline sx={{ fontSize: 14 }} /> },
+        ONLINE: { label: t('devices.online'), color: 'success', icon: <CheckCircle sx={{ fontSize: 14 }} /> },
+        SLEEP: { label: t('devices.sleep'), color: 'info', icon: <Bedtime sx={{ fontSize: 14 }} /> },
+        APP_EXIT: { label: t('devices.appExit'), color: 'warning', icon: <ExitToApp sx={{ fontSize: 14 }} /> },
+        OFFLINE: { label: t('devices.offline'), color: 'default', icon: <ErrorOutline sx={{ fontSize: 14 }} /> },
+        ERROR: { label: t('devices.error'), color: 'error', icon: <ErrorOutline sx={{ fontSize: 14 }} /> },
     };
     const cfg = map[status] ?? map.OFFLINE;
     return <Chip label={cfg.label} color={cfg.color} size="small" icon={cfg.icon} sx={{ fontWeight: 600, fontSize: '0.7rem' }} />;
@@ -251,7 +252,7 @@ function DeviceManageDialog({ device, open, onClose }: { device: Device | null; 
     const qc = useQueryClient();
     const currentUser = useAppSelector(s => s.auth.user);
     const isViewer = currentUser?.role === 'VIEWER';
-    const isAdmin = currentUser?.role === 'ADMIN';
+    const isAdmin = currentUser?.role === 'ADMIN' || currentUser?.role === 'SUPER_ADMIN' || currentUser?.role === 'MANAGER';
     const [confirmAction, setConfirmAction] = React.useState<'release' | 'delete' | null>(null);
 
     // For VIEWER the "Điều khiển" tab is hidden, so tab index 0 = "Nội dung" (actualTab 1), etc.
@@ -369,7 +370,7 @@ function DeviceManageDialog({ device, open, onClose }: { device: Device | null; 
     if (!device) return null;
 
     const isDirty =
-        infoName     !== device.name ||
+        infoName !== device.name ||
         infoLocation !== (device.location ?? '') ||
         (selectedSite?.id ?? null) !== (device.siteId ?? null) ||
         volumeDirty;
@@ -515,6 +516,7 @@ function DeviceManageDialog({ device, open, onClose }: { device: Device | null; 
                                         devicesApi.delete(device.id)
                                             .then(() => {
                                                 qc.invalidateQueries({ queryKey: ['devices'] });
+                                                qc.invalidateQueries({ queryKey: ['devices-trash'] });
                                                 if (device.siteId) qc.invalidateQueries({ queryKey: ['sites'] });
                                                 dispatch(pushToast({ severity: 'success', message: t('devices.deleteSuccess', { name: device.name }) }));
                                                 onClose();
@@ -562,7 +564,7 @@ function DeviceManageDialog({ device, open, onClose }: { device: Device | null; 
                                             </Typography>
                                             <Typography variant="caption" color="text.secondary" display="block">
                                                 {s.startTime ?? '00:00'} – {s.endTime ?? '24:00'}
-                                                {s.daysOfWeek?.length > 0 && ` · ${['CN','T2','T3','T4','T5','T6','T7'].filter((_, i) => s.daysOfWeek.includes(i)).join(', ')}`}
+                                                {s.daysOfWeek?.length > 0 && ` · ${['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'].filter((_, i) => s.daysOfWeek.includes(i)).join(', ')}`}
                                             </Typography>
                                         </Card>
                                     ))}
@@ -608,7 +610,7 @@ function DeviceManageDialog({ device, open, onClose }: { device: Device | null; 
                                     <Typography variant="body2" color="text.disabled">{t('devices.noNotes')}</Typography>
                                 )}
                             </Stack>
-                            
+
                         </Box>
                     </Stack>
                 )}
@@ -616,16 +618,16 @@ function DeviceManageDialog({ device, open, onClose }: { device: Device | null; 
                 {/* ── Tab 2: Phần cứng ── */}
                 {actualTab === 2 && (
                     <Stack spacing={0}>
-                        <InfoRow label="Model" value={device.model ?? '—'} />
-                        <InfoRow label="S/N (Android ID)" value={
+                        <InfoRow label={t('devices.model')} value={device.model ?? '—'} />
+                        <InfoRow label={t('devices.serialNumber')} value={
                             device.androidId
                                 ? <Typography variant="body2" fontFamily="monospace" fontWeight={500} component="span">{device.androidId}</Typography>
                                 : '—'
                         } />
                         <InfoRow label={t('devices.osVersion')} value={device.osVersion ?? '—'} />
-                        <InfoRow label="App Version" value={device.appVersion ?? '—'} />
-                        <InfoRow label="IP Address" value={health?.ipAddress ?? '—'} />
-                        <InfoRow label="MAC Address" value={health?.macAddress ?? '—'} />
+                        <InfoRow label={t('devices.appVersion')} value={device.appVersion ?? '—'} />
+                        <InfoRow label={t('devices.ipAddress')} value={health?.ipAddress ?? '—'} />
+                        <InfoRow label={t('devices.macAddress')} value={health?.macAddress ?? '—'} />
                         <InfoRow label={t('devices.timezoneLabel')} value={device.timezone} />
                         <InfoRow label={t('devices.licenseActivatedAt')} value={fmtDate(device.licenseStartDate)} />
                         <InfoRow label={t('devices.licenseExpiresAt')} value={fmtDate(device.licenseEndDate)} />
@@ -637,7 +639,7 @@ function DeviceManageDialog({ device, open, onClose }: { device: Device | null; 
                                 : <Typography variant="body2" color="text.disabled" component="span">{t('devices.paired')}</Typography>
                         } />
                         <InfoRow label={t('devices.createdAt')} value={new Date(device.createdAt).toLocaleString()} />
-                        <InfoRow label="Last Seen" value={device.lastSeen ? new Date(device.lastSeen).toLocaleString() : '—'} />
+                        <InfoRow label={t('devices.lastSeen')} value={device.lastSeen ? new Date(device.lastSeen).toLocaleString() : '—'} />
                     </Stack>
                 )}
 
@@ -657,7 +659,7 @@ function DeviceManageDialog({ device, open, onClose }: { device: Device | null; 
                                     <Box flex={1}><HealthBar value={health.cpuUsage} /></Box>
                                 </Stack>
                                 <Stack direction="row" alignItems="center" gap={1} py={1.5} sx={{ borderBottom: '1px solid', borderColor: 'divider' }}>
-                                    <Typography variant="body2" color="text.secondary" sx={{ width: 160, flexShrink: 0 }}>RAM</Typography>
+                                    <Typography variant="body2" color="text.secondary" sx={{ width: 160, flexShrink: 0 }}>{t('devices.memory')}</Typography>
                                     <Box flex={1}><HealthBar value={health.memoryUsage} /></Box>
                                 </Stack>
                                 <Stack direction="row" alignItems="center" gap={1} py={1.5} sx={{ borderBottom: '1px solid', borderColor: 'divider' }}>
@@ -711,7 +713,7 @@ function DeviceManageDialog({ device, open, onClose }: { device: Device | null; 
                                     if (wan === health?.ipAddress) return t('devices.sameLan');
                                     if (/^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)/.test(wan)) return '— (private)';
                                     return wan;
-                                })() } />
+                                })()} />
                             </Stack>
                         )}
                     </Stack>
@@ -749,13 +751,13 @@ function DevicesTab({ onAddDevice }: { onAddDevice: () => void }) {
 
     const sortVal = (d: Device): string | number => {
         switch (sortBy) {
-            case 'osVersion':       return d.osVersion ?? '';
-            case 'site':            return d.siteName ?? '';
-            case 'lastSeen':        return d.lastSeen ?? '';
-            case 'uptime':          return d.lastOnlineAt && (d.status === 'ONLINE' || d.status === 'SLEEP') ? new Date(d.lastOnlineAt).getTime() : 0;
+            case 'osVersion': return d.osVersion ?? '';
+            case 'site': return d.siteName ?? '';
+            case 'lastSeen': return d.lastSeen ?? '';
+            case 'uptime': return d.lastOnlineAt && (d.status === 'ONLINE' || d.status === 'SLEEP') ? new Date(d.lastOnlineAt).getTime() : 0;
             case 'licenseStartDate': return d.licenseStartDate ?? '';
-            case 'licenseEndDate':  return d.licenseEndDate ?? '';
-            default:                return '';
+            case 'licenseEndDate': return d.licenseEndDate ?? '';
+            default: return '';
         }
     };
 
@@ -930,12 +932,174 @@ function DevicesTab({ onAddDevice }: { onAddDevice: () => void }) {
     );
 }
 
+// ── Devices Trash Tab ─────────────────────────────────────────────────────────
+
+function DevicesTrashTab({ isAdmin }: { isAdmin: boolean }) {
+    const dispatch = useAppDispatch();
+    const qc = useQueryClient();
+    const { t } = useTranslation();
+
+    const { data: trashItems = [], isLoading } = useQuery({
+        queryKey: ['devices-trash'],
+        queryFn: () => devicesApi.listTrash(),
+        staleTime: 30_000,
+    });
+
+    const [confirmTarget, setConfirmTarget] = useState<{ id: string; name: string; action: 'restore' | 'permanent' } | null>(null);
+
+    const restoreMutation = useMutation({
+        mutationFn: (id: string) => devicesApi.restore(id),
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ['devices-trash'] });
+            qc.invalidateQueries({ queryKey: ['devices'] });
+            setConfirmTarget(null);
+            dispatch(pushToast({ severity: 'success', message: t('common.success') }));
+        },
+        onError: (err) => dispatch(pushToast({ severity: 'error', message: getApiError(err, t('common.failedAction')) })),
+    });
+
+    const permanentDeleteMutation = useMutation({
+        mutationFn: (id: string) => devicesApi.permanentDelete(id),
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ['devices-trash'] });
+            setConfirmTarget(null);
+            dispatch(pushToast({ severity: 'success', message: t('common.success') }));
+        },
+        onError: (err) => dispatch(pushToast({ severity: 'error', message: getApiError(err, t('common.failedAction')) })),
+    });
+
+    const isPending = restoreMutation.isPending || permanentDeleteMutation.isPending;
+
+    const handleConfirm = () => {
+        if (!confirmTarget) return;
+        if (confirmTarget.action === 'restore') restoreMutation.mutate(confirmTarget.id);
+        else permanentDeleteMutation.mutate(confirmTarget.id);
+    };
+
+    if (isLoading) return (
+        <Card><CardContent sx={{ p: 0 }}>
+            <TableContainer><Table size="small"><TableBody>
+                {Array.from({ length: 5 }).map((_, i) => (
+                    <TableRow key={i}>{Array.from({ length: 5 }).map((_, j) => (
+                        <TableCell key={j}><Skeleton /></TableCell>
+                    ))}</TableRow>
+                ))}
+            </TableBody></Table></TableContainer>
+        </CardContent></Card>
+    );
+
+    if (!trashItems.length) return (
+        <Card><CardContent>
+            <Stack alignItems="center" py={6} spacing={1}>
+                <Tv sx={{ fontSize: 64, color: 'text.secondary' }} />
+                <Typography variant="h6">Thùng rác trống</Typography>
+                <Typography variant="body2" color="text.secondary">
+                    Thiết bị đã xóa sẽ xuất hiện ở đây và tự động xóa vĩnh viễn sau 30 ngày.
+                </Typography>
+            </Stack>
+        </CardContent></Card>
+    );
+
+    return (
+        <>
+            <Card>
+                <CardContent sx={{ p: 0 }}>
+                    <TableContainer>
+                        <Table size="small">
+                            <TableHead>
+                                <TableRow>
+                                    <TableCell sx={{ fontWeight: 700 }}>{t('common.name')}</TableCell>
+                                    <TableCell sx={{ fontWeight: 700 }}>{t('devices.model')}</TableCell>
+                                    <TableCell sx={{ fontWeight: 700 }}>{t('devices.site')}</TableCell>
+                                    <TableCell align="center" sx={{ fontWeight: 700 }}>{t('common.deletedAt')}</TableCell>
+                                    <TableCell align="center" sx={{ fontWeight: 700 }}>{t('common.actions')}</TableCell>
+                                </TableRow>
+                            </TableHead>
+                            <TableBody>
+                                {trashItems.map((device) => (
+                                    <TableRow key={device.id} hover>
+                                        <TableCell>
+                                            <Stack direction="row" alignItems="center" spacing={1}>
+                                                <Avatar sx={{ width: 28, height: 28, bgcolor: 'grey.300' }}>
+                                                    <Tv sx={{ fontSize: 16, color: 'grey.600' }} />
+                                                </Avatar>
+                                                <Typography variant="body2" fontWeight={600}>{device.name}</Typography>
+                                            </Stack>
+                                        </TableCell>
+                                        <TableCell>
+                                            <Typography variant="caption" color="text.secondary">{device.model ?? '—'}</Typography>
+                                        </TableCell>
+                                        <TableCell>
+                                            <Typography variant="caption" color="text.secondary">{device.siteName ?? '—'}</Typography>
+                                        </TableCell>
+                                        <TableCell align="center">
+                                            <Typography variant="caption" color="text.secondary">
+                                                {device.deletedAt ? new Date(device.deletedAt).toLocaleDateString() : '—'}
+                                            </Typography>
+                                        </TableCell>
+                                        <TableCell align="center">
+                                            <Stack direction="row" justifyContent="center" spacing={0.5}>
+                                                <Tooltip title={t('common.restore')}>
+                                                    <IconButton size="small" color="success" onClick={() => setConfirmTarget({ id: device.id, name: device.name, action: 'restore' })}>
+                                                        <Restore sx={{ fontSize: 16 }} />
+                                                    </IconButton>
+                                                </Tooltip>
+                                                {isAdmin && (
+                                                    <Tooltip title={t('common.permanentDelete')}>
+                                                        <IconButton size="small" color="error" onClick={() => setConfirmTarget({ id: device.id, name: device.name, action: 'permanent' })}>
+                                                            <DeleteForever sx={{ fontSize: 16 }} />
+                                                        </IconButton>
+                                                    </Tooltip>
+                                                )}
+                                            </Stack>
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    </TableContainer>
+                </CardContent>
+            </Card>
+
+            {/* Confirm dialog */}
+            <Dialog open={!!confirmTarget} onClose={isPending ? undefined : () => setConfirmTarget(null)} maxWidth="xs" fullWidth>
+                <DialogTitle fontWeight={700}>
+                    <Stack direction="row" alignItems="center" spacing={1}>
+                        {confirmTarget?.action === 'permanent' ? <DeleteForever color="error" /> : <Restore color="success" />}
+                        <span>{confirmTarget?.action === 'permanent' ? t('devices.permanentDeleteTitle') : t('devices.restoreTitle')}</span>
+                    </Stack>
+                </DialogTitle>
+                <DialogContent dividers>
+                    <Typography variant="body2">
+                        {confirmTarget?.action === 'permanent'
+                            ? t('devices.permanentDeleteConfirm', { name: confirmTarget?.name })
+                            : t('devices.restoreConfirm', { name: confirmTarget?.name })}
+                    </Typography>
+                </DialogContent>
+                <DialogActions sx={{ px: 3, pb: 2 }}>
+                    <Button size="small" onClick={() => setConfirmTarget(null)} disabled={isPending}>{t('common.cancel')}</Button>
+                    <Button
+                        size="small"
+                        color={confirmTarget?.action === 'permanent' ? 'error' : 'success'}
+                        disabled={isPending}
+                        onClick={handleConfirm}
+                    >
+                        {isPending ? '...' : confirmTarget?.action === 'permanent' ? t('common.permanentDelete') : t('common.restore')}
+                    </Button>
+                </DialogActions>
+            </Dialog>
+        </>
+    );
+}
+
 // ── Main DevicesPage ─────────────────────────────────────────────────────────
 
 export default function DevicesPage() {
     const [createOpen, setCreateOpen] = useState(false);
     const currentUser = useAppSelector(s => s.auth.user);
     const isViewer = currentUser?.role === 'VIEWER';
+    const isAdmin = currentUser?.role === 'ADMIN' || currentUser?.role === 'SUPER_ADMIN' || currentUser?.role === 'MANAGER';
+    const [activeTab, setActiveTab] = useState(0);
     const { t } = useTranslation();
 
     return (
@@ -945,14 +1109,22 @@ export default function DevicesPage() {
                     <Typography variant="h4" fontWeight={700}>{t('devices.title')}</Typography>
                     <Typography variant="body2" color="text.secondary">{t('devices.subtitle')}</Typography>
                 </Box>
-                {!isViewer && (
+                {!isViewer && activeTab === 0 && (
                     <Button startIcon={<Add />} onClick={() => setCreateOpen(true)}>
                         {t('devices.addDevice')}
                     </Button>
                 )}
             </Stack>
 
-            <DevicesTab onAddDevice={() => setCreateOpen(true)} />
+            <Tabs value={activeTab} onChange={(_, v) => setActiveTab(v)} sx={{ mb: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
+                <Tab label={t('devices.title')} />
+                <Tab label={t('devices.trashTab')} />
+            </Tabs>
+
+            {activeTab === 0
+                ? <DevicesTab onAddDevice={() => setCreateOpen(true)} />
+                : <DevicesTrashTab isAdmin={isAdmin} />
+            }
 
             {!isViewer && <CreateDeviceDialog open={createOpen} onClose={() => setCreateOpen(false)} />}
         </Box>

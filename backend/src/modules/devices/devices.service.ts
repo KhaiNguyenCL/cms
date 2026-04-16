@@ -65,7 +65,7 @@ export async function listDevices(
     const { page, limit, status, search } = q;
     const offset = (page - 1) * limit;
 
-    const conditions: string[] = [`d."organizationId" = $1`];
+    const conditions: string[] = [`d."organizationId" = $1`, `d."deletedAt" IS NULL`];
     const values: unknown[] = [organizationId];
     let idx = 2;
 
@@ -104,7 +104,7 @@ export async function listDevices(
 // ─── Get single device ────────────────────────────────────────────────────────
 
 export async function getDeviceById(deviceId: string, organizationId: string, restrictToSiteId?: string | null): Promise<DeviceRow> {
-    const conditions = [`id = $1`, `"organizationId" = $2`];
+    const conditions = [`id = $1`, `"organizationId" = $2`, `"deletedAt" IS NULL`];
     const values: unknown[] = [deviceId, organizationId];
     if (restrictToSiteId) { conditions.push(`"storeId" = $3`); values.push(restrictToSiteId); }
 
@@ -249,27 +249,77 @@ export async function updateDevice(
     return rows[0];
 }
 
-// ─── Delete device ─────────────────────────────────────────────────────────────
+// ─── Soft Delete device (move to trash) ────────────────────────────────────────
 
 export async function deleteDevice(deviceId: string, organizationId: string): Promise<{ name: string }> {
-    const result = await query<{ id: string; name: string }>(
-        `DELETE FROM devices WHERE id = $1 AND "organizationId" = $2 RETURNING id, name`,
+    const result = await queryOne<{ id: string; name: string }>(
+        `UPDATE devices SET "deletedAt" = NOW(), "updatedAt" = NOW()
+         WHERE id = $1 AND "organizationId" = $2 AND "deletedAt" IS NULL
+         RETURNING id, name`,
         [deviceId, organizationId]
     );
-    if (!result[0]) throw new AppError(404, 'Device không tồn tại');
+    if (!result) throw new AppError(404, 'Device không tồn tại');
 
-    // Blacklist token + push reset command so the TV returns to pairing screen
+    // Do NOT blacklist JWT or send reset_pairing — device must reconnect after restore
+    logger.info('Device soft deleted (moved to trash)', { deviceId });
+    return { name: result.name };
+}
+
+// ─── Trash: list deleted devices ─────────────────────────────────────────────
+
+export async function listTrashedDevices(organizationId: string): Promise<DeviceRow[]> {
+    return query<DeviceRow>(
+        `SELECT d.id, d."organizationId", d.name, d."pairingCode", d."androidId", d.model,
+                d."osVersion", d."appVersion", d.status, d."isLicensed",
+                d."licenseStartDate", d."licenseEndDate",
+                d."lastSeen", d."lastOnlineAt", d."lastOfflineAt",
+                d.location, d.timezone, d.settings,
+                d.role, d."downloadStatus", d."contentReady",
+                d."createdAt", d."updatedAt",
+                d."storeId" AS "siteId", s.name AS "siteName"
+         FROM devices d
+         LEFT JOIN stores s ON s.id = d."storeId"
+         WHERE d."organizationId" = $1 AND d."deletedAt" IS NOT NULL
+         ORDER BY d."deletedAt" DESC`,
+        [organizationId]
+    );
+}
+
+// ─── Trash: restore device ────────────────────────────────────────────────────
+
+export async function restoreDevice(deviceId: string, organizationId: string): Promise<{ name: string }> {
+    const result = await queryOne<{ id: string; name: string }>(
+        `UPDATE devices SET "deletedAt" = NULL, status = 'OFFLINE', "updatedAt" = NOW()
+         WHERE id = $1 AND "organizationId" = $2 AND "deletedAt" IS NOT NULL
+         RETURNING id, name`,
+        [deviceId, organizationId]
+    );
+    if (!result) throw new AppError(404, 'Device không tồn tại trong thùng rác');
+    logger.info('Device restored from trash', { deviceId });
+    return { name: result.name };
+}
+
+// ─── Permanent delete device (hard delete + revoke JWT) ──────────────────────
+
+export async function permanentDeleteDevice(deviceId: string, organizationId: string): Promise<{ name: string }> {
+    const result = await queryOne<{ id: string; name: string }>(
+        `DELETE FROM devices WHERE id = $1 AND "organizationId" = $2 AND "deletedAt" IS NOT NULL
+         RETURNING id, name`,
+        [deviceId, organizationId]
+    );
+    if (!result) throw new AppError(404, 'Device không tồn tại trong thùng rác');
+
+    // NOW revoke JWT + push reset command (permanent delete only)
     const redis = (await import('../../shared/cache/redis')).default;
     const { RedisKeys } = await import('../../shared/cache/redis');
     await redis.setex(RedisKeys.deviceBlacklist(deviceId), 60 * 60 * 24 * 7, '1');
-
     try {
         const { pushCommandToDevice } = await import('../../shared/socket/socket.server');
         pushCommandToDevice(deviceId, 'command.reset_pairing' as any);
     } catch { /* device may be offline */ }
 
-    logger.info('Device deleted', { deviceId });
-    return { name: result[0].name };
+    logger.info('Device permanently deleted', { deviceId });
+    return { name: result.name };
 }
 
 // ─── Reset device (revoke token, clear pairing, back to OFFLINE) ──────────────

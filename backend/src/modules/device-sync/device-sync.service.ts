@@ -466,10 +466,13 @@ export async function heartbeat(deviceId: string, organizationId: string, data: 
     // Update device lastSeen + status, fetch lastOfflineAt for auto-start log
     const newStatus = data.isScreenOn === false ? 'SLEEP' : 'ONLINE';
 
-    const prevDevice = await queryOne<{ status: string; lastOfflineAt: string | null; appVersion: string | null }>(
-        `SELECT status, "lastOfflineAt", "appVersion" FROM devices WHERE id = $1 AND "organizationId" = $2`,
+    const prevDevice = await queryOne<{ status: string; lastOfflineAt: string | null; appVersion: string | null; deletedAt: string | null }>(
+        `SELECT status, "lastOfflineAt", "appVersion", "deletedAt" FROM devices WHERE id = $1 AND "organizationId" = $2`,
         [deviceId, organizationId]
     );
+
+    // Device was soft-deleted — return 403 so Android shows "Device has been removed" screen
+    if (prevDevice?.deletedAt) throw new AppError(403, 'Device has been deleted');
 
     const updates: string[] = [`status = '${newStatus}'`, `"lastSeen" = NOW()`, `"updatedAt" = NOW()`];
     // Reset lastOnlineAt when device transitions to ONLINE from an offline/exit state
@@ -899,9 +902,8 @@ export async function markDeviceOffline(
 
                 // New template-based mail — only during operating window
                 const { isWithinOperatingWindow } = await import('../../shared/mail/mail.sender');
-                const toleranceMin = dev.alarmToleranceMin ?? 60;
                 const shouldNotify = isWithinOperatingWindow(
-                    dev.timeOn, dev.timeOff, toleranceMin, dev.timezone
+                    dev.timeOn, dev.timeOff, dev.timezone
                 );
 
                 if (shouldNotify) {

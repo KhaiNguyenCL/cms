@@ -192,6 +192,25 @@ function LicenseRequiredScreen({ status }: { status: 'LICENSE_EXPIRED' | 'LICENS
     );
 }
 
+// ─── Device deleted screen ────────────────────────────────────────────────────
+
+function DeviceDeletedScreen() {
+    const { t } = useTranslation();
+    return (
+        <Box sx={{
+            display: 'flex', flexDirection: 'column', alignItems: 'center',
+            justifyContent: 'center', height: '100vh', bgcolor: '#0D0D0D', gap: 2,
+        }}>
+            <img src="/logo-icon.png" alt="DMS Signage" style={{ height: 64, width: 'auto', objectFit: 'contain', opacity: 0.5 }} />
+            <LockIcon sx={{ fontSize: 48, color: '#444' }} />
+            <Typography variant="body2" sx={{ color: '#666', textAlign: 'center', maxWidth: 320, whiteSpace: 'pre-line' }}>
+                {t('player.deviceDeleted')}
+                {'\n'}{t('player.contactAdmin')}
+            </Typography>
+        </Box>
+    );
+}
+
 // ─── Standby screen ───────────────────────────────────────────────────────────
 
 function StandbyScreen({ deviceName }: { deviceName?: string }) {
@@ -286,6 +305,7 @@ export default function PlayerPage() {
     const [error, setError]             = useState<string | null>(null);
     const [syncError, setSyncError]     = useState<string | null>(null);
     const [licenseStatus, setLicenseStatus] = useState<string | null>(null);
+    const [deviceDeleted, setDeviceDeleted] = useState(false);
 
     // ── Download status (from local DownloadService via NativeBridge) ──────────
     const [dlStatus, setDlStatus]     = useState<string>(() => window.NativeBridge?.getDownloadStatus?.() ?? 'READY');
@@ -390,11 +410,6 @@ export default function PlayerPage() {
         };
     }, []);
 
-    // ── Pause / freeze state ──────────────────────────────────────────────────
-    const [isPaused, setIsPaused] = useState(false);
-    const isPausedRef          = useRef(false);
-    const longPressTimerRef    = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const touchStartPosRef     = useRef<{ x: number; y: number } | null>(null);
 
     // ── 1. Read NativeBridge (Android) or URL params (dev/browser testing) ─────
 
@@ -575,6 +590,11 @@ export default function PlayerPage() {
                 window.NativeBridge?.clearCredentialsAndRepair?.();
                 return; // credentials invalid — don't load cache
             }
+            if (status === 403) {
+                // Device soft-deleted — show deleted screen, keep credentials (JWT stays valid for restore)
+                setDeviceDeleted(true);
+                return;
+            }
             // Nếu chưa có syncData (lần đầu boot mà server down) → load cache
             setSyncData(prev => {
                 if (prev) return prev; // đang phát rồi, giữ nguyên
@@ -626,6 +646,13 @@ export default function PlayerPage() {
                 window.NativeBridge?.ping?.();
 
                 const hb = await sendHeartbeat(contentHashRef.current);
+
+                // Heartbeat OK — device is alive, clear deleted flag in case it was restored
+                if (deviceDeleted) {
+                    setDeviceDeleted(false);
+                    doSync('CONTENT');
+                    return;
+                }
 
                 // Sync PIN if server returned a new value
                 if (hb.deviceAdminPin) {
@@ -705,67 +732,20 @@ export default function PlayerPage() {
                         }
                     }
                 }
-            } catch {
-                // ignore transient heartbeat failures
+            } catch (hbErr: unknown) {
+                const hbStatus = (hbErr as { response?: { status?: number } })?.response?.status;
+                if (hbStatus === 403) {
+                    // Device soft-deleted — show deleted screen, keep credentials
+                    setDeviceDeleted(true);
+                } else if (hbStatus === 401) {
+                    window.NativeBridge?.clearCredentialsAndRepair?.();
+                }
+                // Other errors (network timeout, 5xx) are transient — ignore
             }
         }, inSyncGroup ? 15_000 : 30_000);
         return () => clearInterval(timer);
-    }, [deviceInfo, doSync, inSyncGroup]);
+    }, [deviceInfo, doSync, inSyncGroup, deviceDeleted]);
 
-    // ── Pause/freeze: long-press touch (600ms) toggles freeze ────────────────
-    const handleTouchStart = useCallback((e: React.TouchEvent) => {
-        const t = e.touches[0];
-        touchStartPosRef.current = { x: t.clientX, y: t.clientY };
-        longPressTimerRef.current = setTimeout(() => {
-            longPressTimerRef.current = null;
-            touchStartPosRef.current = null;
-            isPausedRef.current = !isPausedRef.current;
-            setIsPaused(isPausedRef.current);
-            // Restart NTP tick when unpausing (tick stops itself when isPaused)
-            if (!isPausedRef.current) scheduleNTPTickRef.current();
-        }, 600);
-    }, []);
-
-    const cancelLongPress = useCallback(() => {
-        if (longPressTimerRef.current) {
-            clearTimeout(longPressTimerRef.current);
-            longPressTimerRef.current = null;
-        }
-        touchStartPosRef.current = null;
-    }, []);
-
-    const handleTouchMove = useCallback((e: React.TouchEvent) => {
-        if (!touchStartPosRef.current || !longPressTimerRef.current) return;
-        const t = e.touches[0];
-        const dx = Math.abs(t.clientX - touchStartPosRef.current.x);
-        const dy = Math.abs(t.clientY - touchStartPosRef.current.y);
-        if (dx > 10 || dy > 10) cancelLongPress();
-    }, [cancelLongPress]);
-
-    // TV remote: hold Enter / OK (600ms) toggles freeze
-    useEffect(() => {
-        let keyTimer: ReturnType<typeof setTimeout> | null = null;
-        const onKeyDown = (e: KeyboardEvent) => {
-            if (e.key !== 'Enter' && e.key !== ' ') return;
-            if (keyTimer) return;
-            keyTimer = setTimeout(() => {
-                keyTimer = null;
-                isPausedRef.current = !isPausedRef.current;
-                setIsPaused(isPausedRef.current);
-            }, 600);
-        };
-        const onKeyUp = (e: KeyboardEvent) => {
-            if (e.key !== 'Enter' && e.key !== ' ') return;
-            if (keyTimer) { clearTimeout(keyTimer); keyTimer = null; }
-        };
-        window.addEventListener('keydown', onKeyDown);
-        window.addEventListener('keyup', onKeyUp);
-        return () => {
-            window.removeEventListener('keydown', onKeyDown);
-            window.removeEventListener('keyup', onKeyUp);
-            if (keyTimer) clearTimeout(keyTimer);
-        };
-    }, []);
 
     // ── 5. Slot management: initialize / update on sync ────────────────────────
     //
@@ -1069,7 +1049,6 @@ export default function PlayerPage() {
         const remaining = Math.max(100, getItemDurationMs(items[index]) - offsetMs);
         ntpTimerRef.current = setTimeout(() => {
             ntpTimerRef.current = null;
-            if (isPausedRef.current) return; // paused — tick restarts when unpaused
             const now = estimatedServerTimeMs();
             const { index: ntpIdx, offsetMs: ntpOff } = calculateSyncPosition(
                 itemsRef.current, scheduleEpochRef.current, scheduleTotalMsRef.current, now,
@@ -1096,7 +1075,6 @@ export default function PlayerPage() {
     // Without this, one device may use handleItemEnded (offset=0) while the other
     // uses the NTP timer (offset=ntpOff), causing a permanent phase shift of ntpOff ms.
     const handleItemEnded = useCallback(() => {
-        if (isPausedRef.current) return;
         const items = itemsRef.current;
         if (items.length === 0) return;
 
@@ -1139,6 +1117,10 @@ export default function PlayerPage() {
 
     if (licenseStatus === 'LICENSE_EXPIRED' || licenseStatus === 'LICENSE_REQUIRED') {
         return <LicenseRequiredScreen status={licenseStatus as 'LICENSE_EXPIRED' | 'LICENSE_REQUIRED'} />;
+    }
+
+    if (deviceDeleted) {
+        return <DeviceDeletedScreen />;
     }
 
     if (!syncData) {
@@ -1252,36 +1234,6 @@ export default function PlayerPage() {
         </Box>
     );
 
-    // ── Pause overlay (Chrome 73 safe: no gap, no inset) ──────────────────────
-    const pauseOverlay = isPaused && (
-        <Box sx={{
-            position: 'fixed',
-            top: 0, right: 0, bottom: 0, left: 0,
-            zIndex: 9990,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            bgcolor: 'rgba(0,0,0,0.45)',
-            pointerEvents: 'none',
-        }}>
-            <Box sx={{
-                bgcolor: 'rgba(0,0,0,0.72)',
-                borderRadius: 3,
-                px: 5, py: 3,
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-            }}>
-                <Box component="span" sx={{ fontSize: 52, lineHeight: 1, color: '#fff', mb: 1.5 }}>⏸</Box>
-                <Typography sx={{ color: '#fff', fontSize: 20, fontWeight: 700, letterSpacing: 1 }}>
-                    {t('player.paused')}
-                </Typography>
-                <Typography sx={{ color: '#aaa', fontSize: 13, mt: 1 }}>
-                    {t('player.holdToResume')}
-                </Typography>
-            </Box>
-        </Box>
-    );
 
     // ── Download progress screen ──────────────────────────────────────────────
     if (dlStatus === 'DOWNLOADING') {
@@ -1370,15 +1322,10 @@ export default function PlayerPage() {
                 // perspective required for FLIP 3D transforms
                 ...(transitionType === 'FLIP' ? { perspective: '1200px' } : {}),
             }}
-            onTouchStart={handleTouchStart}
-            onTouchMove={handleTouchMove}
-            onTouchEnd={cancelLongPress}
-            onTouchCancel={cancelLongPress}
         >
             {mediaInfoOverlay}
             {debugPanel}
             <OfflineIndicator isOffline={isOffline} />
-            {pauseOverlay}
 
             {/* ── Slot A ── */}
             {slotA && (
@@ -1390,7 +1337,6 @@ export default function PlayerPage() {
                         onWillEnd={activeSlot === 'A' ? handleWillEnd : undefined}
                         startOffsetMs={slotAOffset}
                         debug={DEBUG}
-                        isPaused={isPaused}
                     />
                 </Box>
             )}
@@ -1405,7 +1351,6 @@ export default function PlayerPage() {
                         onWillEnd={activeSlot === 'B' ? handleWillEnd : undefined}
                         startOffsetMs={slotBOffset}
                         debug={DEBUG}
-                        isPaused={isPaused}
                     />
                 </Box>
             )}

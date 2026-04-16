@@ -11,13 +11,19 @@ import {
     DevicesOther, PlayArrow,
     SwapHoriz, Add, Refresh, CheckCircle,
     HourglassEmpty, History, Inventory2, ManageSearch, Storage,
+    BackupOutlined, ArrowUpward, ArrowDownward,
 } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import licenseApi from '@api/license.api';
-import type { DeviceLicenseRow, LicenseHistoryRow, PurchaseRequestRow, PackageType } from '@api/license.api';
+import type { DeviceLicenseRow, LicenseHistoryRow, PurchaseRequestRow, TransferRequestRow, PackageType } from '@api/license.api';
+import { devicesApi } from '@api/devices.api';
 import { storageQuotaApi } from '@api/storage-quota.api';
 import type { StoragePurchaseRequest } from '@api/storage-quota.api';
+import { backupApi } from '@api/backup.api';
+import type { BackupPlanRequest } from '@/types';
 import { useTranslation } from 'react-i18next';
+import { useAppDispatch } from '@store/hooks';
+import { pushToast } from '@store/slices/uiSlice';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -108,19 +114,19 @@ function OverviewTab() {
     const { data: requests = [] } = useQuery({
         queryKey: ['license-requests'], queryFn: licenseApi.getPurchaseRequests, staleTime: 60_000,
     });
-    const [sortAsc, setSortAsc] = useState(false);
+    const [sortAsc, setSortAsc]   = useState(false);
+    const [showAllAlerts, setShowAllAlerts] = useState(false);
+    const ALERTS_COLLAPSED = 5;
 
-    const recentlyResolved = requests
-        .filter(r =>
-            (r.status === 'APPROVED' || r.status === 'REJECTED') &&
-            r.resolvedAt &&
-            Date.now() - new Date(r.resolvedAt).getTime() < 3 * 24 * 60 * 60 * 1000,
-        )
+    const allResolved = requests
+        .filter(r => (r.status === 'APPROVED' || r.status === 'REJECTED') && r.resolvedAt)
         .sort((a, b) => {
             const ta = new Date(a.resolvedAt!).getTime();
             const tb = new Date(b.resolvedAt!).getTime();
             return sortAsc ? ta - tb : tb - ta;
         });
+
+    const visibleAlerts = showAllAlerts ? allResolved : allResolved.slice(0, ALERTS_COLLAPSED);
 
     if (isLoading) return <CircularProgress sx={{ m: 3 }} />;
     if (!stats)    return null;
@@ -158,12 +164,12 @@ function OverviewTab() {
                 <StatCard label={`${t('license.expired')} ≤ 30d`} value={stats.expiringIn30}   accent="#F59E0B" />
             </Stack>
 
-            {/* Request alerts */}
-            {recentlyResolved.length > 0 && (
+            {/* Request alerts — all resolved, no time limit */}
+            {allResolved.length > 0 && (
                 <Box>
                     <Stack direction="row" alignItems="center" justifyContent="space-between" mb={1}>
                         <Typography variant="overline" color="text.secondary">
-                            {t('license.requestAlerts', { count: recentlyResolved.length })}
+                            {t('license.requestAlerts', { count: allResolved.length })}
                         </Typography>
                         <Chip
                             label={sortAsc ? t('license.sortOldFirst') : t('license.sortNewFirst')}
@@ -173,7 +179,7 @@ function OverviewTab() {
                         />
                     </Stack>
                     <Stack gap={1}>
-                        {recentlyResolved.map(r => (
+                        {visibleAlerts.map(r => (
                             <Alert key={r.id} severity={r.status === 'APPROVED' ? 'success' : 'warning'} variant="outlined">
                                 <Stack direction="row" alignItems="flex-start" justifyContent="space-between" gap={2}>
                                     <Box>
@@ -188,6 +194,18 @@ function OverviewTab() {
                             </Alert>
                         ))}
                     </Stack>
+                    {allResolved.length > ALERTS_COLLAPSED && (
+                        <Button
+                            size="small"
+                            variant="text"
+                            onClick={() => setShowAllAlerts(v => !v)}
+                            sx={{ mt: 1 }}
+                        >
+                            {showAllAlerts
+                                ? t('common.showLess')
+                                : t('common.showMore', { count: allResolved.length - ALERTS_COLLAPSED })}
+                        </Button>
+                    )}
                 </Box>
             )}
         </Box>
@@ -198,6 +216,7 @@ function OverviewTab() {
 
 function DevicesTab() {
     const qc = useQueryClient();
+    const dispatch = useAppDispatch();
     const { t } = useTranslation();
     const invalidate = () => {
         qc.invalidateQueries({ queryKey: ['license-devices'] });
@@ -212,13 +231,14 @@ function DevicesTab() {
         queryKey: ['license-stats'], queryFn: licenseApi.getStats, select: d => d.pool,
     });
 
-    const [assignDev, setAssignDev]     = useState<DeviceLicenseRow | null>(null);
-    const [transferDev, setTransferDev] = useState<DeviceLicenseRow | null>(null);
-    const [historyDev, setHistoryDev]   = useState<DeviceLicenseRow | null>(null);
-    const [selPkg, setSelPkg]           = useState<PackageType>('12M');
-    const [toDeviceId, setToDeviceId]   = useState('');
-    const [page, setPage]               = useState(0);
-    const [rowsPerPage, setRowsPerPage] = useState(10);
+    const [assignDev, setAssignDev]       = useState<DeviceLicenseRow | null>(null);
+    const [transferReqDev, setTransferReqDev] = useState<DeviceLicenseRow | null>(null);
+    const [historyDev, setHistoryDev]     = useState<DeviceLicenseRow | null>(null);
+    const [selPkg, setSelPkg]             = useState<PackageType>('12M');
+    const [toDeviceId, setToDeviceId]     = useState('');
+    const [transferNote, setTransferNote] = useState('');
+    const [page, setPage]                 = useState(0);
+    const [rowsPerPage, setRowsPerPage]   = useState(10);
 
     const { data: devHistory = [], isLoading: histLoading } = useQuery({
         queryKey: ['license-history-device', historyDev?.deviceId],
@@ -231,11 +251,31 @@ function DevicesTab() {
         mutationFn: () => licenseApi.assignLicense(assignDev!.deviceId, selPkg),
         onSuccess: () => { setAssignDev(null); invalidate(); },
     });
-    const transferMut = useMutation({
-        mutationFn: () => licenseApi.transferLicense(transferDev!.deviceId, toDeviceId),
-        onSuccess: () => { setTransferDev(null); invalidate(); },
+    const { data: allDevices = [] } = useQuery({
+        queryKey: ['devices-all-for-transfer'],
+        queryFn: () => devicesApi.list({ limit: 200 }).then(r => r.data),
+        enabled: !!transferReqDev,
+        staleTime: 30_000,
     });
-    const availableTargets = data.filter(d => d.deviceId !== transferDev?.deviceId && (!d.isLicensed || !d.expiresAt));
+
+    const transferReqMut = useMutation({
+        mutationFn: () => licenseApi.createTransferRequest(transferReqDev!.deviceId, toDeviceId, transferNote || undefined),
+        onSuccess: () => {
+            setTransferReqDev(null);
+            setToDeviceId('');
+            setTransferNote('');
+            qc.invalidateQueries({ queryKey: ['license-transfer-requests'] });
+            dispatch(pushToast({ severity: 'success', message: 'Đã gửi yêu cầu chuyển license' }));
+        },
+        onError: (err: any) => dispatch(pushToast({
+            severity: 'error',
+            message: err?.response?.data?.error ?? t('common.failedAction'),
+        })),
+    });
+
+    const licensedDeviceIds = new Set(data.filter(d => d.isLicensed).map(d => d.deviceId));
+    const availableTargets = allDevices.filter(d => d.id !== transferReqDev?.deviceId);
+    const selectedTargetHasLicense = toDeviceId ? licensedDeviceIds.has(toDeviceId) : false;
 
     if (isLoading) return <CircularProgress sx={{ m: 3 }} />;
 
@@ -318,9 +358,9 @@ function DevicesTab() {
                                         </Tooltip>
                                     )}
                                     {row.isLicensed && row.expiresAt && (
-                                        <Tooltip title={t('license.transferToOther')}>
+                                        <Tooltip title={t('license.requestTransfer')}>
                                             <IconButton size="small"
-                                                onClick={() => { setTransferDev(row); setToDeviceId(''); }}>
+                                                onClick={() => { setTransferReqDev(row); setToDeviceId(''); setTransferNote(''); }}>
                                                 <SwapHoriz fontSize="inherit" />
                                             </IconButton>
                                         </Tooltip>
@@ -377,29 +417,56 @@ function DevicesTab() {
                 </DialogActions>
             </Dialog>
 
-            {/* Transfer Dialog */}
-            <Dialog open={!!transferDev} onClose={() => setTransferDev(null)} maxWidth="xs" fullWidth>
-                <DialogTitle>{t('license.transfer')} — {transferDev?.deviceName}</DialogTitle>
+            {/* Request Transfer Dialog */}
+            <Dialog open={!!transferReqDev} onClose={() => setTransferReqDev(null)} maxWidth="xs" fullWidth>
+                <DialogTitle>{t('license.requestTransfer')} — {transferReqDev?.deviceName}</DialogTitle>
                 <DialogContent dividers>
                     <Stack gap={2} pt={0.5}>
                         <Typography variant="body2" color="text.secondary">
-                            {t('license.package')}: {transferDev?.packageType && t(PKG_LABEL_KEYS[transferDev.packageType as PackageType])},
-                            {t('license.expiresAt')}: {fmtDate(transferDev?.expiresAt ?? null)}
+                            {t('license.package')}: {transferReqDev?.packageType && t(PKG_LABEL_KEYS[transferReqDev.packageType as PackageType])},
+                            {t('license.expiresAt')}: {fmtDate(transferReqDev?.expiresAt ?? null)}
                         </Typography>
-                        <TextField select fullWidth label={t('sites.targetSite')} value={toDeviceId}
+                        <TextField select fullWidth label={t('license.targetDevice')} value={toDeviceId}
                             onChange={e => setToDeviceId(e.target.value)} size="small">
                             {availableTargets.map(d => (
-                                <MenuItem key={d.deviceId} value={d.deviceId}>{d.deviceName}</MenuItem>
+                                <MenuItem key={d.id} value={d.id}>
+                                    {d.name}
+                                    {licensedDeviceIds.has(d.id) && (
+                                        <Typography component="span" variant="caption" color="warning.main" sx={{ ml: 1 }}>
+                                            (đang có license)
+                                        </Typography>
+                                    )}
+                                </MenuItem>
                             ))}
                             {availableTargets.length === 0 && (
                                 <MenuItem disabled>{t('common.noData')}</MenuItem>
                             )}
                         </TextField>
+                        {selectedTargetHasLicense && (
+                            <Alert severity="warning" sx={{ py: 0.5 }}>
+                                Thiết bị này đang có license. License hiện tại sẽ bị thay thế nếu yêu cầu được duyệt.
+                            </Alert>
+                        )}
+                        <TextField
+                            fullWidth multiline rows={2} size="small"
+                            label={t('license.requestNote')}
+                            value={transferNote}
+                            onChange={e => setTransferNote(e.target.value)}
+                            placeholder={t('license.requestNotePlaceholder')}
+                        />
+                        {transferReqMut.isError && (
+                            <Alert severity="error" sx={{ py: 0.5 }}>
+                                {(transferReqMut.error as any)?.response?.data?.error ?? t('common.failedAction')}
+                            </Alert>
+                        )}
                     </Stack>
                 </DialogContent>
                 <DialogActions>
-                    <Button size="small" onClick={() => setTransferDev(null)}>{t('common.cancel')}</Button>
-                    <Button size="small" disabled={!toDeviceId || transferMut.isPending} onClick={() => transferMut.mutate()}>{t('common.transfer')}</Button>
+                    <Button size="small" onClick={() => setTransferReqDev(null)}>{t('common.cancel')}</Button>
+                    <Button size="small" disabled={!toDeviceId || transferReqMut.isPending}
+                        onClick={() => transferReqMut.mutate()}>
+                        {t('license.submitRequest')}
+                    </Button>
                 </DialogActions>
             </Dialog>
 
@@ -496,8 +563,287 @@ function DevicesTab() {
 const STORAGE_PACKAGES = [50, 100, 200] as const;
 type StoragePackageMb = typeof STORAGE_PACKAGES[number];
 
+const BACKUP_PLAN_OPTIONS = [3, 7, 10] as const;
+
+function backupPlanChangeType(current: number | null, requested: number): 'register' | 'upgrade' | 'downgrade' {
+    if (current === null) return 'register';
+    return requested > current ? 'upgrade' : 'downgrade';
+}
+
+function BackupPlanStatusChip({ status }: { status: BackupPlanRequest['status'] }) {
+    const { t } = useTranslation();
+    if (status === 'APPROVED') return <Chip label={t('common.approved')} size="small" color="success" />;
+    if (status === 'REJECTED') return <Chip label={t('common.rejected')} size="small" color="error" />;
+    return <Chip label={t('common.pending')} size="small" color="warning" icon={<HourglassEmpty fontSize="inherit" />} />;
+}
+
+function BackupPlanRequestSection() {
+    const qc = useQueryClient();
+
+    const { data: planData, isLoading } = useQuery({
+        queryKey: ['backup-plan-own'],
+        queryFn: backupApi.getPlan,
+        // No staleTime — refetch on mount so plan status updates immediately after admin approval
+        refetchOnWindowFocus: true,
+    });
+
+    const [open, setOpen]   = useState(false);
+    const [selPlan, setSelPlan] = useState<number>(7);
+    const [note, setNote]   = useState('');
+    const [page, setPage]   = useState(0);
+    const PER_PAGE = 5;
+
+    const createMut = useMutation({
+        mutationFn: () => backupApi.requestPlan(selPlan, note || undefined),
+        onSuccess: () => {
+            setOpen(false);
+            setNote('');
+            qc.invalidateQueries({ queryKey: ['backup-plan-own'] });
+        },
+    });
+
+    const currentPlan  = planData?.backupPlan ?? null;
+    const requests     = planData?.requests ?? [];
+    const hasPending   = requests.some(r => r.status === 'PENDING');
+    const paged        = requests.slice(page * PER_PAGE, page * PER_PAGE + PER_PAGE);
+
+    const changeType   = backupPlanChangeType(currentPlan, selPlan);
+
+    return (
+        <>
+            <Divider sx={{ my: 4 }} />
+
+            <Stack direction="row" alignItems="center" justifyContent="space-between" mb={2}>
+                <Stack direction="row" alignItems="center" gap={1}>
+                    <BackupOutlined fontSize="small" color="primary" />
+                    <Typography variant="subtitle1" fontWeight={700}>{t('license.autoPlanTitle')}</Typography>
+                    {currentPlan ? (
+                        <Chip label={`Gói ${currentPlan} ngày`} size="small" color="success" sx={{ fontWeight: 700 }} />
+                    ) : (
+                        <Chip label={t('license.noPlan')} size="small" variant="outlined" />
+                    )}
+                </Stack>
+                <Button
+                    size="small"
+                    startIcon={<Add />}
+                    disabled={hasPending}
+                    onClick={() => { setSelPlan(currentPlan ?? 7); setNote(''); setOpen(true); }}
+                >
+                    {currentPlan ? t('license.changePlan') : t('license.registerPlan')}
+                </Button>
+            </Stack>
+
+            {hasPending && (
+                <Alert severity="info" sx={{ mb: 2, borderRadius: 1.5, py: 0.5 }}>
+                    {t('license.pendingApprovalAlert')}
+                </Alert>
+            )}
+
+            {isLoading ? <CircularProgress size={24} sx={{ m: 2 }} /> : (
+                <>
+                    <Table size="small">
+                        <TableHead>
+                            <TableRow>
+                                <TableCell>{t('license.requestedPlan')}</TableCell>
+                                <TableCell>{t('common.note')}</TableCell>
+                                <TableCell>{t('common.status')}</TableCell>
+                                <TableCell>{t('license.adminNote')}</TableCell>
+                                <TableCell>{t('license.submittedAt')}</TableCell>
+                            </TableRow>
+                        </TableHead>
+                        <TableBody>
+                            {paged.map((r: BackupPlanRequest) => (
+                                <TableRow key={r.id} hover>
+                                    <TableCell>
+                                        <Chip
+                                            label={`${r.requestedPlan} ngày`}
+                                            size="small"
+                                            color="primary"
+                                            variant="outlined"
+                                            sx={{ fontWeight: 700 }}
+                                        />
+                                    </TableCell>
+                                    <TableCell>
+                                        <Typography variant="caption">{r.note ?? '—'}</Typography>
+                                    </TableCell>
+                                    <TableCell><BackupPlanStatusChip status={r.status} /></TableCell>
+                                    <TableCell>
+                                        <Typography variant="caption" color="text.secondary">{r.adminNote ?? '—'}</Typography>
+                                    </TableCell>
+                                    <TableCell>
+                                        <Typography variant="body2">{fmtDate(r.createdAt)}</Typography>
+                                    </TableCell>
+                                </TableRow>
+                            ))}
+                            {requests.length === 0 && (
+                                <TableRow>
+                                    <TableCell colSpan={5} align="center" sx={{ py: 3, color: 'text.disabled' }}>
+                                        Chưa có yêu cầu nào
+                                    </TableCell>
+                                </TableRow>
+                            )}
+                        </TableBody>
+                    </Table>
+                    {requests.length > PER_PAGE && (
+                        <TablePagination
+                            component="div"
+                            count={requests.length}
+                            page={page}
+                            onPageChange={(_, p) => setPage(p)}
+                            rowsPerPage={PER_PAGE}
+                            onRowsPerPageChange={() => {}}
+                            rowsPerPageOptions={[PER_PAGE]}
+                            labelRowsPerPage=""
+                            labelDisplayedRows={({ from, to, count }) => `${from}–${to} / ${count}`}
+                        />
+                    )}
+                </>
+            )}
+
+            {/* Dialog request */}
+            <Dialog open={open} onClose={() => setOpen(false)} maxWidth="xs" fullWidth>
+                <DialogTitle>
+                    <Stack direction="row" alignItems="center" gap={1}>
+                        <BackupOutlined fontSize="small" />
+                        {currentPlan ? t('license.changePlanTitle') : t('license.registerPlanTitle')}
+                    </Stack>
+                </DialogTitle>
+                <DialogContent dividers>
+                    <Stack gap={2} pt={0.5}>
+                        {currentPlan && (
+                            <Alert severity="info" sx={{ borderRadius: 1.5, py: 0.5 }}>
+                                Gói hiện tại: <strong>{currentPlan} ngày</strong>. Mỗi tổ chức chỉ có thể dùng một gói tại một thời điểm.
+                            </Alert>
+                        )}
+                        <Typography variant="body2" color="text.secondary">
+                            Chọn gói backup. Hệ thống tự động tạo snapshot mỗi ngày lúc 02:30 UTC và lưu theo số ngày của gói.
+                        </Typography>
+                        <Stack direction="row" gap={1}>
+                            {BACKUP_PLAN_OPTIONS.map(days => {
+                                const type = backupPlanChangeType(currentPlan, days);
+                                const isSelected = selPlan === days;
+                                const isCurrent  = currentPlan === days;
+                                return (
+                                    <Button
+                                        key={days}
+                                        variant={isSelected ? 'contained' : 'outlined'}
+                                        size="small"
+                                        disabled={isCurrent}
+                                        onClick={() => setSelPlan(days)}
+                                        sx={{ flex: 1, fontWeight: 700 }}
+                                        startIcon={
+                                            isCurrent ? undefined :
+                                            type === 'upgrade' ? <ArrowUpward sx={{ fontSize: 14 }} /> :
+                                            type === 'downgrade' ? <ArrowDownward sx={{ fontSize: 14 }} /> : undefined
+                                        }
+                                    >
+                                        {days} ngày{isCurrent ? ' (hiện tại)' : ''}
+                                    </Button>
+                                );
+                            })}
+                        </Stack>
+                        {currentPlan !== null && selPlan !== currentPlan && (
+                            <Alert
+                                severity={changeType === 'upgrade' ? 'success' : 'warning'}
+                                sx={{ borderRadius: 1.5, py: 0.5 }}
+                                icon={changeType === 'upgrade' ? <ArrowUpward fontSize="small" /> : <ArrowDownward fontSize="small" />}
+                            >
+                                {changeType === 'upgrade'
+                                    ? t('license.upgradePlan', { from: currentPlan, to: selPlan })
+                                    : t('license.downgradePlan', { from: currentPlan, to: selPlan })}
+                            </Alert>
+                        )}
+                        <TextField fullWidth label={t('license.noteOptional')} size="small" multiline rows={2}
+                            value={note} onChange={e => setNote(e.target.value)} />
+                    </Stack>
+                </DialogContent>
+                <DialogActions>
+                    <Button size="small" onClick={() => setOpen(false)}>{t('common.cancel')}</Button>
+                    <Button size="small"
+                        disabled={selPlan === currentPlan || createMut.isPending}
+                        onClick={() => createMut.mutate()}>
+                        {t('license.submitRequest')}
+                    </Button>
+                </DialogActions>
+            </Dialog>
+        </>
+    );
+}
+
 function fmtMb(mb: number) {
     return mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb} MB`;
+}
+
+// ─── Transfer Requests Section ────────────────────────────────────────────────
+
+function TransferRequestsSection() {
+    const { t } = useTranslation();
+    const { data: reqs = [], isLoading } = useQuery({
+        queryKey: ['license-transfer-requests'],
+        queryFn: licenseApi.getTransferRequests,
+        staleTime: 30_000,
+    });
+    const [page, setPage] = useState(0);
+    const PER_PAGE = 5;
+    const paged = reqs.slice(page * PER_PAGE, page * PER_PAGE + PER_PAGE);
+
+    return (
+        <>
+            <Stack direction="row" alignItems="center" gap={1} mb={2}>
+                <SwapHoriz fontSize="small" color="primary" />
+                <Typography variant="subtitle1" fontWeight={700}>{t('license.transferRequestTitle')}</Typography>
+            </Stack>
+            <Alert severity="info" sx={{ mb: 2, py: 0.5, borderRadius: 1.5 }}>
+                {t('license.transferRequestInfo')}
+            </Alert>
+            {isLoading ? <CircularProgress size={24} sx={{ m: 2 }} /> : (
+                <>
+                <Table size="small">
+                    <TableHead>
+                        <TableRow>
+                            <TableCell>{t('license.fromDevice')}</TableCell>
+                            <TableCell>{t('license.toDevice')}</TableCell>
+                            <TableCell>{t('common.note')}</TableCell>
+                            <TableCell>{t('common.status')}</TableCell>
+                            <TableCell>{t('license.adminNote')}</TableCell>
+                            <TableCell>{t('common.createdAt')}</TableCell>
+                        </TableRow>
+                    </TableHead>
+                    <TableBody>
+                        {paged.map((row: TransferRequestRow) => (
+                            <TableRow key={row.id} hover>
+                                <TableCell><Typography variant="body2">{row.fromDeviceName}</Typography></TableCell>
+                                <TableCell><Typography variant="body2">{row.toDeviceName}</Typography></TableCell>
+                                <TableCell><Typography variant="caption">{row.note ?? '—'}</Typography></TableCell>
+                                <TableCell><RequestStatusChip status={row.status} /></TableCell>
+                                <TableCell><Typography variant="caption" color="text.secondary">{row.adminNote ?? '—'}</Typography></TableCell>
+                                <TableCell><Typography variant="body2">{fmtDate(row.createdAt)}</Typography></TableCell>
+                            </TableRow>
+                        ))}
+                        {reqs.length === 0 && (
+                            <TableRow>
+                                <TableCell colSpan={6} align="center" sx={{ py: 3, color: 'text.disabled' }}>
+                                    {t('license.noRequests')}
+                                </TableCell>
+                            </TableRow>
+                        )}
+                    </TableBody>
+                </Table>
+                <TablePagination
+                    component="div"
+                    count={reqs.length}
+                    page={page}
+                    onPageChange={(_, p) => setPage(p)}
+                    rowsPerPage={PER_PAGE}
+                    onRowsPerPageChange={() => {}}
+                    rowsPerPageOptions={[PER_PAGE]}
+                    labelRowsPerPage=""
+                    labelDisplayedRows={({ from, to, count }) => t('common.displayedRows', { from, to, count })}
+                />
+                </>
+            )}
+        </>
+    );
 }
 
 // ─── Requests Tab ─────────────────────────────────────────────────────────────
@@ -622,6 +968,11 @@ function RequestsTab() {
 
             <Divider sx={{ my: 4 }} />
 
+            {/* ── Transfer requests ── */}
+            <TransferRequestsSection />
+
+            <Divider sx={{ my: 4 }} />
+
             {/* ── Storage purchase requests ── */}
             <Stack direction="row" alignItems="center" justifyContent="space-between" mb={2}>
                 <Stack direction="row" alignItems="center" gap={1}>
@@ -721,6 +1072,9 @@ function RequestsTab() {
                         onClick={() => licCreateMut.mutate()}>{t('common.send')}</Button>
                 </DialogActions>
             </Dialog>
+
+            {/* ── Backup Plan section ── */}
+            <BackupPlanRequestSection />
 
             {/* ── Dialog: tạo yêu cầu storage ── */}
             <Dialog open={storOpen} onClose={() => setStorOpen(false)} maxWidth="xs" fullWidth>

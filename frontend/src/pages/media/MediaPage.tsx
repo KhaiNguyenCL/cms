@@ -6,18 +6,19 @@ import {
     InputAdornment, LinearProgress, Tooltip, Skeleton, CircularProgress,
     Select, MenuItem as MuiMenuItem, FormControl, InputLabel,
     Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
-    Paper, List, ListItem, TablePagination, alpha,
+    Paper, List, ListItem, TablePagination, alpha, Tabs, Tab,
 } from '@mui/material';
 import {
     Search, VideoFile, Image, GifBox,
     CloudUpload, Delete, CheckCircle, HourglassEmpty, Error as ErrorIcon,
     Close, ArrowUpward, ArrowDownward, ZoomIn, Add, WarningAmber,
+    Restore, DeleteForever,
 } from '@mui/icons-material';
 import { mediaApi } from '@api/media.api';
 import { storageQuotaApi } from '@api/storage-quota.api';
 import { getApiError } from '@api/client';
 import { useTranslation } from 'react-i18next';
-import { useAppDispatch } from '@store/hooks';
+import { useAppDispatch, useAppSelector } from '@store/hooks';
 import { pushToast } from '@store/slices/uiSlice';
 import type { Media, MediaType } from '@/types';
 
@@ -161,7 +162,7 @@ function PreviewPanel({ media, onDelete }: { media: Media | null; onDelete: (id:
 
                 <Box sx={{ mt: 1.5, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <StatusChip status={media.status} />
-                    <Tooltip title="Delete">
+                    <Tooltip title={t('common.delete')}>
                         <IconButton
                             size="small"
                             color="error"
@@ -618,12 +619,180 @@ function sortMedia(items: Media[], field: SortField, dir: SortDir): Media[] {
     });
 }
 
+// ── Media Trash Tab ───────────────────────────────────────────────────────────
+
+function MediaTrashTab({ isAdmin }: { isAdmin: boolean }) {
+    const dispatch = useAppDispatch();
+    const qc = useQueryClient();
+    const { t } = useTranslation();
+
+    const { data: trashItems = [], isLoading } = useQuery({
+        queryKey: ['media-trash'],
+        queryFn: () => mediaApi.listTrash(),
+        staleTime: 30_000,
+    });
+
+    const [confirmTarget, setConfirmTarget] = useState<{ id: string; title: string; action: 'restore' | 'permanent' } | null>(null);
+
+    const restoreMutation = useMutation({
+        mutationFn: (id: string) => mediaApi.restore(id),
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ['media-trash'] });
+            qc.invalidateQueries({ queryKey: ['media'] });
+            qc.invalidateQueries({ queryKey: ['storage-usage'] });
+            setConfirmTarget(null);
+            dispatch(pushToast({ severity: 'success', message: t('common.success') }));
+        },
+        onError: (err) => dispatch(pushToast({ severity: 'error', message: getApiError(err, t('common.failedAction')) })),
+    });
+
+    const permanentDeleteMutation = useMutation({
+        mutationFn: (id: string) => mediaApi.permanentDelete(id),
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ['media-trash'] });
+            qc.invalidateQueries({ queryKey: ['storage-usage'] });
+            setConfirmTarget(null);
+            dispatch(pushToast({ severity: 'success', message: t('common.success') }));
+        },
+        onError: (err) => dispatch(pushToast({ severity: 'error', message: getApiError(err, t('common.failedAction')) })),
+    });
+
+    const isPending = restoreMutation.isPending || permanentDeleteMutation.isPending;
+
+    const handleConfirm = () => {
+        if (!confirmTarget) return;
+        if (confirmTarget.action === 'restore') restoreMutation.mutate(confirmTarget.id);
+        else permanentDeleteMutation.mutate(confirmTarget.id);
+    };
+
+    if (isLoading) return (
+        <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 2 }}>
+            <Table size="small"><TableBody>
+                {Array.from({ length: 5 }).map((_, i) => (
+                    <TableRow key={i}>{Array.from({ length: 6 }).map((_, j) => (
+                        <TableCell key={j}><Skeleton variant="text" /></TableCell>
+                    ))}</TableRow>
+                ))}
+            </TableBody></Table>
+        </TableContainer>
+    );
+
+    if (!trashItems.length) return (
+        <Box textAlign="center" py={8}>
+            <Delete sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
+            <Typography variant="h6" gutterBottom>{t('media.trashEmpty')}</Typography>
+            <Typography variant="body2" color="text.secondary">
+                Media đã xóa sẽ xuất hiện ở đây và tự động xóa vĩnh viễn sau 30 ngày.
+            </Typography>
+        </Box>
+    );
+
+    return (
+        <>
+            <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 2 }}>
+                <Table size="small">
+                    <TableHead>
+                        <TableRow>
+                            <TableCell sx={{ width: 40 }} />
+                            <TableCell sx={{ fontWeight: 700 }}>{t('common.name')}</TableCell>
+                            <TableCell align="center" sx={{ fontWeight: 700 }}>{t('common.type')}</TableCell>
+                            <TableCell align="center" sx={{ fontWeight: 700 }}>{t('media.fileSize')}</TableCell>
+                            <TableCell align="center" sx={{ fontWeight: 700 }}>{t('common.deletedAt')}</TableCell>
+                            <TableCell align="center" sx={{ fontWeight: 700 }}>{t('common.actions')}</TableCell>
+                        </TableRow>
+                    </TableHead>
+                    <TableBody>
+                        {trashItems.map((media) => (
+                            <TableRow key={media.id} hover>
+                                <TableCell sx={{ p: '6px 8px' }}>
+                                    <Box sx={{ width: 48, height: 30, borderRadius: 0.5, overflow: 'hidden', bgcolor: 'grey.800', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                        {media.thumbnailUrl ? (
+                                            <img src={media.thumbnailUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                                        ) : media.type === 'VIDEO'
+                                            ? <VideoFile sx={{ fontSize: 16, color: '#FF6584' }} />
+                                            : media.type === 'GIF'
+                                            ? <GifBox sx={{ fontSize: 16, color: '#FF9800' }} />
+                                            : <Image sx={{ fontSize: 16, color: '#4CAF82' }} />
+                                        }
+                                    </Box>
+                                </TableCell>
+                                <TableCell>
+                                    <Typography variant="body2" fontWeight={600} noWrap sx={{ maxWidth: 260 }}>{media.title}</Typography>
+                                </TableCell>
+                                <TableCell align="center">
+                                    <Chip label={media.type} size="small" variant="outlined" sx={{ fontWeight: 600, fontSize: '0.6rem' }} />
+                                </TableCell>
+                                <TableCell align="center">
+                                    <Typography variant="caption" color="text.secondary">{formatSize(media.fileSize)}</Typography>
+                                </TableCell>
+                                <TableCell align="center">
+                                    <Typography variant="caption" color="text.secondary">
+                                        {media.deletedAt ? new Date(media.deletedAt).toLocaleDateString() : '—'}
+                                    </Typography>
+                                </TableCell>
+                                <TableCell align="center">
+                                    <Stack direction="row" justifyContent="center" spacing={0.5}>
+                                        <Tooltip title={t('common.restore')}>
+                                            <IconButton size="small" color="success" onClick={() => setConfirmTarget({ id: media.id, title: media.title, action: 'restore' })}>
+                                                <Restore sx={{ fontSize: 16 }} />
+                                            </IconButton>
+                                        </Tooltip>
+                                        {isAdmin && (
+                                            <Tooltip title={t('common.permanentDelete')}>
+                                                <IconButton size="small" color="error" onClick={() => setConfirmTarget({ id: media.id, title: media.title, action: 'permanent' })}>
+                                                    <DeleteForever sx={{ fontSize: 16 }} />
+                                                </IconButton>
+                                            </Tooltip>
+                                        )}
+                                    </Stack>
+                                </TableCell>
+                            </TableRow>
+                        ))}
+                    </TableBody>
+                </Table>
+            </TableContainer>
+
+            {/* Confirm dialog */}
+            <Dialog open={!!confirmTarget} onClose={isPending ? undefined : () => setConfirmTarget(null)} maxWidth="xs" fullWidth>
+                <DialogTitle fontWeight={700}>
+                    <Stack direction="row" alignItems="center" spacing={1}>
+                        {confirmTarget?.action === 'permanent' ? <DeleteForever color="error" /> : <Restore color="success" />}
+                        <span>{confirmTarget?.action === 'permanent' ? t('media.permanentDeleteTitle') : t('media.restoreTitle')}</span>
+                    </Stack>
+                </DialogTitle>
+                <DialogContent dividers>
+                    <Typography variant="body2">
+                        {confirmTarget?.action === 'permanent'
+                            ? t('media.permanentDeleteConfirm', { name: confirmTarget?.title })
+                            : t('media.restoreConfirm', { name: confirmTarget?.title })}
+                    </Typography>
+                </DialogContent>
+                <DialogActions sx={{ px: 3, pb: 2 }}>
+                    <Button size="small" onClick={() => setConfirmTarget(null)} disabled={isPending}>{t('common.cancel')}</Button>
+                    <Button
+                        size="small"
+                        color={confirmTarget?.action === 'permanent' ? 'error' : 'success'}
+                        disabled={isPending}
+                        startIcon={isPending ? <CircularProgress size={14} color="inherit" /> : undefined}
+                        onClick={handleConfirm}
+                    >
+                        {confirmTarget?.action === 'permanent' ? t('common.permanentDelete') : t('common.restore')}
+                    </Button>
+                </DialogActions>
+            </Dialog>
+        </>
+    );
+}
+
 // ── Main Media Page ───────────────────────────────────────────────────────────
 
 export default function MediaPage() {
     const dispatch = useAppDispatch();
     const qc = useQueryClient();
     const { t } = useTranslation();
+    const currentUser = useAppSelector(s => s.auth.user);
+    const isAdmin = currentUser?.role === 'ADMIN' || currentUser?.role === 'SUPER_ADMIN';
+    const [activeTab, setActiveTab] = useState(0);
     const [search, setSearch]         = useState('');
     const [typeFilter, setTypeFilter] = useState('');
     const [page, setPage]             = useState(1);
@@ -661,6 +830,7 @@ export default function MediaPage() {
         mutationFn: (id: string) => mediaApi.delete(id),
         onSuccess: (_, id) => {
             qc.invalidateQueries({ queryKey: ['media'] });
+            qc.invalidateQueries({ queryKey: ['media-trash'] });
             qc.invalidateQueries({ queryKey: ['storage-usage'] });
             if (hoveredMedia?.id === id) setHoveredMedia(null);
             setDeleteTarget(null);
@@ -765,19 +935,29 @@ export default function MediaPage() {
                 </Stack>
             </Stack>
 
+            {/* Tabs */}
+            <Tabs value={activeTab} onChange={(_, v) => setActiveTab(v)} sx={{ mb: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
+                <Tab label={t('common.library')} />
+                <Tab label={t('common.trash')} />
+            </Tabs>
+
+            {activeTab === 1 ? (
+                <MediaTrashTab isAdmin={isAdmin} />
+            ) : (<>
+
             {/* Filters */}
             <Stack direction="row" spacing={2} mb={2} alignItems="center">
                 <TextField
-                    placeholder="Search media..."
+                    placeholder={t('media.searchPlaceholder')}
                     value={search}
                     onChange={(e) => { setSearch(e.target.value); setPage(1); }}
                     size="small" sx={{ width: 240 }}
                     InputProps={{ startAdornment: <InputAdornment position="start"><Search sx={{ fontSize: 18, color: 'text.secondary' }} /></InputAdornment> }}
                 />
                 <FormControl size="small" sx={{ width: 130 }}>
-                    <InputLabel>Type</InputLabel>
-                    <Select value={typeFilter} label="Type" onChange={(e) => { setTypeFilter(e.target.value); setPage(1); }}>
-                        <MuiMenuItem value="">All</MuiMenuItem>
+                    <InputLabel>{t('common.type')}</InputLabel>
+                    <Select value={typeFilter} label={t('common.type')} onChange={(e) => { setTypeFilter(e.target.value); setPage(1); }}>
+                        <MuiMenuItem value="">{t('common.all')}</MuiMenuItem>
                         <MuiMenuItem value="VIDEO">Video</MuiMenuItem>
                         <MuiMenuItem value="IMAGE">Image</MuiMenuItem>
                         <MuiMenuItem value="GIF">GIF</MuiMenuItem>
@@ -799,13 +979,13 @@ export default function MediaPage() {
                             <TableHead>
                                 <TableRow>
                                     <TableCell align="center" sx={{ fontWeight: 700, width: 40 }}></TableCell>
-                                    <SortHeader field="title"     label="Name" center />
-                                    <SortHeader field="type"      label="Type"     center />
-                                    <SortHeader field="fileSize"  label="Size"     center />
-                                    <TableCell align="center" sx={{ fontWeight: 700 }}>Resolution</TableCell>
-                                    <TableCell align="center" sx={{ fontWeight: 700 }}>Status</TableCell>
-                                    <SortHeader field="createdAt" label="Uploaded" center />
-                                    <TableCell align="center" sx={{ fontWeight: 700 }}>Actions</TableCell>
+                                    <SortHeader field="title"     label={t('common.name')} center />
+                                    <SortHeader field="type"      label={t('common.type')}     center />
+                                    <SortHeader field="fileSize"  label={t('media.fileSize')}  center />
+                                    <TableCell align="center" sx={{ fontWeight: 700 }}>{t('media.resolution')}</TableCell>
+                                    <TableCell align="center" sx={{ fontWeight: 700 }}>{t('common.status')}</TableCell>
+                                    <SortHeader field="createdAt" label={t('media.uploaded')} center />
+                                    <TableCell align="center" sx={{ fontWeight: 700 }}>{t('common.actions')}</TableCell>
                                 </TableRow>
                             </TableHead>
                             <TableBody>
@@ -902,7 +1082,7 @@ export default function MediaPage() {
 
                                             {/* Actions */}
                                             <TableCell align="center" onClick={(e) => e.stopPropagation()}>
-                                                <Tooltip title="Delete">
+                                                <Tooltip title={t('common.delete')}>
                                                     <IconButton
                                                         size="small"
                                                         color="error"
@@ -948,6 +1128,8 @@ export default function MediaPage() {
                 {/* ── Right: preview panel ── */}
                 <PreviewPanel media={hoveredMedia} onDelete={handleDelete} />
             </Box>
+
+            </>)}
 
             <UploadDialog open={uploadOpen} onClose={() => setUploadOpen(false)} storageUsage={storageUsage} />
 

@@ -9,7 +9,7 @@ function fmtBytes(b: number): string {
 
 export async function checkDeviceQuota(organizationId: string): Promise<void> {
     const res = await queryOne<{ used: string; max: number }>(
-        `SELECT (SELECT COUNT(*) FROM devices WHERE "organizationId" = $1) AS used,
+        `SELECT (SELECT COUNT(*) FROM devices WHERE "organizationId" = $1 AND "deletedAt" IS NULL) AS used,
                 "maxDevices" AS max
          FROM organizations WHERE id = $1`,
         [organizationId]
@@ -35,7 +35,7 @@ export async function checkUserQuota(organizationId: string): Promise<void> {
 
 export async function checkStorageQuota(organizationId: string, incomingBytes: number): Promise<void> {
     const res = await queryOne<{ used: string; baseMb: number; ext50: number; ext100: number; ext200: number }>(
-        `SELECT (SELECT COALESCE(SUM("fileSize"), 0) FROM media WHERE "organizationId" = $1)::text AS used,
+        `SELECT (SELECT COALESCE(SUM("fileSize"), 0) FROM media WHERE "organizationId" = $1 AND "deletedAt" IS NULL)::text AS used,
                 "storageBaseMb" AS "baseMb", "ext50mb" AS "ext50", "ext100mb" AS "ext100", "ext200mb" AS "ext200"
          FROM organizations WHERE id = $1`,
         [organizationId]

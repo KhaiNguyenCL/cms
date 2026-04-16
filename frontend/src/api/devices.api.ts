@@ -41,6 +41,19 @@ export const devicesApi = {
         await apiClient.delete(`/devices/${id}`);
     },
 
+    listTrash: async () => {
+        const { data } = await apiClient.get<ApiResponse<Device[]>>('/devices/trash');
+        return data.data;
+    },
+
+    restore: async (id: string) => {
+        await apiClient.post(`/devices/${id}/restore`);
+    },
+
+    permanentDelete: async (id: string) => {
+        await apiClient.delete(`/devices/${id}/permanent`);
+    },
+
     reset: async (id: string) => {
         const { data } = await apiClient.post<{ success: boolean; data: { pairingCode: string } }>(`/devices/${id}/reset`);
         return data.data;

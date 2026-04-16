@@ -31,9 +31,14 @@ export interface MediaRow {
     tags: string[];
     metadata: Record<string, unknown> | null;
     status: string;
+    deletedAt: string | null;
     createdAt: string;
     updatedAt: string;
 }
+
+const MEDIA_FIELDS = `id, "organizationId", "uploadedById", title, description, type,
+    "filePath", "fileSize", "mimeType", "fileHash", duration, width, height,
+    "thumbnailPath", tags, metadata, status, "deletedAt", "createdAt", "updatedAt"`;
 
 export interface PaginatedMedia {
     data: MediaRow[];
@@ -63,7 +68,7 @@ export async function listMedia(
 ): Promise<PaginatedMedia> {
     const { page, limit, type, status, search } = q;
     const offset = (page - 1) * limit;
-    const conditions: string[] = [`"organizationId" = $1`];
+    const conditions: string[] = [`"organizationId" = $1`, `"deletedAt" IS NULL`];
     const values: unknown[] = [organizationId];
     let idx = 2;
 
@@ -78,9 +83,7 @@ export async function listMedia(
             `SELECT COUNT(*) as count FROM media WHERE ${where}`, values
         ),
         query<MediaRow>(
-            `SELECT id, "organizationId", "uploadedById", title, description, type,
-                    "filePath", "fileSize", "mimeType", "fileHash", duration, width, height,
-                    "thumbnailPath", tags, metadata, status, "createdAt", "updatedAt"
+            `SELECT ${MEDIA_FIELDS}
              FROM media WHERE ${where}
              ORDER BY "createdAt" DESC
              LIMIT $${idx++} OFFSET $${idx++}`,
@@ -96,10 +99,7 @@ export async function listMedia(
 
 export async function getMediaById(mediaId: string, organizationId: string): Promise<MediaRow> {
     const media = await queryOne<MediaRow>(
-        `SELECT id, "organizationId", "uploadedById", title, description, type,
-                "filePath", "fileSize", "mimeType", "fileHash", duration, width, height,
-                "thumbnailPath", tags, metadata, status, "createdAt", "updatedAt"
-         FROM media WHERE id = $1 AND "organizationId" = $2`,
+        `SELECT ${MEDIA_FIELDS} FROM media WHERE id = $1 AND "organizationId" = $2 AND "deletedAt" IS NULL`,
         [mediaId, organizationId]
     );
     if (!media) throw new AppError(404, 'Media không tồn tại');
@@ -196,9 +196,7 @@ export async function uploadMedia(
                 $9, $10, $11, $12,
                 $13, $14, $15, NOW(), NOW()
              )
-             RETURNING id, "organizationId", "uploadedById", title, description, type,
-                       "filePath", "fileSize", "mimeType", "fileHash", duration, width, height,
-                       "thumbnailPath", tags, metadata, status, "createdAt", "updatedAt"`,
+             RETURNING ${MEDIA_FIELDS}`,
             [
                 organizationId, uploadedById, displayTitle, mediaType,
                 finalPath, file.size, file.mimetype, hash,
@@ -256,10 +254,8 @@ export async function updateMedia(
     try {
         rows = await query<MediaRow>(
             `UPDATE media SET ${fields.join(', ')}
-             WHERE id = $${idx++} AND "organizationId" = $${idx++}
-             RETURNING id, "organizationId", "uploadedById", title, description, type,
-                       "filePath", "fileSize", "mimeType", "fileHash", duration, width, height,
-                       "thumbnailPath", tags, metadata, status, "createdAt", "updatedAt"`,
+             WHERE id = $${idx++} AND "organizationId" = $${idx++} AND "deletedAt" IS NULL
+             RETURNING ${MEDIA_FIELDS}`,
             values
         );
     } catch (err) {
@@ -270,11 +266,11 @@ export async function updateMedia(
     return rows[0];
 }
 
-// ─── Delete ────────────────────────────────────────────────────────────────────
+// ─── Soft Delete (move to trash) ─────────────────────────────────────────────
 
 export async function deleteMedia(mediaId: string, organizationId: string): Promise<{ title: string }> {
-    const media = await queryOne<{ id: string; title: string; filePath: string; thumbnailPath: string | null }>(
-        `SELECT id, title, "filePath", "thumbnailPath" FROM media WHERE id = $1 AND "organizationId" = $2`,
+    const media = await queryOne<{ id: string; title: string }>(
+        `SELECT id, title FROM media WHERE id = $1 AND "organizationId" = $2 AND "deletedAt" IS NULL`,
         [mediaId, organizationId]
     );
     if (!media) throw new AppError(404, 'Media không tồn tại');
@@ -294,10 +290,51 @@ export async function deleteMedia(mediaId: string, organizationId: string): Prom
         throw new AppError(409, `Xoá thất bại do media đang nằm trong playlist: ${names}`);
     }
 
-    // Xoá record trước
+    await query(`UPDATE media SET "deletedAt" = NOW(), "updatedAt" = NOW() WHERE id = $1`, [mediaId]);
+
+    logger.info('Media soft deleted (moved to trash)', { mediaId });
+    invalidateContentHashForOrg(organizationId, 'CONTENT').catch(() => {});
+    return { title: media.title };
+}
+
+// ─── Trash: list ─────────────────────────────────────────────────────────────
+
+export async function listTrashedMedia(organizationId: string): Promise<MediaRow[]> {
+    return query<MediaRow>(
+        `SELECT ${MEDIA_FIELDS} FROM media
+         WHERE "organizationId" = $1 AND "deletedAt" IS NOT NULL
+         ORDER BY "deletedAt" DESC`,
+        [organizationId]
+    );
+}
+
+// ─── Trash: restore ───────────────────────────────────────────────────────────
+
+export async function restoreMedia(mediaId: string, organizationId: string): Promise<MediaRow> {
+    const result = await queryOne<MediaRow>(
+        `UPDATE media SET "deletedAt" = NULL, "updatedAt" = NOW()
+         WHERE id = $1 AND "organizationId" = $2 AND "deletedAt" IS NOT NULL
+         RETURNING ${MEDIA_FIELDS}`,
+        [mediaId, organizationId]
+    );
+    if (!result) throw new AppError(404, 'Media không tồn tại trong thùng rác');
+    logger.info('Media restored from trash', { mediaId });
+    invalidateContentHashForOrg(organizationId, 'CONTENT').catch(() => {});
+    return result;
+}
+
+// ─── Trash: permanent delete ─────────────────────────────────────────────────
+
+export async function permanentDeleteMedia(mediaId: string, organizationId: string): Promise<{ title: string }> {
+    const media = await queryOne<{ id: string; title: string; filePath: string; thumbnailPath: string | null }>(
+        `SELECT id, title, "filePath", "thumbnailPath" FROM media
+         WHERE id = $1 AND "organizationId" = $2 AND "deletedAt" IS NOT NULL`,
+        [mediaId, organizationId]
+    );
+    if (!media) throw new AppError(404, 'Media không tồn tại trong thùng rác');
+
     await query(`DELETE FROM media WHERE id = $1`, [mediaId]);
 
-    // Xoá file vật lý
     try {
         if (fs.existsSync(media.filePath)) fs.unlinkSync(media.filePath);
         if (media.thumbnailPath && fs.existsSync(media.thumbnailPath)) {
@@ -306,8 +343,8 @@ export async function deleteMedia(mediaId: string, organizationId: string): Prom
     } catch (e) {
         logger.warn('Could not delete media files from disk', { mediaId, error: (e as Error).message });
     }
-    logger.info('Media deleted', { mediaId });
-    invalidateContentHashForOrg(organizationId, 'CONTENT').catch(() => {});
+
+    logger.info('Media permanently deleted', { mediaId });
     return { title: media.title };
 }
 

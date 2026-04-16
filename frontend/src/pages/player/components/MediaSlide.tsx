@@ -3,16 +3,12 @@
  *
  * Props:
  *   active    — true = slot đang hiển thị, false = preloading ngầm (opacity 0)
- *   isPaused  — true = đóng băng slide hiện tại (timer dừng, video pause)
- *   onEnded   — gọi khi item kết thúc (chỉ gọi từ slot active, không gọi khi paused)
+ *   onEnded   — gọi khi item kết thúc (chỉ gọi từ slot active)
  *   onWillEnd — gọi trước khi item kết thúc PRELOAD_BEFORE_MS ms (để preload item sau kế tiếp)
  *
- * IMAGE  : timer chạy khi active=true && !isPaused, ảnh tải ngầm khi active=false
- * VIDEO  : play khi active && !isPaused, pause khi inactive hoặc isPaused
+ * IMAGE  : timer chạy khi active=true, ảnh tải ngầm khi active=false
+ * VIDEO  : play khi active, pause khi inactive
  *
- * Timer pause/resume:
- *   - Effect 1 (deps: active, item.id, duration): khởi tạo remaining time, start timer nếu !isPaused
- *   - Effect 2 (deps: isPaused): pause → lưu remaining; resume → restart timer với remaining còn lại
  *   - firedRef ngăn double-call onEnded (timer + onError cùng lúc)
  */
 import { useEffect, useRef, useState } from 'react';
@@ -31,12 +27,10 @@ interface Props {
     /** Sync mode: start image timer or video seek at this offset (ms). Default 0. */
     startOffsetMs?: number;
     debug?: boolean;
-    /** When true: freeze current slide — timer stops, video pauses. */
-    isPaused?: boolean;
 }
 
 export default function MediaSlide({
-    item, active, onEnded, onWillEnd, startOffsetMs = 0, debug = false, isPaused = false,
+    item, active, onEnded, onWillEnd, startOffsetMs = 0, debug = false,
 }: Props) {
     const onEndedRef   = useRef(onEnded);
     onEndedRef.current = onEnded;
@@ -72,8 +66,7 @@ export default function MediaSlide({
 
     // ── Effect 1: initialise timer when slot becomes active ──────────────────
     // Runs when: active flips, item changes, duration changes, offset changes.
-    // isPaused is intentionally NOT a dependency — we handle it in Effect 2.
-    useEffect(() => {
+useEffect(() => {
         if (!active || item.mediaType === 'VIDEO') return;
         setMediaError(null);
         firedRef.current     = false;
@@ -85,10 +78,9 @@ export default function MediaSlide({
         const initial = Math.max(1, durationMs - startOffsetMs);
         remainingMsRef.current = initial;
 
-        if (!isPaused) {
-            segStartRef.current = Date.now();
-            timerRef.current = setTimeout(() => {
-                if (!firedRef.current) { firedRef.current = true; onEndedRef.current(); }
+        segStartRef.current = Date.now();
+        timerRef.current = setTimeout(() => {
+            if (!firedRef.current) { firedRef.current = true; onEndedRef.current(); }
             }, initial);
 
             // Fire onWillEnd 5s before end so PlayerPage can warm HTTP cache for after-next item.
@@ -102,9 +94,6 @@ export default function MediaSlide({
                 }, initial - PRELOAD_BEFORE_MS);
             }
         }
-        // If already paused when slot activates: remainingMsRef holds full duration,
-        // timer will start when Effect 2 sees isPaused → false.
-
         return () => {
             if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
             if (willEndTimerRef.current) { clearTimeout(willEndTimerRef.current); willEndTimerRef.current = null; }
@@ -112,31 +101,7 @@ export default function MediaSlide({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [active, item.id, durationMs, startOffsetMs]);
 
-    // ── Effect 2: pause / resume timer ───────────────────────────────────────
-    // Only depends on isPaused — reads active/mediaType from stable refs.
-    useEffect(() => {
-        if (!activeRef.current || mediaTypeRef.current === 'VIDEO' || firedRef.current) return;
-
-        if (isPaused) {
-            // Freeze: stop timer, save remaining ms
-            if (timerRef.current) {
-                clearTimeout(timerRef.current);
-                timerRef.current = null;
-                const used = Date.now() - segStartRef.current;
-                remainingMsRef.current = Math.max(0, remainingMsRef.current - used);
-            }
-        } else {
-            // Resume: restart timer with saved remaining
-            if (!firedRef.current && remainingMsRef.current > 0) {
-                segStartRef.current = Date.now();
-                timerRef.current = setTimeout(() => {
-                    if (!firedRef.current) { firedRef.current = true; onEndedRef.current(); }
-                }, remainingMsRef.current);
-            }
-        }
-    }, [isPaused]);
-
-    // ── VIDEO: play/pause based on active + isPaused ─────────────────────────
+    // ── VIDEO: play/pause based on active ───────────────────────────────────
     useEffect(() => {
         const video = videoRef.current;
         if (!video || item.mediaType !== 'VIDEO') return;
@@ -154,9 +119,7 @@ export default function MediaSlide({
                 // just seek to start without calling load() (preserves buffered data).
                 video.currentTime = 0;
             }
-            if (!isPaused) {
-                video.play().catch(() => {});
-            }
+            video.play().catch(() => {});
         } else {
             video.pause();
             // Call load() only when src changes (handled by React re-render + deps change).
@@ -164,17 +127,6 @@ export default function MediaSlide({
             video.load();
         }
     }, [active, item.mediaUrl, item.mediaType, startOffsetMs]);
-
-    // Separate effect: respond to isPaused changes while video is active
-    useEffect(() => {
-        const video = videoRef.current;
-        if (!video || !activeRef.current || mediaTypeRef.current !== 'VIDEO') return;
-        if (isPaused) {
-            video.pause();
-        } else {
-            video.play().catch(() => {});
-        }
-    }, [isPaused]);
 
     // Chrome 73 safe: explicit top/right/bottom/left, no `inset` shorthand
     const mediaStyle: React.CSSProperties = {
@@ -199,7 +151,7 @@ export default function MediaSlide({
             pointerEvents: 'none',
         }}>
             <Box sx={{ color: active ? '#6f6' : '#fa0', fontWeight: 'bold', mb: 0.25 }}>
-                [{item.mediaType}] {item.mediaTitle} — {active ? (isPaused ? '⏸ PAUSED' : '▶ ACTIVE') : '⏸ preload'}
+                [{item.mediaType}] {item.mediaTitle} — {active ? '▶ ACTIVE' : '⏸ preload'}
             </Box>
             <Box sx={{ color: '#aaa', fontSize: 11, wordBreak: 'break-all' }}>
                 {item.mediaUrl}

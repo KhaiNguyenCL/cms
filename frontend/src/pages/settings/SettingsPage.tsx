@@ -3,17 +3,22 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
     Box, Typography, Stack, Grid, Card, CardContent, Button,
     TextField, Divider, Chip, Alert, Skeleton,
-    alpha,
+    alpha, Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
+    Dialog, DialogTitle, DialogContent, DialogActions, IconButton, Tooltip,
+    CircularProgress,
 } from '@mui/material';
 import {
     Business, Storage, Save, Person, Tv, Image,
     VideoFile, CalendarMonth, People, CheckCircle, Lock,
+    Backup, RestoreFromTrash, Delete, Add, WarningAmber,
 } from '@mui/icons-material';
 
 import { useTranslation } from 'react-i18next';
 import { useAppDispatch, useAppSelector } from '@store/hooks';
 import { pushToast } from '@store/slices/uiSlice';
 import { organizationsApi } from '@api/organizations.api';
+import { backupApi } from '@api/backup.api';
+import type { OrgBackup } from '@/types';
 
 // ── Section wrapper ───────────────────────────────────────────────────────────
 
@@ -65,6 +70,197 @@ function StatRow({ icon, label, value, color = 'text.secondary' }: {
             </Stack>
             <Typography variant="body2" fontWeight={700} color={color}>{value}</Typography>
         </Stack>
+    );
+}
+
+// ── Backup Section ────────────────────────────────────────────────────────────
+
+function BackupSection() {
+    const dispatch = useAppDispatch();
+    const qc = useQueryClient();
+    const { t } = useTranslation();
+
+    const { data: backups = [], isLoading } = useQuery({
+        queryKey: ['backups'],
+        queryFn: backupApi.list,
+        staleTime: 30_000,
+    });
+
+    const [labelInput, setLabelInput] = useState('');
+    const [createOpen, setCreateOpen] = useState(false);
+    const [confirmTarget, setConfirmTarget] = useState<{ backup: OrgBackup; action: 'restore' | 'delete' } | null>(null);
+
+    const createMutation = useMutation({
+        mutationFn: () => backupApi.create(labelInput.trim() || undefined),
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ['backups'] });
+            setCreateOpen(false);
+            setLabelInput('');
+            dispatch(pushToast({ severity: 'success', message: 'Snapshot tạo thành công' }));
+        },
+        onError: (e: any) => dispatch(pushToast({ severity: 'error', message: e?.response?.data?.message ?? t('common.failedAction') })),
+    });
+
+    const deleteMutation = useMutation({
+        mutationFn: (id: string) => backupApi.delete(id),
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ['backups'] });
+            setConfirmTarget(null);
+            dispatch(pushToast({ severity: 'success', message: 'Đã xóa snapshot' }));
+        },
+        onError: (e: any) => dispatch(pushToast({ severity: 'error', message: e?.response?.data?.message ?? t('common.failedAction') })),
+    });
+
+    const restoreMutation = useMutation({
+        mutationFn: (id: string) => backupApi.restore(id),
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ['backups'] });
+            setConfirmTarget(null);
+            dispatch(pushToast({ severity: 'success', message: 'Restore thành công. Thiết bị sẽ re-sync trong giây lát.' }));
+        },
+        onError: (e: any) => dispatch(pushToast({ severity: 'error', message: e?.response?.data?.message ?? t('common.failedAction') })),
+    });
+
+    const isPending = deleteMutation.isPending || restoreMutation.isPending;
+
+    return (
+        <>
+            <Section
+                icon={<Backup />}
+                title="Backup & Restore"
+                subtitle="Tạo snapshot dữ liệu và khôi phục về bất kỳ thời điểm nào."
+            >
+                <Stack spacing={2}>
+                    <Stack direction="row" justifyContent="space-between" alignItems="center">
+                        <Typography variant="body2" color="text.secondary">
+                            {backups.length} snapshot{backups.length !== 1 ? 's' : ''} · AUTO tự động mỗi ngày lúc 02:30 UTC nếu có gói backup.
+                        </Typography>
+                        <Button size="small" startIcon={<Add />} onClick={() => setCreateOpen(true)}>
+                            Tạo snapshot
+                        </Button>
+                    </Stack>
+
+                    {isLoading ? (
+                        <Stack spacing={1}>{[...Array(3)].map((_, i) => <Skeleton key={i} height={40} />)}</Stack>
+                    ) : backups.length === 0 ? (
+                        <Alert severity="info" sx={{ borderRadius: 2 }}>Chưa có snapshot nào. Tạo snapshot đầu tiên để bắt đầu.</Alert>
+                    ) : (
+                        <TableContainer>
+                            <Table size="small">
+                                <TableHead>
+                                    <TableRow>
+                                        <TableCell sx={{ fontWeight: 700 }}>Tên</TableCell>
+                                        <TableCell align="center" sx={{ fontWeight: 700 }}>Loại</TableCell>
+                                        <TableCell align="center" sx={{ fontWeight: 700 }}>Ngày tạo</TableCell>
+                                        <TableCell align="center" sx={{ fontWeight: 700 }}>Thao tác</TableCell>
+                                    </TableRow>
+                                </TableHead>
+                                <TableBody>
+                                    {backups.map((b) => (
+                                        <TableRow key={b.id} hover>
+                                            <TableCell>
+                                                <Typography variant="body2" fontWeight={600}>{b.label}</Typography>
+                                            </TableCell>
+                                            <TableCell align="center">
+                                                <Chip
+                                                    label={b.type === 'AUTO' ? 'Auto' : 'Manual'}
+                                                    size="small"
+                                                    color={b.type === 'AUTO' ? 'default' : 'primary'}
+                                                    variant={b.type === 'AUTO' ? 'outlined' : 'filled'}
+                                                    sx={{ fontWeight: 600, fontSize: '0.65rem' }}
+                                                />
+                                            </TableCell>
+                                            <TableCell align="center">
+                                                <Typography variant="caption" color="text.secondary">
+                                                    {new Date(b.createdAt).toLocaleString('vi-VN')}
+                                                </Typography>
+                                            </TableCell>
+                                            <TableCell align="center">
+                                                <Stack direction="row" justifyContent="center" spacing={0.5}>
+                                                    <Tooltip title="Restore về snapshot này">
+                                                        <IconButton size="small" color="warning" onClick={() => setConfirmTarget({ backup: b, action: 'restore' })}>
+                                                            <RestoreFromTrash sx={{ fontSize: 16 }} />
+                                                        </IconButton>
+                                                    </Tooltip>
+                                                    <Tooltip title="Xóa snapshot">
+                                                        <IconButton size="small" color="error" onClick={() => setConfirmTarget({ backup: b, action: 'delete' })}>
+                                                            <Delete sx={{ fontSize: 16 }} />
+                                                        </IconButton>
+                                                    </Tooltip>
+                                                </Stack>
+                                            </TableCell>
+                                        </TableRow>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                        </TableContainer>
+                    )}
+                </Stack>
+            </Section>
+
+            {/* Create snapshot dialog */}
+            <Dialog open={createOpen} onClose={() => setCreateOpen(false)} maxWidth="xs" fullWidth>
+                <DialogTitle fontWeight={700}>Tạo snapshot mới</DialogTitle>
+                <DialogContent dividers>
+                    <Stack spacing={2} pt={0.5}>
+                        <TextField
+                            label="Tên snapshot (tùy chọn)"
+                            value={labelInput}
+                            onChange={e => setLabelInput(e.target.value)}
+                            size="small"
+                            fullWidth
+                            placeholder={`Backup ${new Date().toLocaleDateString('vi-VN')}`}
+                            autoFocus
+                        />
+                        <Alert severity="info" sx={{ borderRadius: 1.5 }}>
+                            Snapshot sẽ lưu toàn bộ thiết bị, media, playlist, schedule và site hiện tại của tổ chức.
+                        </Alert>
+                    </Stack>
+                </DialogContent>
+                <DialogActions sx={{ px: 3, pb: 2 }}>
+                    <Button size="small" onClick={() => setCreateOpen(false)}>{t('common.cancel')}</Button>
+                    <Button size="small" disabled={createMutation.isPending}
+                        startIcon={createMutation.isPending ? <CircularProgress size={14} color="inherit" /> : <Backup />}
+                        onClick={() => createMutation.mutate()}>
+                        Tạo snapshot
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* Confirm dialog (restore / delete) */}
+            <Dialog open={!!confirmTarget} onClose={isPending ? undefined : () => setConfirmTarget(null)} maxWidth="xs" fullWidth>
+                <DialogTitle fontWeight={700}>
+                    <Stack direction="row" alignItems="center" spacing={1}>
+                        {confirmTarget?.action === 'restore'
+                            ? <><WarningAmber color="warning" /><span>Xác nhận restore</span></>
+                            : <><Delete color="error" /><span>Xóa snapshot</span></>}
+                    </Stack>
+                </DialogTitle>
+                <DialogContent dividers>
+                    <Typography variant="body2">
+                        {confirmTarget?.action === 'restore'
+                            ? `Playlists, schedules, sites và các thiết bị/media có trong snapshot "${confirmTarget?.backup.label}" (${confirmTarget?.backup.createdAt ? new Date(confirmTarget.backup.createdAt).toLocaleString('vi-VN') : ''}) sẽ được khôi phục. Thiết bị và media được thêm sau ngày snapshot sẽ được giữ nguyên. Tiếp tục?`
+                            : `Xóa snapshot "${confirmTarget?.backup.label}"? Thao tác này không thể hoàn tác.`}
+                    </Typography>
+                </DialogContent>
+                <DialogActions sx={{ px: 3, pb: 2 }}>
+                    <Button size="small" onClick={() => setConfirmTarget(null)} disabled={isPending}>{t('common.cancel')}</Button>
+                    <Button
+                        size="small"
+                        color={confirmTarget?.action === 'restore' ? 'warning' : 'error'}
+                        disabled={isPending}
+                        startIcon={isPending ? <CircularProgress size={14} color="inherit" /> : undefined}
+                        onClick={() => {
+                            if (!confirmTarget) return;
+                            if (confirmTarget.action === 'restore') restoreMutation.mutate(confirmTarget.backup.id);
+                            else deleteMutation.mutate(confirmTarget.backup.id);
+                        }}
+                    >
+                        {confirmTarget?.action === 'restore' ? 'Restore ngay' : 'Xóa snapshot'}
+                    </Button>
+                </DialogActions>
+            </Dialog>
+        </>
     );
 }
 
@@ -224,6 +420,9 @@ export default function SettingsPage() {
                                 )}
                             </Stack>
                         </Section>
+
+                        {/* Backup & Restore */}
+                        {isAdmin && <BackupSection />}
 
                         {/* Device Admin PIN */}
                         {isAdmin && (

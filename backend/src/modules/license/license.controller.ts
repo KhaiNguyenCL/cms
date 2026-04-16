@@ -51,16 +51,6 @@ export async function updateOrgPool(req: Request, res: Response, next: NextFunct
     } catch (err) { next(err); }
 }
 
-// PATCH /api/license/pool  (SUPER_ADMIN — current org)
-export async function updatePool(req: Request, res: Response, next: NextFunction) {
-    try {
-        const { pkg12m, pkg24m, pkg36m } = req.body;
-        const { id, name } = await actor(req);
-        const data = await svc.updatePool(req.user!.organizationId, { pkg12m, pkg24m, pkg36m }, id, name);
-        res.json({ success: true, data });
-    } catch (err) { next(err); }
-}
-
 // GET /api/license/devices
 export async function getDeviceLicenses(req: Request, res: Response, next: NextFunction) {
     try {
@@ -79,34 +69,6 @@ export async function assignLicense(req: Request, res: Response, next: NextFunct
     } catch (err) { next(err); }
 }
 
-// POST /api/license/transfer  (ADMIN)
-export async function transferLicense(req: Request, res: Response, next: NextFunction) {
-    try {
-        const { fromDeviceId, toDeviceId } = req.body;
-        const { id, name } = await actor(req);
-        await svc.transferLicense(req.user!.organizationId, fromDeviceId, toDeviceId, id, name);
-        res.json({ success: true });
-    } catch (err) { next(err); }
-}
-
-// POST /api/license/adjust-expiry  (ADMIN)
-export async function adjustExpiry(req: Request, res: Response, next: NextFunction) {
-    try {
-        const { deviceId, newExpiresAt } = req.body;
-        const { id, name } = await actor(req);
-        await svc.adjustExpiry(req.user!.organizationId, deviceId, newExpiresAt, id, name);
-        res.json({ success: true });
-    } catch (err) { next(err); }
-}
-
-// DELETE /api/license/revoke/:deviceId  (ADMIN)
-export async function revokeLicense(req: Request, res: Response, next: NextFunction) {
-    try {
-        const { id, name } = await actor(req);
-        await svc.revokeLicense(req.user!.organizationId, String(req.params.deviceId), id, name);
-        res.json({ success: true });
-    } catch (err) { next(err); }
-}
 
 // GET /api/license/history
 export async function getHistory(req: Request, res: Response, next: NextFunction) {
@@ -177,6 +139,47 @@ export async function adminRevokeLicense(req: Request, res: Response, next: Next
     try {
         const { id, name } = await actor(req);
         await svc.revokeLicense(String(req.params.orgId), String(req.params.deviceId), id, name);
+        res.json({ success: true });
+    } catch (err) { next(err); }
+}
+
+// GET /api/license/transfer-requests
+export async function getTransferRequests(req: Request, res: Response, next: NextFunction) {
+    try {
+        const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+        const data = await svc.getTransferRequests(req.user!.organizationId, isSuperAdmin);
+        res.json({ success: true, data });
+    } catch (err) { next(err); }
+}
+
+// POST /api/license/transfer-requests
+export async function createTransferRequest(req: Request, res: Response, next: NextFunction) {
+    try {
+        const { fromDeviceId, toDeviceId, note } = req.body;
+        const { id, name } = await actor(req);
+        const data = await svc.createTransferRequest(
+            req.user!.organizationId, fromDeviceId, toDeviceId, id, name, note,
+        );
+        res.status(201).json({ success: true, data });
+    } catch (err) { next(err); }
+}
+
+// POST /api/license/transfer-requests/:id/approve  (SUPER_ADMIN)
+export async function approveTransferRequest(req: Request, res: Response, next: NextFunction) {
+    try {
+        const { adminNote } = req.body;
+        const { id, name } = await actor(req);
+        await svc.approveTransferRequest(String(req.params.id), id, name, adminNote);
+        res.json({ success: true });
+    } catch (err) { next(err); }
+}
+
+// POST /api/license/transfer-requests/:id/reject  (SUPER_ADMIN)
+export async function rejectTransferRequest(req: Request, res: Response, next: NextFunction) {
+    try {
+        const { adminNote } = req.body;
+        const { id } = await actor(req);
+        await svc.rejectTransferRequest(String(req.params.id), id, adminNote);
         res.json({ success: true });
     } catch (err) { next(err); }
 }

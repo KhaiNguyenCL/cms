@@ -83,12 +83,43 @@ export async function updateMedia(req: Request, res: Response, next: NextFunctio
     } catch (err) { next(err); }
 }
 
-// DELETE /api/media/:id
+// DELETE /api/media/:id  (soft delete → trash)
 export async function deleteMedia(req: Request, res: Response, next: NextFunction) {
     try {
         const { title } = await mediaService.deleteMedia(req.params.id as string, req.user!.organizationId);
         logAction(req.user!.organizationId, req.user!.userId, 'DELETE', 'MEDIA', req.params.id as string, title).catch(() => {});
-        res.json({ success: true, message: 'Xoá media thành công' });
+        res.json({ success: true, message: 'Media đã được chuyển vào thùng rác' });
+    } catch (err) { next(err); }
+}
+
+// GET /api/media/trash
+export async function listTrashedMedia(req: Request, res: Response, next: NextFunction) {
+    try {
+        const items = await mediaService.listTrashedMedia(req.user!.organizationId);
+        const data = items.map(m => ({
+            ...m,
+            signedUrl: signMediaUrl(m.id, 'file'),
+            thumbnailUrl: m.thumbnailPath ? signMediaUrl(m.id, 'thumbnail') : null,
+        }));
+        res.json({ success: true, data });
+    } catch (err) { next(err); }
+}
+
+// POST /api/media/:id/restore
+export async function restoreMedia(req: Request, res: Response, next: NextFunction) {
+    try {
+        const media = await mediaService.restoreMedia(req.params.id as string, req.user!.organizationId);
+        logAction(req.user!.organizationId, req.user!.userId, 'UPDATE', 'MEDIA', media.id, media.title).catch(() => {});
+        res.json({ success: true, message: 'Media đã được khôi phục', data: media });
+    } catch (err) { next(err); }
+}
+
+// DELETE /api/media/:id/permanent
+export async function permanentDeleteMedia(req: Request, res: Response, next: NextFunction) {
+    try {
+        const { title } = await mediaService.permanentDeleteMedia(req.params.id as string, req.user!.organizationId);
+        logAction(req.user!.organizationId, req.user!.userId, 'DELETE', 'MEDIA', req.params.id as string, title).catch(() => {});
+        res.json({ success: true, message: 'Media đã bị xoá vĩnh viễn' });
     } catch (err) { next(err); }
 }
 

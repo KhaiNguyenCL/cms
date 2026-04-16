@@ -83,7 +83,7 @@ export async function listSites(
                     COALESCE(ARRAY_AGG(d.name ORDER BY d.name) FILTER (WHERE d.id IS NOT NULL), '{}') AS "deviceNames"
              FROM stores s
              LEFT JOIN playlists p ON p.id = s."playlistId"
-             LEFT JOIN devices d   ON d."storeId" = s.id
+             LEFT JOIN devices d   ON d."storeId" = s.id AND d."deletedAt" IS NULL
              WHERE ${where}
              GROUP BY s.id, p.name
              ORDER BY s."createdAt" DESC
@@ -121,7 +121,7 @@ export async function getSiteById(id: string, organizationId: string, restrictTo
 
     const devices = await query<SiteDevice>(
         `SELECT id, name, status, location, model
-         FROM devices WHERE "storeId" = $1 ORDER BY name`,
+         FROM devices WHERE "storeId" = $1 AND "deletedAt" IS NULL ORDER BY name`,
         [id],
     );
 

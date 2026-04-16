@@ -6,7 +6,6 @@ import {
     Alert, Tooltip, Autocomplete, InputAdornment, Stack,
     Popover, FormControlLabel, Checkbox, Divider,
     Card, CardContent, Skeleton, TablePagination, Select, MenuItem, TableSortLabel, useTheme,
-    Slider,
 } from '@mui/material';
 import {
     Add, Edit, Delete, Search, Close, PersonAdd, ViewColumn, SwapHoriz,
@@ -200,7 +199,7 @@ function AddSiteDialog({ open, onClose }: AddSiteDialogProps) {
     const theme = useTheme();
     const dark  = theme.palette.mode === 'dark';
     const qc = useQueryClient();
-    const emptyForm = { name: '', address: '', contact: '', timezone: 'Asia/Bangkok', timeOn: '', timeOff: '', deployDate: '', alarmToleranceMin: 60 };
+    const emptyForm = { name: '', address: '', contact: '', timezone: 'Asia/Bangkok', timeOn: '', timeOff: '', deployDate: '' };
     const [form, setForm] = useState(emptyForm);
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -213,7 +212,6 @@ function AddSiteDialog({ open, onClose }: AddSiteDialogProps) {
             timeOn:             form.timeOn            || undefined,
             timeOff:            form.timeOff           || undefined,
             deployDate:         form.deployDate        || undefined,
-            alarmToleranceMin:  form.alarmToleranceMin,
         }),
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: ['sites'] });
@@ -266,22 +264,6 @@ function AddSiteDialog({ open, onClose }: AddSiteDialogProps) {
                             ) : null }}
                         />
                         <TextField label={t('sites.deployDate')} type="date" value={form.deployDate} onChange={e => setForm(f => ({ ...f, deployDate: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} helperText={t('sites.deployDateHelper')} size="small" sx={pickerSx(dark)} />
-                    </Box>
-                    <Box>
-                        <Typography variant="body2" gutterBottom>
-                            {t('sites.alarmToleranceLabel', { min: form.alarmToleranceMin })}
-                        </Typography>
-                        <Slider
-                            value={form.alarmToleranceMin}
-                            onChange={(_, v) => setForm(f => ({ ...f, alarmToleranceMin: v as number }))}
-                            min={0} max={180} step={15}
-                            marks={[{ value: 0, label: '0' }, { value: 60, label: '1h' }, { value: 120, label: '2h' }, { value: 180, label: '3h' }]}
-                            disabled={!form.timeOn && !form.timeOff}
-                            size="small"
-                        />
-                        <Typography variant="caption" color="text.secondary">
-                            {t('sites.alarmToleranceHelper', { min: form.alarmToleranceMin })}
-                        </Typography>
                     </Box>
                     {errorMsg && <Alert severity="error">{errorMsg}</Alert>}
                 </Box>
@@ -384,7 +366,6 @@ function EditSiteDialog({ site, open, onClose }: EditSiteDialogProps) {
         timeOn:             site.timeOn     ?? '',
         timeOff:            site.timeOff    ?? '',
         deployDate:         site.deployDate ? site.deployDate.slice(0, 10) : '',
-        alarmToleranceMin:  site.alarmToleranceMin ?? 60,
     });
     const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
     const [addDeviceError, setAddDeviceError] = useState<string | null>(null);
@@ -418,7 +399,6 @@ function EditSiteDialog({ site, open, onClose }: EditSiteDialogProps) {
             timeOn:             form.timeOn            || null,
             timeOff:            form.timeOff           || null,
             deployDate:         form.deployDate        || null,
-            alarmToleranceMin:  form.alarmToleranceMin,
         }),
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: ['sites'] });
@@ -503,23 +483,6 @@ function EditSiteDialog({ site, open, onClose }: EditSiteDialogProps) {
                         />
                         <TextField label={t('sites.deployDate')} type="date" value={form.deployDate} onChange={e => setForm(f => ({ ...f, deployDate: e.target.value }))} fullWidth InputLabelProps={{ shrink: true }} helperText={t('sites.deployDateHelper')} size="small" sx={pickerSx(dark)} />
                     </Box>
-                    <Box>
-                        <Typography variant="body2" gutterBottom>
-                            {t('sites.alarmToleranceLabel', { min: form.alarmToleranceMin })}
-                        </Typography>
-                        <Slider
-                            value={form.alarmToleranceMin}
-                            onChange={(_, v) => setForm(f => ({ ...f, alarmToleranceMin: v as number }))}
-                            min={0} max={180} step={15}
-                            marks={[{ value: 0, label: '0' }, { value: 60, label: '1h' }, { value: 120, label: '2h' }, { value: 180, label: '3h' }]}
-                            disabled={!form.timeOn && !form.timeOff}
-                            size="small"
-                        />
-                        <Typography variant="caption" color="text.secondary">
-                            {t('sites.alarmToleranceHelper', { min: form.alarmToleranceMin })}
-                        </Typography>
-                    </Box>
-
                     <Divider />
 
                     {/* ── Devices section ── */}
@@ -779,7 +742,7 @@ export default function SitePage() {
                                         ) : sites.map(site => (
                                             <TableRow key={site.id} hover sx={{ cursor: 'pointer' }} onClick={() => setEditSite(site)}>
                                                 {show('name') && (
-                                                    <TableCell sx={{ pl: 2, py: 1.25 }}>
+                                                    <TableCell sx={{ pl: 2, py: 1.25, textAlign:"center" }}>
                                                         <Stack direction="row" alignItems="center" spacing={1}>
                                                             <Box>
                                                                 <Typography variant="body2" fontWeight={600}>{site.name}</Typography>

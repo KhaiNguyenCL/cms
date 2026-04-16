@@ -15,7 +15,7 @@ import {
 import {
     Dashboard, PermMedia, QueueMusic, CalendarMonth, BarChart,
     People, Settings, Menu as MenuIcon, LightMode, DarkMode,
-    NotificationsNone, Logout, ChevronLeft, AdminPanelSettings, Close,
+    NotificationsNone, Logout, ChevronLeft, AdminPanelSettings, Close, Download,
     SwapHoriz, Business, CheckCircle, WorkspacePremium, Search,
     Storefront, DashboardCustomize, Slideshow, Today, History,
     NotificationsActive, PlayCircleOutline, SystemUpdate, TouchApp,
@@ -317,7 +317,15 @@ export default function DashboardLayout() {
         enabled: user?.role === 'SUPER_ADMIN',
         staleTime: 2 * 60_000,
     });
-    const pendingRequestCount = pendingLicenseCount + pendingStorageCount;
+    const { data: pendingTransferCount = 0 } = useQuery({
+        queryKey: ['license-transfer-requests-pending'],
+        queryFn: () => import('@api/license.api').then(m =>
+            m.default.getTransferRequests().then(list => list.filter((r: { status: string }) => r.status === 'PENDING').length),
+        ),
+        enabled: user?.role === 'SUPER_ADMIN',
+        staleTime: 2 * 60_000,
+    });
+    const pendingRequestCount = pendingLicenseCount + pendingStorageCount + pendingTransferCount;
 
     const { data: notifData } = useQuery({
         queryKey: ['notifications'],
@@ -328,7 +336,7 @@ export default function DashboardLayout() {
 
     const queryClient = useQueryClient();
     const { socket } = useSocket();
-    const [screenshot, setScreenshot] = useState<{ deviceId: string; url: string; timestamp: string } | null>(null);
+    const [screenshot, setScreenshot] = useState<{ deviceId: string; deviceName: string; url: string; timestamp: string } | null>(null);
 
     const { data: orgData } = useQuery({
         queryKey: ['org-me'],
@@ -358,7 +366,7 @@ export default function DashboardLayout() {
             }
         };
 
-        const handleScreenshot = (data: { deviceId: string; url: string; timestamp: string }) => {
+        const handleScreenshot = (data: { deviceId: string; deviceName: string; url: string; timestamp: string }) => {
             setScreenshot(data);
         };
 
@@ -380,6 +388,10 @@ export default function DashboardLayout() {
             if (data.type === 'STORAGE_REQUEST_NEW') {
                 queryClient.invalidateQueries({ queryKey: ['storage-requests-all'] });
                 queryClient.invalidateQueries({ queryKey: ['storage-pending-count'] });
+            }
+            if (data.type === 'TRANSFER_REQUEST_NEW' || data.type === 'TRANSFER_REQUEST_APPROVED' || data.type === 'TRANSFER_REQUEST_REJECTED') {
+                queryClient.invalidateQueries({ queryKey: ['license-transfer-requests'] });
+                queryClient.invalidateQueries({ queryKey: ['license-transfer-requests-pending'] });
             }
 
             const meta = NOTIF_META[data.type];
@@ -1008,7 +1020,7 @@ export default function DashboardLayout() {
                 <Box>
                     <Typography variant="h6" fontWeight={700}>Device Screenshot</Typography>
                     <Typography variant="caption" color="text.secondary">
-                        Device {screenshot?.deviceId?.slice(0, 8)}…
+                        {screenshot?.deviceName ?? `Device ${screenshot?.deviceId?.slice(0, 8)}…`}
                         {screenshot?.timestamp ? ` · ${new Date(screenshot.timestamp).toLocaleString()}` : ''}
                     </Typography>
                 </Box>
@@ -1029,7 +1041,32 @@ export default function DashboardLayout() {
                     </Box>
                 )}
             </DialogContent>
-            <DialogActions sx={{ px: 3, pb: 2 }}>
+            <DialogActions sx={{ px: 3, pb: 2, pt: 2 }}>
+                {screenshot?.url && (
+                    <Button
+                        size="small"
+                        startIcon={<Download />}
+                        onClick={async () => {
+                            try {
+                                const res = await fetch(screenshot.url);
+                                const blob = await res.blob();
+                                const blobUrl = URL.createObjectURL(blob);
+                                const d = new Date(screenshot.timestamp);
+                                const pad = (n: number) => String(n).padStart(2, '0');
+                                const ts = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}_${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
+                                const a = document.createElement('a');
+                                a.href = blobUrl;
+                                a.download = `${screenshot.deviceName}_${ts}.png`;
+                                a.click();
+                                URL.revokeObjectURL(blobUrl);
+                            } catch {
+                                // ignore download errors
+                            }
+                        }}
+                    >
+                        Tải về
+                    </Button>
+                )}
                 <Button size="small" onClick={() => setScreenshot(null)}>Close</Button>
             </DialogActions>
         </Dialog>

@@ -7,7 +7,7 @@
  *  - generate-reports:   daily at 04:00 (yesterday's daily report for all orgs)
  */
 import { QueueEvents } from 'bullmq';
-import { cleanupLogsQueue, generateReportsQueue, licenseDeductionQueue, mailNotificationQueue } from './queues';
+import { cleanupLogsQueue, generateReportsQueue, licenseDeductionQueue, mailNotificationQueue, mediaPurgeQueue, backupSnapshotQueue } from './queues';
 import { query } from '../database/db';
 import bullmqConnection from './bullmq.connection';
 import logger from '../utils/logger';
@@ -81,6 +81,29 @@ export async function setupScheduledJobs(): Promise<void> {
         }
     );
     logger.info('Scheduled: license-expiry-check daily at 01:00 UTC (08:00 UTC+7)');
+
+    // ── 7. Media/device trash purge — nightly at 02:00 ───────────────────────
+    const retentionDays = parseInt(process.env.TRASH_RETENTION_DAYS ?? '30', 10);
+    await mediaPurgeQueue.add(
+        'nightly-purge',
+        { retentionDays },
+        {
+            repeat: { pattern: '0 2 * * *' },   // 02:00 daily
+            jobId: 'media-purge-nightly',
+        }
+    );
+    logger.info(`Scheduled: media-purge nightly at 02:00 (retention: ${retentionDays} days)`);
+
+    // ── 8. Auto backup snapshot — daily at 02:30 UTC ─────────────────────────
+    await backupSnapshotQueue.add(
+        'daily-auto-backup',
+        { organizationId: '__ALL__' },
+        {
+            repeat: { pattern: '30 2 * * *' },   // 02:30 UTC daily
+            jobId: 'backup-snapshot-daily',
+        }
+    );
+    logger.info('Scheduled: backup-snapshot daily at 02:30 UTC');
 
     logger.info('All scheduled jobs registered');
 }

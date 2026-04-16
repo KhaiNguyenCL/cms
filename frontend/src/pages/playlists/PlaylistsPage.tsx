@@ -1402,7 +1402,9 @@ function PlaylistRow({ playlist, selected, onSelect, onDeleted }: {
                 '& td': { borderBottom: '1px solid', borderColor: 'divider' },
             }}>
                 <TableCell onClick={() => onSelect(playlist.id)}>
-                    <Typography variant="body2" fontWeight={600} noWrap sx={{ maxWidth: 160 }}>{playlist.name}</Typography>
+                    <Typography variant="body2" fontWeight={600} noWrap sx={{ maxWidth: 160, textAlign: 'center' }}>
+                        {playlist.name}
+                    </Typography>
                 </TableCell>
                 <TableCell onClick={() => onSelect(playlist.id)} sx={{ maxWidth: 0 }}>
                     <Tooltip title={playlist.description ?? ''} disableHoverListener={!playlist.description}>

@@ -90,6 +90,7 @@ export interface Device {
     contentReady: boolean;
     siteId: string | null;
     siteName?: string | null;
+    deletedAt?: string | null;
     createdAt: string;
     updatedAt: string;
 }
@@ -206,6 +207,7 @@ export interface Media {
     height: number | null;
     thumbnailPath: string | null;
     tags: string[];
+    deletedAt?: string | null;
     createdAt: string;
     updatedAt: string;
     // Signed URLs — trả về từ API, có TTL 1 giờ
@@ -378,4 +380,35 @@ export interface WsDevicePlayback {
     mediaTitle: string;
     startedAt: string;
     timestamp: string;
+}
+
+// ─── Backup ───────────────────────────────────────────────────────────────────
+
+export interface OrgBackup {
+    id: string;
+    organizationId: string;
+    label: string;
+    type: 'MANUAL' | 'AUTO';
+    createdBy: string | null;
+    createdAt: string;
+}
+
+export interface BackupPlanRequest {
+    id: string;
+    organizationId: string;
+    orgName?: string;
+    requestedPlan: number;
+    status: 'PENDING' | 'APPROVED' | 'REJECTED';
+    note: string | null;
+    adminNote: string | null;
+    requestedById: string | null;
+    requestedByName: string | null;
+    resolvedById: string | null;
+    resolvedAt: string | null;
+    createdAt: string;
+}
+
+export interface OrgBackupPlan {
+    backupPlan: number | null;
+    requests: BackupPlanRequest[];
 }

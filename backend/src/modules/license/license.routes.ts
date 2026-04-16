@@ -12,16 +12,19 @@ router.get('/devices',  authorize('ADMIN', 'MANAGER'), ctrl.getDeviceLicenses);
 router.get('/history',  authorize('ADMIN', 'MANAGER'), ctrl.getHistory);
 router.get('/requests', authorize('ADMIN', 'MANAGER'), ctrl.getPurchaseRequests);
 
-// License operations (ADMIN)
-router.post('/assign',          authorize('ADMIN'), ctrl.assignLicense);
-router.post('/transfer',        authorize('ADMIN'), ctrl.transferLicense);
-router.post('/adjust-expiry',   authorize('ADMIN'), ctrl.adjustExpiry);
-router.delete('/revoke/:deviceId', authorize('ADMIN'), ctrl.revokeLicense);
+// License operations — assign only for ADMIN (transfer/revoke/adjust-expiry: SUPER_ADMIN only via admin routes)
+router.post('/assign', authorize('ADMIN'), ctrl.assignLicense);
 
 // Purchase requests
 router.post('/requests',                    authorize('ADMIN', 'MANAGER'), ctrl.createPurchaseRequest);
 router.post('/requests/:id/approve',        authorize('SUPER_ADMIN'),      ctrl.approvePurchaseRequest);
 router.post('/requests/:id/reject',         authorize('SUPER_ADMIN'),      ctrl.rejectPurchaseRequest);
+
+// Transfer requests
+router.get ('/transfer-requests',                    authorize('ADMIN', 'MANAGER'), ctrl.getTransferRequests);
+router.post('/transfer-requests',                    authorize('ADMIN', 'MANAGER'), ctrl.createTransferRequest);
+router.post('/transfer-requests/:id/approve',        authorize('SUPER_ADMIN'),      ctrl.approveTransferRequest);
+router.post('/transfer-requests/:id/reject',         authorize('SUPER_ADMIN'),      ctrl.rejectTransferRequest);
 
 // Admin endpoints (SUPER_ADMIN)
 router.get('/admin/orgs',                                  authorize('SUPER_ADMIN'), ctrl.getAllOrgPools);

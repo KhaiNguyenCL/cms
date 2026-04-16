@@ -178,7 +178,7 @@ export async function getAllOrgPools(): Promise<(OrgPool & {
                       AND dl."expiresAt" <= NOW() + INTERVAL '7 days'
                 )::int                                                                    AS "expiringIn7"
          FROM organizations o
-         LEFT JOIN devices d  ON d."organizationId" = o.id
+         LEFT JOIN devices d  ON d."organizationId" = o.id AND d."deletedAt" IS NULL
          LEFT JOIN device_licenses dl ON dl."deviceId" = d.id
          GROUP BY o.id
          ORDER BY o.name`,
@@ -242,7 +242,7 @@ export async function getDeviceLicenses(organizationId: string): Promise<DeviceL
          FROM devices d
          LEFT JOIN device_licenses dl ON dl."deviceId" = d.id
          LEFT JOIN devices d2 ON d2.id = dl."transferredFromDeviceId"
-         WHERE d."organizationId" = $1
+         WHERE d."organizationId" = $1 AND d."deletedAt" IS NULL
          ORDER BY d.name`,
         [organizationId],
     );
@@ -275,7 +275,7 @@ export async function assignLicense(
         }
 
         const device = await cqOne<{ id: string; name: string }>(client,
-            `SELECT id, name FROM devices WHERE id = $1 AND "organizationId" = $2`,
+            `SELECT id, name FROM devices WHERE id = $1 AND "organizationId" = $2 AND "deletedAt" IS NULL`,
             [deviceId, organizationId],
         );
         if (!device) throw new AppError(404, 'Thiết bị không tồn tại');
@@ -370,16 +370,16 @@ export async function transferLicense(
 
         const [fromDev, toDev] = await Promise.all([
             cqOne<{ id: string; name: string }>(client,
-                `SELECT id, name FROM devices WHERE id = $1 AND "organizationId" = $2`,
+                `SELECT id, name FROM devices WHERE id = $1 AND "organizationId" = $2 AND "deletedAt" IS NULL`,
                 [fromDeviceId, organizationId],
             ),
             cqOne<{ id: string; name: string }>(client,
-                `SELECT id, name FROM devices WHERE id = $1 AND "organizationId" = $2`,
+                `SELECT id, name FROM devices WHERE id = $1 AND "organizationId" = $2 AND "deletedAt" IS NULL`,
                 [toDeviceId, organizationId],
             ),
         ]);
         if (!fromDev) throw new AppError(404, 'Thiết bị nguồn không tồn tại');
-        if (!toDev)   throw new AppError(404, 'Thiết bị đích không tồn tại');
+        if (!toDev)   throw new AppError(404, 'Thiết bị đích không tồn tại hoặc đang trong thùng rác');
 
         // Check target has no active license
         const targetLic = await cqOne<{ expiresAt: string }>(client,
@@ -556,7 +556,7 @@ export async function getStats(organizationId: string): Promise<LicenseStats> {
                 COUNT(*) FILTER (WHERE dl."deviceId" IS NULL)                   AS unlicensed
              FROM devices d
              LEFT JOIN device_licenses dl ON dl."deviceId" = d.id
-             WHERE d."organizationId" = $1`,
+             WHERE d."organizationId" = $1 AND d."deletedAt" IS NULL`,
             [organizationId],
         ),
         queryOne<{ exp7: string; exp30: string }>(
@@ -567,7 +567,7 @@ export async function getStats(organizationId: string): Promise<LicenseStats> {
                   AND dl."expiresAt" <= NOW() + INTERVAL '30 days') AS exp30
              FROM device_licenses dl
              JOIN devices d ON d.id = dl."deviceId"
-             WHERE d."organizationId" = $1`,
+             WHERE d."organizationId" = $1 AND d."deletedAt" IS NULL`,
             [organizationId],
         ),
     ]);
@@ -764,6 +764,194 @@ export async function rejectPurchaseRequest(
                     requestId, 'license_request')
             ).catch(() => {});
     }
+}
+
+// ─── Transfer Requests ───────────────────────────────────────────────────────
+
+export interface TransferRequestRow {
+    id: string;
+    organizationId: string;
+    orgName: string | null;
+    fromDeviceId: string;
+    fromDeviceName: string;
+    toDeviceId: string;
+    toDeviceName: string;
+    requestedByName: string | null;
+    status: string;
+    note: string | null;
+    adminNote: string | null;
+    resolvedAt: string | null;
+    createdAt: string;
+}
+
+export async function getTransferRequests(
+    organizationId: string,
+    isSuperAdmin: boolean,
+): Promise<TransferRequestRow[]> {
+    if (isSuperAdmin) {
+        return query<TransferRequestRow>(
+            `SELECT tr.id, tr."organizationId", o.name AS "orgName",
+                    tr."fromDeviceId", tr."fromDeviceName",
+                    tr."toDeviceId", tr."toDeviceName",
+                    tr."requestedByName", tr.status, tr.note,
+                    tr."adminNote", tr."resolvedAt", tr."createdAt"
+             FROM transfer_requests tr
+             JOIN organizations o ON o.id = tr."organizationId"
+             ORDER BY tr."createdAt" DESC
+             LIMIT 200`,
+        );
+    }
+    return query<TransferRequestRow>(
+        `SELECT id, "organizationId", NULL AS "orgName",
+                "fromDeviceId", "fromDeviceName",
+                "toDeviceId", "toDeviceName",
+                "requestedByName", status, note,
+                "adminNote", "resolvedAt", "createdAt"
+         FROM transfer_requests
+         WHERE "organizationId" = $1
+         ORDER BY "createdAt" DESC
+         LIMIT 100`,
+        [organizationId],
+    );
+}
+
+export async function createTransferRequest(
+    organizationId: string,
+    fromDeviceId: string,
+    toDeviceId: string,
+    requestedById: string,
+    requestedByName: string,
+    note?: string,
+): Promise<TransferRequestRow> {
+    if (fromDeviceId === toDeviceId) throw new AppError(400, 'Không thể chuyển sang cùng thiết bị');
+
+    // Validate both devices exist in org (not deleted)
+    const [fromDev, toDev] = await Promise.all([
+        queryOne<{ name: string }>(`SELECT name FROM devices WHERE id = $1 AND "organizationId" = $2 AND "deletedAt" IS NULL`, [fromDeviceId, organizationId]),
+        queryOne<{ name: string }>(`SELECT name FROM devices WHERE id = $1 AND "organizationId" = $2 AND "deletedAt" IS NULL`, [toDeviceId, organizationId]),
+    ]);
+    if (!fromDev) throw new AppError(404, 'Thiết bị nguồn không tồn tại');
+    if (!toDev)   throw new AppError(404, 'Thiết bị đích không tồn tại');
+
+    // fromDevice must have an active license
+    const lic = await queryOne<{ expiresAt: string }>(
+        `SELECT "expiresAt" FROM device_licenses WHERE "deviceId" = $1`, [fromDeviceId],
+    );
+    if (!lic || new Date(lic.expiresAt) <= new Date()) {
+        throw new AppError(409, 'Thiết bị nguồn chưa có license hoặc đã hết hạn');
+    }
+
+    // No duplicate pending request
+    const pending = await queryOne<{ id: string }>(
+        `SELECT id FROM transfer_requests WHERE "fromDeviceId" = $1 AND status = 'PENDING'`, [fromDeviceId],
+    );
+    if (pending) throw new AppError(409, 'Thiết bị này đã có yêu cầu chuyển license đang chờ xử lý');
+
+    const row = await queryOne<TransferRequestRow>(
+        `INSERT INTO transfer_requests
+           (id, "organizationId", "fromDeviceId", "fromDeviceName",
+            "toDeviceId", "toDeviceName", "requestedById", "requestedByName",
+            status, note, "createdAt")
+         VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, $6, $7, 'PENDING', $8, NOW())
+         RETURNING id, "organizationId", NULL AS "orgName",
+                   "fromDeviceId", "fromDeviceName", "toDeviceId", "toDeviceName",
+                   "requestedByName", status, note, "adminNote", "resolvedAt", "createdAt"`,
+        [organizationId, fromDeviceId, fromDev.name, toDeviceId, toDev.name,
+         requestedById, requestedByName, note ?? null],
+    );
+
+    import('../../modules/notifications/notifications.service')
+        .then(async ({ createNotification, getSuperAdminOrgIds, NOTIF_TYPES }) => {
+            const orgRow = await queryOne<{ name: string }>(`SELECT name FROM organizations WHERE id = $1`, [organizationId]);
+            const orgIds = await getSuperAdminOrgIds();
+            await Promise.all(orgIds.map(adminOrgId =>
+                createNotification(
+                    adminOrgId,
+                    NOTIF_TYPES.TRANSFER_REQUEST_NEW,
+                    `Yêu cầu chuyển license mới`,
+                    `${orgRow?.name ?? organizationId}: ${fromDev.name} → ${toDev.name}`,
+                    row!.id, 'transfer_request',
+                )
+            ));
+        }).catch(() => {});
+
+    return row!;
+}
+
+export async function approveTransferRequest(
+    requestId: string,
+    adminId: string,
+    adminName: string,
+    adminNote?: string,
+): Promise<void> {
+    const req = await queryOne<{
+        organizationId: string; fromDeviceId: string; toDeviceId: string; status: string;
+    }>(
+        `SELECT "organizationId", "fromDeviceId", "toDeviceId", status
+         FROM transfer_requests WHERE id = $1`,
+        [requestId],
+    );
+    if (!req) throw new AppError(404, 'Yêu cầu không tồn tại');
+    if (req.status !== 'PENDING') throw new AppError(409, 'Yêu cầu đã được xử lý');
+
+    // Transfer first — if it throws, request stays PENDING (no partial state)
+    await transferLicense(req.organizationId, req.fromDeviceId, req.toDeviceId, adminId, adminName);
+    await query(
+        `UPDATE transfer_requests
+         SET status = 'APPROVED', "adminNote" = $1, "resolvedById" = $2, "resolvedAt" = NOW()
+         WHERE id = $3`,
+        [adminNote ?? null, adminId, requestId],
+    );
+    logger.info('Transfer request approved', { requestId });
+
+    queryOne<{ fromDeviceName: string; toDeviceName: string }>(
+        `SELECT "fromDeviceName", "toDeviceName" FROM transfer_requests WHERE id = $1`,
+        [requestId],
+    ).then(approved => {
+        if (!approved) return;
+        import('../../modules/notifications/notifications.service')
+            .then(({ createNotification, NOTIF_TYPES }) =>
+                createNotification(
+                    req.organizationId,
+                    NOTIF_TYPES.TRANSFER_REQUEST_APPROVED,
+                    'Yêu cầu chuyển license đã được duyệt',
+                    `${approved.fromDeviceName} → ${approved.toDeviceName}`,
+                    requestId, 'transfer_request',
+                )
+            ).catch(() => {});
+    }).catch(() => {});
+}
+
+export async function rejectTransferRequest(
+    requestId: string,
+    adminId: string,
+    adminNote?: string,
+): Promise<void> {
+    const req = await queryOne<{ status: string; organizationId: string; fromDeviceName: string; toDeviceName: string }>(
+        `SELECT status, "organizationId", "fromDeviceName", "toDeviceName" FROM transfer_requests WHERE id = $1`,
+        [requestId],
+    );
+    if (!req) throw new AppError(404, 'Yêu cầu không tồn tại');
+    if (req.status !== 'PENDING') throw new AppError(409, 'Yêu cầu đã được xử lý');
+
+    await query(
+        `UPDATE transfer_requests
+         SET status = 'REJECTED', "adminNote" = $1, "resolvedById" = $2, "resolvedAt" = NOW()
+         WHERE id = $3`,
+        [adminNote ?? null, adminId, requestId],
+    );
+    logger.info('Transfer request rejected', { requestId });
+
+    import('../../modules/notifications/notifications.service')
+        .then(({ createNotification, NOTIF_TYPES }) =>
+            createNotification(
+                req.organizationId,
+                NOTIF_TYPES.TRANSFER_REQUEST_REJECTED,
+                'Yêu cầu chuyển license bị từ chối',
+                `${req.fromDeviceName} → ${req.toDeviceName}`,
+                requestId, 'transfer_request',
+            )
+        ).catch(() => {});
 }
 
 // ─── Daily expiry check (BullMQ worker) ──────────────────────────────────────

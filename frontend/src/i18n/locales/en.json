@@ -45,6 +45,8 @@
     "perPage": "Per page:",
     "displayedRows": "{{from}}–{{to}} of {{count}}",
     "failedAction": "Action failed",
+    "showMore": "Show {{count}} more",
+    "showLess": "Show less",
     "copy": "Copy",
     "upload": "Upload",
     "download": "Download",
@@ -84,7 +86,12 @@
     "pageNotFound": "Page not found",
     "backHome": "Back to home",
     "comingSoon": "Coming soon",
-    "upcomingFeatures": "Features coming:"
+    "upcomingFeatures": "Features coming:",
+    "restore": "Restore",
+    "permanentDelete": "Permanently Delete",
+    "trash": "Trash",
+    "library": "Library",
+    "deletedAt": "Deleted At"
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -250,7 +257,14 @@
     "commandSent": "Sent command {{command}}",
     "commandFailed": "Send command failed",
     "noDevicesFound": "No devices found.",
-    "searchPlaceholder": "Search devices..."
+    "searchPlaceholder": "Search devices...",
+    "macAddress": "MAC Address",
+    "serialNumber": "S/N (Android ID)",
+    "trashTab": "Deleted",
+    "permanentDeleteTitle": "Permanently Delete Device",
+    "restoreTitle": "Restore Device",
+    "permanentDeleteConfirm": "Permanently delete \"{{name}}\"? Device JWT will be revoked and the device will need to be re-paired.",
+    "restoreConfirm": "Restore device \"{{name}}\" to the active list?"
   },
   "media": {
     "title": "Media",
@@ -292,7 +306,13 @@
     "willExceedDesc": "{{free}} remaining · {{count}} files marked red will exceed the limit.",
     "addFiles": "Add files",
     "storageProgress": "{{pct}}% used · {{count}} files",
-    "storageProgressFree": "{{pct}}% used · {{free}} remaining"
+    "storageProgressFree": "{{pct}}% used · {{free}} remaining",
+    "uploaded": "Uploaded",
+    "permanentDeleteTitle": "Permanently Delete Media",
+    "restoreTitle": "Restore Media",
+    "permanentDeleteConfirm": "Permanently delete \"{{name}}\"? This action cannot be undone.",
+    "restoreConfirm": "Restore \"{{name}}\" to library?",
+    "trashEmpty": "Trash is empty"
   },
   "playlists": {
     "title": "Playlists",
@@ -513,7 +533,8 @@
     "permViewerView": "View media, playlists, schedules only",
     "permViewerNoEdit": "Cannot create, edit, or delete",
     "permViewerNoDevice": "Cannot view devices & users",
-    "deleteForeverAction": "Delete permanently"
+    "deleteForeverAction": "Delete permanently",
+    "passwordHelper": "Min 8 chars, include digit & special char"
   },
   "license": {
     "title": "License",
@@ -568,7 +589,16 @@
     "sortOldFirst": "↑ Oldest first",
     "sortNewFirst": "↓ Newest first",
     "assignLicense": "Assign license",
-    "transferToOther": "Transfer to another device",
+    "transferToOther": "Request license transfer",
+    "requestTransfer": "Request license transfer",
+    "targetDevice": "Target device",
+    "requestNote": "Reason for transfer",
+    "requestNotePlaceholder": "Enter reason (optional)...",
+    "submitRequest": "Submit request",
+    "transferRequestTitle": "License Transfer Requests",
+    "transferRequestInfo": "Transfer requests will be reviewed by Super Admin. License expiry date is preserved after transfer.",
+    "fromDevice": "Source device",
+    "toDevice": "Target device",
     "licenseHistory": "License history",
     "noDevices": "No devices",
     "changeHistory": "Change history",
@@ -625,7 +655,18 @@
     "rejectStorageReq": "Reject storage request",
     "noStorageRequests": "No storage requests",
     "storageTotalInfo": "total +{{mb}} MB",
-    "errorRetry": "An error occurred, please try again"
+    "errorRetry": "An error occurred, please try again",
+    "autoPlanTitle": "Auto Backup Plan",
+    "noPlan": "No plan",
+    "changePlan": "Change Plan",
+    "registerPlan": "Register Plan",
+    "pendingApprovalAlert": "A request is pending Super Admin approval.",
+    "requestedPlan": "Requested Plan",
+    "submittedAt": "Submitted At",
+    "upgradePlan": "Upgrade: {{from}} days → {{to}} days",
+    "downgradePlan": "Downgrade: {{from}} days → {{to}} days",
+    "changePlanTitle": "Change Backup Plan",
+    "registerPlanTitle": "Register Backup Plan"
   },
   "storage": {
     "title": "Storage",
@@ -821,7 +862,10 @@
     "licenseRequestNew": "New license request",
     "mediaReady": "Video processing done",
     "mediaError": "Video processing error",
-    "userCreated": "New user"
+    "userCreated": "New user",
+    "transferRequestNew": "New transfer request",
+    "transferRequestApproved": "Transfer request approved",
+    "transferRequestRejected": "Transfer request rejected"
   },
   "sites": {
     "title": "Sites",
@@ -1058,7 +1102,8 @@
   "player": {
     "licenseExpired": "The organization's license has expired.",
     "licenseRequired": "This device has not been licensed.",
-    "contactAdmin": "Contact admin to renew the license.",
+    "deviceDeleted": "This device has been deleted.",
+    "contactAdmin": "Contact admin for assistance.",
     "loadingContent": "Loading content…",
     "paused": "Paused",
     "holdToResume": "Hold screen to resume",

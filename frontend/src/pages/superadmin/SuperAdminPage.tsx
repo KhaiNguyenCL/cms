@@ -15,7 +15,7 @@ import {
     Visibility, VisibilityOff, Add, DeleteForever, AdminPanelSettings,
     Edit, Block, CheckCircleOutline, Lock, Shield,
     Star, StarBorder, Delete, Send, SystemUpdate,
-    Email, CheckCircleOutlined,
+    Email, CheckCircleOutlined, RestoreFromTrash,
 } from '@mui/icons-material';
 import softwareHistoryApi, { type AppVersion } from '@api/software-history.api';
 import { useNavigate } from 'react-router-dom';
@@ -33,6 +33,7 @@ import {
     type MailSetting, type EventTypeInfo,
 } from '@api/mail-config.api';
 import { storageQuotaApi, type OrgStorageStat, type StoragePurchaseRequest } from '@api/storage-quota.api';
+import type { OrgBackup } from '@/types';
 
 // ── Super-admin API ───────────────────────────────────────────────────────────
 
@@ -87,6 +88,159 @@ function StatChip({ icon, value, color }: { icon: React.ReactNode; value: string
             variant="outlined"
             sx={{ borderColor: alpha(color, 0.3), color, fontWeight: 600, fontSize: '0.72rem' }}
         />
+    );
+}
+
+// ── Org Backups Section (inside DetailRow) ────────────────────────────────────
+
+function OrgBackupsSection({ orgId }: { orgId: string }) {
+    const dispatch = useAppDispatch();
+    const qc = useQueryClient();
+    const { t } = useTranslation();
+    const headers = { 'X-Organization-Id': orgId };
+
+    const { data: backups = [], isLoading } = useQuery({
+        queryKey: ['sa-backups', orgId],
+        queryFn: async () => {
+            const { data } = await apiClient.get<{ data: OrgBackup[] }>('/backup', { headers });
+            return data.data;
+        },
+        staleTime: 30_000,
+    });
+
+    const [createOpen, setCreateOpen] = useState(false);
+    const [labelInput, setLabelInput] = useState('');
+    const [confirmTarget, setConfirmTarget] = useState<{ backup: OrgBackup; action: 'restore' | 'delete' } | null>(null);
+
+    const createMutation = useMutation({
+        mutationFn: () => apiClient.post('/backup', { label: labelInput.trim() || undefined }, { headers }),
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ['sa-backups', orgId] });
+            setCreateOpen(false); setLabelInput('');
+            dispatch(pushToast({ severity: 'success', message: 'Snapshot đã tạo' }));
+        },
+        onError: (e: any) => dispatch(pushToast({ severity: 'error', message: e?.response?.data?.message ?? t('common.failedAction') })),
+    });
+
+    const deleteMutation = useMutation({
+        mutationFn: (id: string) => apiClient.delete(`/backup/${id}`, { headers }),
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ['sa-backups', orgId] });
+            setConfirmTarget(null);
+            dispatch(pushToast({ severity: 'success', message: 'Đã xóa snapshot' }));
+        },
+        onError: (e: any) => dispatch(pushToast({ severity: 'error', message: e?.response?.data?.message ?? t('common.failedAction') })),
+    });
+
+    const restoreMutation = useMutation({
+        mutationFn: (id: string) => apiClient.post(`/backup/${id}/restore`, {}, { headers }),
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ['sa-backups', orgId] });
+            setConfirmTarget(null);
+            dispatch(pushToast({ severity: 'success', message: 'Restore thành công' }));
+        },
+        onError: (e: any) => dispatch(pushToast({ severity: 'error', message: e?.response?.data?.message ?? t('common.failedAction') })),
+    });
+
+    const isPending = deleteMutation.isPending || restoreMutation.isPending;
+
+    return (
+        <>
+            <Box>
+                <Stack direction="row" alignItems="center" justifyContent="space-between" mb={1}>
+                    <Typography variant="caption" color="text.secondary" fontWeight={600}>
+                        BACKUP & RESTORE ({backups.length} snapshots)
+                    </Typography>
+                    <Button size="small" startIcon={<Add />} onClick={() => setCreateOpen(true)}>
+                        Tạo snapshot
+                    </Button>
+                </Stack>
+
+                {isLoading ? (
+                    <LinearProgress sx={{ borderRadius: 1 }} />
+                ) : backups.length === 0 ? (
+                    <Typography variant="caption" color="text.disabled">Chưa có snapshot nào.</Typography>
+                ) : (
+                    <Stack spacing={0.5}>
+                        {backups.slice(0, 5).map(b => (
+                            <Stack key={b.id} direction="row" alignItems="center" spacing={1}>
+                                <Chip
+                                    label={b.type === 'AUTO' ? 'Auto' : 'Manual'}
+                                    size="small"
+                                    variant="outlined"
+                                    sx={{ fontSize: '0.6rem', height: 18, minWidth: 50 }}
+                                />
+                                <Typography variant="caption" fontWeight={600} sx={{ flex: 1 }} noWrap>{b.label}</Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                    {new Date(b.createdAt).toLocaleDateString('vi-VN')}
+                                </Typography>
+                                <Tooltip title="Restore">
+                                    <IconButton size="small" color="warning" onClick={() => setConfirmTarget({ backup: b, action: 'restore' })}>
+                                        <RestoreFromTrash sx={{ fontSize: 14 }} />
+                                    </IconButton>
+                                </Tooltip>
+                                <Tooltip title="Xóa">
+                                    <IconButton size="small" color="error" onClick={() => setConfirmTarget({ backup: b, action: 'delete' })}>
+                                        <Delete sx={{ fontSize: 14 }} />
+                                    </IconButton>
+                                </Tooltip>
+                            </Stack>
+                        ))}
+                        {backups.length > 5 && (
+                            <Typography variant="caption" color="text.secondary">+{backups.length - 5} snapshots khác</Typography>
+                        )}
+                    </Stack>
+                )}
+            </Box>
+
+            {/* Create dialog */}
+            <Dialog open={createOpen} onClose={() => setCreateOpen(false)} maxWidth="xs" fullWidth>
+                <DialogTitle fontWeight={700}>Tạo snapshot — {orgId.slice(0, 8)}…</DialogTitle>
+                <DialogContent dividers>
+                    <TextField
+                        label="Tên snapshot (tùy chọn)"
+                        value={labelInput}
+                        onChange={e => setLabelInput(e.target.value)}
+                        size="small" fullWidth autoFocus
+                    />
+                </DialogContent>
+                <DialogActions sx={{ px: 3, pb: 2 }}>
+                    <Button size="small" onClick={() => setCreateOpen(false)}>{t('common.cancel')}</Button>
+                    <Button size="small" disabled={createMutation.isPending}
+                        startIcon={createMutation.isPending ? <CircularProgress size={12} color="inherit" /> : undefined}
+                        onClick={() => createMutation.mutate()}>
+                        Tạo
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* Confirm dialog */}
+            <Dialog open={!!confirmTarget} onClose={isPending ? undefined : () => setConfirmTarget(null)} maxWidth="xs" fullWidth>
+                <DialogTitle fontWeight={700}>
+                    {confirmTarget?.action === 'restore' ? 'Xác nhận restore' : 'Xóa snapshot'}
+                </DialogTitle>
+                <DialogContent dividers>
+                    <Typography variant="body2">
+                        {confirmTarget?.action === 'restore'
+                            ? `Khôi phục org về snapshot "${confirmTarget?.backup.label}"? Playlists, schedules, sites và devices/media có trong snapshot sẽ được restore. Thiết bị và media thêm sau snapshot sẽ được giữ nguyên.`
+                            : `Xóa snapshot "${confirmTarget?.backup.label}"?`}
+                    </Typography>
+                </DialogContent>
+                <DialogActions sx={{ px: 3, pb: 2 }}>
+                    <Button size="small" onClick={() => setConfirmTarget(null)} disabled={isPending}>{t('common.cancel')}</Button>
+                    <Button size="small"
+                        color={confirmTarget?.action === 'restore' ? 'warning' : 'error'}
+                        disabled={isPending}
+                        onClick={() => {
+                            if (!confirmTarget) return;
+                            if (confirmTarget.action === 'restore') restoreMutation.mutate(confirmTarget.backup.id);
+                            else deleteMutation.mutate(confirmTarget.backup.id);
+                        }}>
+                        {isPending ? '...' : confirmTarget?.action === 'restore' ? 'Restore' : 'Xóa'}
+                    </Button>
+                </DialogActions>
+            </Dialog>
+        </>
     );
 }
 
@@ -185,6 +339,10 @@ function DetailRow({ org }: { org: OrgWithStats }) {
                     </Stack>
                 </Box>
             </Stack>
+
+            {/* Backup section */}
+            <Divider sx={{ my: 1.5 }} />
+            <OrgBackupsSection orgId={org.id} />
         </Box>
     );
 }
@@ -2215,6 +2373,7 @@ export default function SuperAdminPage() {
         staleTime: 60_000,
     });
 
+
     const toggleMutation = useMutation({
         mutationFn: (org: OrgWithStats) => organizationsApi.setStatus(org.id, !org.isActive),
         onSuccess: (_, org) => {
@@ -2357,6 +2516,7 @@ export default function SuperAdminPage() {
                 setStorageOpen(false);
                 qc.invalidateQueries({ queryKey: ['storage-pending-count'] });
             }} />
+
 
             {/* Platform Admins section — visible to root account only */}
             {currentUser?.isRoot && (

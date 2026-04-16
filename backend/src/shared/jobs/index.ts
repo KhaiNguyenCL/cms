@@ -13,6 +13,8 @@ import './workers/cleanup-logs.worker';
 import './workers/generate-reports.worker';
 import './workers/license-deduction.worker';
 import './workers/mail-notification.worker';
+import './workers/media-purge.worker';
+import './workers/backup-snapshot.worker';
 
 // ─── Export scheduler helper for use in server.ts ─────────────────────────────
 export { setupScheduledJobs, setupQueueEvents } from './scheduler';
@@ -33,6 +35,10 @@ export {
     generateReportsQueue,
     licenseDeductionQueue,
     mailNotificationQueue,
+    mediaPurgeQueue,
+    enqueueMediaPurge,
+    backupSnapshotQueue,
+    enqueueBackupSnapshot,
     QUEUE_NAMES,
 } from './queues';
 
@@ -44,4 +50,6 @@ export type {
     GenerateReportsJobData,
     LicenseDeductionJobData,
     MailNotificationJobData,
+    MediaPurgeJobData,
+    BackupSnapshotJobData,
 } from './queues';

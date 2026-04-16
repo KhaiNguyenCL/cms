@@ -15,6 +15,8 @@ export const QUEUE_NAMES = {
     GENERATE_REPORTS: 'generate-reports',
     LICENSE_DEDUCTION: 'license-deduction',
     MAIL_NOTIFICATION: 'mail-notification',
+    MEDIA_PURGE: 'media-purge',
+    BACKUP_SNAPSHOT: 'backup-snapshot',
 } as const;
 
 // ─── Queue instances ──────────────────────────────────────────────────────────
@@ -96,6 +98,28 @@ export const generateReportsQueue = new Queue(QUEUE_NAMES.GENERATE_REPORTS, {
     },
 });
 
+/** Queue: daily auto-backup snapshot for all active orgs */
+export const backupSnapshotQueue = new Queue(QUEUE_NAMES.BACKUP_SNAPSHOT, {
+    connection: bullmqConnection,
+    defaultJobOptions: {
+        attempts: 2,
+        backoff: { type: 'fixed', delay: 60_000 },
+        removeOnComplete: { count: 30 },
+        removeOnFail: { count: 30 },
+    },
+});
+
+/** Queue: nightly purge of media/devices in trash older than retention period */
+export const mediaPurgeQueue = new Queue(QUEUE_NAMES.MEDIA_PURGE, {
+    connection: bullmqConnection,
+    defaultJobOptions: {
+        attempts: 2,
+        backoff: { type: 'fixed', delay: 60_000 },
+        removeOnComplete: { count: 10 },
+        removeOnFail: { count: 20 },
+    },
+});
+
 // ─── Job data types ───────────────────────────────────────────────────────────
 
 export interface VideoTranscodingJobData {
@@ -138,6 +162,14 @@ export interface LicenseDeductionJobData {
     triggeredBy?: string;
 }
 
+export interface MediaPurgeJobData {
+    retentionDays: number;
+}
+
+export interface BackupSnapshotJobData {
+    organizationId: string;   // '__ALL__' = run for every active org
+}
+
 export interface MailNotificationJobData {
     eventType: string;          // e.g. 'DEVICE_OFFLINE', 'DEVICE_ERROR', 'LICENSE_EXPIRY'
     orgId: string;
@@ -174,6 +206,16 @@ export async function enqueueGenerateReport(data: GenerateReportsJobData): Promi
 
 export async function enqueueLicenseDeduction(data: LicenseDeductionJobData = {}): Promise<string> {
     const job = await licenseDeductionQueue.add('daily-deduction', data);
+    return job.id!;
+}
+
+export async function enqueueMediaPurge(data: MediaPurgeJobData): Promise<string> {
+    const job = await mediaPurgeQueue.add('purge', data);
+    return job.id!;
+}
+
+export async function enqueueBackupSnapshot(data: BackupSnapshotJobData): Promise<string> {
+    const job = await backupSnapshotQueue.add('snapshot', data);
     return job.id!;
 }
 

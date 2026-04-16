@@ -50,6 +50,22 @@ export interface PurchaseRequestRow {
     createdAt: string;
 }
 
+export interface TransferRequestRow {
+    id: string;
+    organizationId: string;
+    orgName: string | null;
+    fromDeviceId: string;
+    fromDeviceName: string;
+    toDeviceId: string;
+    toDeviceName: string;
+    requestedByName: string | null;
+    status: RequestStatus;
+    note: string | null;
+    adminNote: string | null;
+    resolvedAt: string | null;
+    createdAt: string;
+}
+
 export interface PoolBatch {
     id: string;
     createdAt: string;
@@ -102,15 +118,6 @@ const licenseApi = {
     assignLicense: (deviceId: string, packageType: PackageType) =>
         apiClient.post('/license/assign', { deviceId, packageType }).then(r => r.data),
 
-    transferLicense: (fromDeviceId: string, toDeviceId: string) =>
-        apiClient.post('/license/transfer', { fromDeviceId, toDeviceId }).then(r => r.data),
-
-    adjustExpiry: (deviceId: string, newExpiresAt: string) =>
-        apiClient.post('/license/adjust-expiry', { deviceId, newExpiresAt }).then(r => r.data),
-
-    revokeLicense: (deviceId: string) =>
-        apiClient.delete(`/license/revoke/${deviceId}`).then(r => r.data),
-
     getHistory: (limit = 100, deviceId?: string) =>
         apiClient.get<{ success: boolean; data: LicenseHistoryRow[] }>(
             `/license/history?limit=${limit}${deviceId ? `&deviceId=${encodeURIComponent(deviceId)}` : ''}`,
@@ -129,6 +136,20 @@ const licenseApi = {
 
     rejectPurchaseRequest: (id: string, adminNote?: string) =>
         apiClient.post(`/license/requests/${id}/reject`, { adminNote }).then(r => r.data),
+
+    getTransferRequests: () =>
+        apiClient.get<{ success: boolean; data: TransferRequestRow[] }>('/license/transfer-requests')
+            .then(r => r.data.data),
+
+    createTransferRequest: (fromDeviceId: string, toDeviceId: string, note?: string) =>
+        apiClient.post<{ success: boolean; data: TransferRequestRow }>('/license/transfer-requests', { fromDeviceId, toDeviceId, note })
+            .then(r => r.data.data),
+
+    approveTransferRequest: (id: string, adminNote?: string) =>
+        apiClient.post(`/license/transfer-requests/${id}/approve`, { adminNote }).then(r => r.data),
+
+    rejectTransferRequest: (id: string, adminNote?: string) =>
+        apiClient.post(`/license/transfer-requests/${id}/reject`, { adminNote }).then(r => r.data),
 
     // SUPER_ADMIN
     getOrgDetail: (orgId: string) =>

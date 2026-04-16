@@ -167,12 +167,38 @@ export async function updateDevice(req: Request, res: Response, next: NextFuncti
     } catch (err) { next(err); }
 }
 
-// DELETE /api/devices/:id
+// DELETE /api/devices/:id  (soft delete → trash)
 export async function deleteDevice(req: Request, res: Response, next: NextFunction) {
     try {
         const { name } = await devService.deleteDevice(req.params.id as string, req.user!.organizationId);
         logAction(req.user!.organizationId, req.user!.userId, 'DELETE', 'DEVICE', req.params.id as string, name).catch(() => {});
-        res.json({ success: true, message: 'Device đã được xoá' });
+        res.json({ success: true, message: 'Device đã được chuyển vào thùng rác' });
+    } catch (err) { next(err); }
+}
+
+// GET /api/devices/trash
+export async function listTrashedDevices(req: Request, res: Response, next: NextFunction) {
+    try {
+        const devices = await devService.listTrashedDevices(req.user!.organizationId);
+        res.json({ success: true, data: devices });
+    } catch (err) { next(err); }
+}
+
+// POST /api/devices/:id/restore
+export async function restoreDevice(req: Request, res: Response, next: NextFunction) {
+    try {
+        const { name } = await devService.restoreDevice(req.params.id as string, req.user!.organizationId);
+        logAction(req.user!.organizationId, req.user!.userId, 'UPDATE', 'DEVICE', req.params.id as string, name).catch(() => {});
+        res.json({ success: true, message: 'Device đã được khôi phục' });
+    } catch (err) { next(err); }
+}
+
+// DELETE /api/devices/:id/permanent
+export async function permanentDeleteDevice(req: Request, res: Response, next: NextFunction) {
+    try {
+        const { name } = await devService.permanentDeleteDevice(req.params.id as string, req.user!.organizationId);
+        logAction(req.user!.organizationId, req.user!.userId, 'DELETE', 'DEVICE', req.params.id as string, name).catch(() => {});
+        res.json({ success: true, message: 'Device đã bị xoá vĩnh viễn' });
     } catch (err) { next(err); }
 }
 

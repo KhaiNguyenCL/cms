@@ -43,6 +43,20 @@ export const mediaApi = {
         await apiClient.delete(`/media/${id}`);
     },
 
+    listTrash: async () => {
+        const { data } = await apiClient.get<{ success: boolean; data: Media[] }>('/media/trash');
+        return data.data;
+    },
+
+    restore: async (id: string) => {
+        const { data } = await apiClient.post<ApiResponse<Media>>(`/media/${id}/restore`);
+        return data.data;
+    },
+
+    permanentDelete: async (id: string) => {
+        await apiClient.delete(`/media/${id}/permanent`);
+    },
+
     getThumbnailUrl: (thumbnailPath: string | null | undefined) => {
         if (!thumbnailPath) return null;
         return `/api/media/thumbnail/${thumbnailPath.split('/').pop()}`;

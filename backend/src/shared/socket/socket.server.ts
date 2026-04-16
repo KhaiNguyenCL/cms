@@ -6,6 +6,7 @@ import Redis from 'ioredis';
 import config from '../../config';
 import logger from '../utils/logger';
 import type { JwtPayload } from '../middleware/auth.middleware';
+import { queryOne } from '../database/db';
 
 // ─── Singleton ────────────────────────────────────────────────────────────────
 
@@ -114,10 +115,12 @@ export function initSocketIO(server: http.Server): SocketIOServer {
         });
 
         // device.screenshot: device uploads screenshot result URL
-        socket.on('device.screenshot', (data: { url: string }) => {
+        socket.on('device.screenshot', async (data: { url: string }) => {
             logger.info('Device screenshot received', { deviceId, urlLength: data?.url?.length ?? 0 });
+            const device = await queryOne<{ name: string }>(`SELECT name FROM devices WHERE id = $1`, [deviceId]).catch(() => null);
             io!.of('/admin').to(orgRoom(orgId)).emit('device.screenshot', {
                 deviceId,
+                deviceName: device?.name ?? deviceId,
                 url: data.url,
                 timestamp: new Date().toISOString(),
             });

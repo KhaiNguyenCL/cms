@@ -4,10 +4,10 @@ import * as devController from './devices.controller';
 import { authenticate, authorize } from '../../shared/middleware/auth.middleware';
 import { validate } from '../../shared/middleware/validate.middleware';
 
-// Max 10 commands per device per minute per IP — prevents command spam
+// Max 60 commands per device per minute per IP — prevents command spam
 const commandRateLimit = rateLimit({
     windowMs: 60_000,
-    max: 10,
+    max: 60,
     keyGenerator: (req) => `${req.ip}:${req.params.id}`,
     message: { error: 'Quá nhiều lệnh được gửi. Vui lòng thử lại sau.' },
     standardHeaders: true,
@@ -109,6 +109,8 @@ router.use(authenticate);
  */
 router.get('/', authorize('ADMIN', 'MANAGER', 'VIEWER', 'SITE_MANAGER', 'CONTENT_MANAGER'), validate(listDevicesSchema), devController.listDevices);
 
+router.get('/trash', authorize('ADMIN'), devController.listTrashedDevices);
+
 /**
  * @route   POST /api/devices
  * @desc    Tạo device mới với pairingCode tự động (legacy - use /register instead)
@@ -133,10 +135,13 @@ router.patch('/:id', authorize('ADMIN', 'MANAGER', 'SITE_MANAGER'), validate(upd
 
 /**
  * @route   DELETE /api/devices/:id
- * @desc    Xoá/Revoke device (blacklist token)
+ * @desc    Xoá device (soft delete → thùng rác, JWT vẫn còn hợp lệ)
  * @access  Private (ADMIN only)
  */
 router.delete('/:id', authorize('ADMIN'), devController.deleteDevice);
+
+router.post('/:id/restore', authorize('ADMIN'), devController.restoreDevice);
+router.delete('/:id/permanent', authorize('ADMIN'), devController.permanentDeleteDevice);
 
 /**
  * @route   POST /api/devices/:id/reset
