@@ -932,7 +932,7 @@ export async function markDeviceOffline(
                         .catch(() => {});
                 } else {
                     logger.info('DEVICE_OFFLINE mail suppressed — outside operating window', {
-                        deviceId, timeOn: dev.timeOn, timeOff: dev.timeOff, toleranceMin,
+                        deviceId, timeOn: dev.timeOn, timeOff: dev.timeOff, toleranceMin: dev.alarmToleranceMin,
                     });
                 }
             }

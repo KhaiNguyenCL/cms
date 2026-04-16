@@ -578,6 +578,7 @@ function BackupPlanStatusChip({ status }: { status: BackupPlanRequest['status'] 
 }
 
 function BackupPlanRequestSection() {
+    const { t } = useTranslation();
     const qc = useQueryClient();
 
     const { data: planData, isLoading } = useQuery({

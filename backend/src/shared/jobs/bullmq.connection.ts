@@ -9,6 +9,7 @@ import config from '../../config';
 export const bullmqConnection: ConnectionOptions = {
     host: config.redis.host,
     port: config.redis.port,
+    password: config.redis.password,
     maxRetriesPerRequest: null,  // Required by BullMQ
 };
 

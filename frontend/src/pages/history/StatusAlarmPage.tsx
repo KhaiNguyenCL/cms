@@ -465,7 +465,7 @@ export default function StatusAlarmPage() {
                                 <Box sx={{ flex: 1 }}>
                                     <Typography variant="subtitle1" fontWeight={700}>{selectedDevice.name}</Typography>
                                     <Stack direction="row" gap={1} alignItems="center">
-                                        {statusChip(selectedDevice.status, t('history.alarm.notConnected'))}
+                                        {statusChip(selectedDevice.status, statusLabels)}
                                         {selectedDevice.siteName && (
                                             <Typography variant="caption" color="text.secondary">{selectedDevice.siteName}</Typography>
                                         )}

@@ -93,7 +93,6 @@ useEffect(() => {
                     }
                 }, initial - PRELOAD_BEFORE_MS);
             }
-        }
         return () => {
             if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
             if (willEndTimerRef.current) { clearTimeout(willEndTimerRef.current); willEndTimerRef.current = null; }

@@ -309,7 +309,7 @@ function EditUserDialog({
     const payload: UpdateUserPayload = {};
     if (email && email !== user.email) payload.email = email;
     if (password) payload.password = password;
-    if (role !== user.role) payload.role = role;
+    if (role !== user.role && role !== 'SUPER_ADMIN') payload.role = role as UpdateUserPayload['role'];
     if (siteId !== (user.siteId ?? null)) payload.siteId = siteId;
     if (status !== user.status && (status === 'ACTIVE' || status === 'INACTIVE')) payload.status = status;
     const hasChange = Object.keys(payload).length > 0;
