@@ -19,7 +19,7 @@ router.post('/plan/requests/:id/reject',  authorize('SUPER_ADMIN'), validate(res
 
 // ─── Snapshot CRUD ────────────────────────────────────────────────────────────
 router.get('/',              authorize('ADMIN'), ctrl.list);
-router.post('/',             authorize('ADMIN'), validate(createBackupSchema), ctrl.create);
+router.post('/',             authorize('SUPER_ADMIN'), validate(createBackupSchema), ctrl.create);
 router.delete('/:id',        authorize('ADMIN'), ctrl.remove);
 router.post('/:id/restore',  authorize('ADMIN'), ctrl.restore);
 

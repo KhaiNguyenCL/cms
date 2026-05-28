@@ -3,8 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import {
     Box, Typography, TextField, Button,
     IconButton, InputAdornment, Alert, CircularProgress, Stack,
+    ThemeProvider, createTheme,
 } from '@mui/material';
 import { Visibility, VisibilityOff } from '@mui/icons-material';
+
+const lightTheme = createTheme({ palette: { mode: 'light' } });
 import { useTranslation } from 'react-i18next';
 import { useAppDispatch } from '@store/hooks';
 import { setCredentials } from '@store/slices/authSlice';
@@ -58,7 +61,8 @@ export default function LoginPage() {
             background: 'linear-gradient(135deg, #1D4ED8 0%, #2563EB 40%, #3B82F6 70%, #60A5FA 100%)',
             p: 2,
         }}>
-            {/* Form card */}
+            {/* Form card — always light mode regardless of app theme */}
+            <ThemeProvider theme={lightTheme}>
             <Box sx={{
                 width: '100%',
                 maxWidth: 400,
@@ -165,6 +169,7 @@ export default function LoginPage() {
                     DMS Signage © {new Date().getFullYear()}
                 </Typography>
             </Box>
+            </ThemeProvider>
         </Box>
     );
 }
