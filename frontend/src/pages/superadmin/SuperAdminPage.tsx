@@ -15,7 +15,7 @@ import {
     Visibility, VisibilityOff, Add, DeleteForever, AdminPanelSettings,
     Edit, Block, CheckCircleOutline, Lock, Shield,
     Star, StarBorder, Delete, Send, SystemUpdate,
-    Email, CheckCircleOutlined, RestoreFromTrash,
+    Email, CheckCircleOutlined, RestoreFromTrash, Backup, HourglassEmpty,
 } from '@mui/icons-material';
 import softwareHistoryApi, { type AppVersion } from '@api/software-history.api';
 import { useNavigate } from 'react-router-dom';
@@ -33,7 +33,7 @@ import {
     type MailSetting, type EventTypeInfo,
 } from '@api/mail-config.api';
 import { storageQuotaApi, type OrgStorageStat, type StoragePurchaseRequest } from '@api/storage-quota.api';
-import type { OrgBackup } from '@/types';
+import type { OrgBackup, OrgBackupPlan } from '@/types';
 
 // ── Super-admin API ───────────────────────────────────────────────────────────
 
@@ -108,6 +108,15 @@ function OrgBackupsSection({ orgId }: { orgId: string }) {
         staleTime: 30_000,
     });
 
+    const { data: planData } = useQuery({
+        queryKey: ['sa-backup-plan', orgId],
+        queryFn: async () => {
+            const { data } = await apiClient.get<{ data: OrgBackupPlan }>('/backup/plan', { headers });
+            return data.data;
+        },
+        staleTime: 60_000,
+    });
+
     const [createOpen, setCreateOpen] = useState(false);
     const [labelInput, setLabelInput] = useState('');
     const [confirmTarget, setConfirmTarget] = useState<{ backup: OrgBackup; action: 'restore' | 'delete' } | null>(null);
@@ -142,18 +151,95 @@ function OrgBackupsSection({ orgId }: { orgId: string }) {
         onError: (e: any) => dispatch(pushToast({ severity: 'error', message: e?.response?.data?.message ?? t('common.failedAction') })),
     });
 
+    const approvePlanMutation = useMutation({
+        mutationFn: (reqId: string) => apiClient.post(`/backup/plan/requests/${reqId}/approve`, {}),
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ['sa-backup-plan', orgId] });
+            dispatch(pushToast({ severity: 'success', message: 'Đã duyệt gói backup' }));
+        },
+        onError: (e: any) => dispatch(pushToast({ severity: 'error', message: e?.response?.data?.message ?? t('common.failedAction') })),
+    });
+
+    const rejectPlanMutation = useMutation({
+        mutationFn: (reqId: string) => apiClient.post(`/backup/plan/requests/${reqId}/reject`, {}),
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ['sa-backup-plan', orgId] });
+            dispatch(pushToast({ severity: 'success', message: 'Đã từ chối yêu cầu' }));
+        },
+        onError: (e: any) => dispatch(pushToast({ severity: 'error', message: e?.response?.data?.message ?? t('common.failedAction') })),
+    });
+
     const isPending = deleteMutation.isPending || restoreMutation.isPending;
+    const pendingRequest = planData?.requests?.find(r => r.status === 'PENDING');
+    const planActionPending = approvePlanMutation.isPending || rejectPlanMutation.isPending;
 
     return (
         <>
             <Box>
+                {/* Plan info row */}
                 <Stack direction="row" alignItems="center" justifyContent="space-between" mb={1}>
-                    <Typography variant="caption" color="text.secondary" fontWeight={600}>
-                        BACKUP & RESTORE ({backups.length} snapshots)
-                    </Typography>
-                    <Button size="small" startIcon={<Add />} onClick={() => setCreateOpen(true)}>
-                        Tạo snapshot
-                    </Button>
+                    <Stack direction="row" alignItems="center" spacing={1}>
+                        <Backup sx={{ fontSize: 14, color: 'text.secondary' }} />
+                        <Typography variant="caption" color="text.secondary" fontWeight={600}>
+                            BACKUP & RESTORE
+                        </Typography>
+                        {planData?.backupPlan ? (
+                            <Chip
+                                label={`Gói ${planData.backupPlan} ngày`}
+                                size="small"
+                                color="success"
+                                variant="outlined"
+                                sx={{ fontSize: '0.6rem', height: 18 }}
+                            />
+                        ) : pendingRequest ? (
+                            <Chip
+                                icon={<HourglassEmpty sx={{ fontSize: '12px !important' }} />}
+                                label={`Chờ duyệt: ${pendingRequest.requestedPlan} ngày`}
+                                size="small"
+                                color="warning"
+                                variant="outlined"
+                                sx={{ fontSize: '0.6rem', height: 18 }}
+                            />
+                        ) : (
+                            <Chip
+                                label="Chưa có gói"
+                                size="small"
+                                variant="outlined"
+                                sx={{ fontSize: '0.6rem', height: 18, color: 'text.disabled' }}
+                            />
+                        )}
+                    </Stack>
+                    <Stack direction="row" spacing={0.5} alignItems="center">
+                        {pendingRequest && (
+                            <>
+                                <Tooltip title={`Duyệt gói ${pendingRequest.requestedPlan} ngày`}>
+                                    <IconButton
+                                        size="small"
+                                        color="success"
+                                        disabled={planActionPending}
+                                        onClick={() => approvePlanMutation.mutate(pendingRequest.id)}
+                                    >
+                                        <CheckCircleOutlined sx={{ fontSize: 16 }} />
+                                    </IconButton>
+                                </Tooltip>
+                                <Tooltip title="Từ chối yêu cầu">
+                                    <IconButton
+                                        size="small"
+                                        color="error"
+                                        disabled={planActionPending}
+                                        onClick={() => rejectPlanMutation.mutate(pendingRequest.id)}
+                                    >
+                                        <Cancel sx={{ fontSize: 16 }} />
+                                    </IconButton>
+                                </Tooltip>
+                                <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
+                            </>
+                        )}
+                        <Typography variant="caption" color="text.secondary">{backups.length} snapshots</Typography>
+                        <Button size="small" startIcon={<Add />} onClick={() => setCreateOpen(true)} sx={{ ml: 0.5 }}>
+                            Tạo snapshot
+                        </Button>
+                    </Stack>
                 </Stack>
 
                 {isLoading ? (

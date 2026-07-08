@@ -10,7 +10,7 @@ import {
 import {
     Business, Storage, Save, Person, Tv, Image,
     VideoFile, CalendarMonth, People, CheckCircle, Lock,
-    Backup, RestoreFromTrash, Delete, Add, WarningAmber,
+    Backup, RestoreFromTrash, Delete, HourglassEmpty, WarningAmber,
 } from '@mui/icons-material';
 
 import { useTranslation } from 'react-i18next';
@@ -86,20 +86,16 @@ function BackupSection() {
         staleTime: 30_000,
     });
 
-    const [labelInput, setLabelInput] = useState('');
-    const [createOpen, setCreateOpen] = useState(false);
-    const [confirmTarget, setConfirmTarget] = useState<{ backup: OrgBackup; action: 'restore' | 'delete' } | null>(null);
-
-    const createMutation = useMutation({
-        mutationFn: () => backupApi.create(labelInput.trim() || undefined),
-        onSuccess: () => {
-            qc.invalidateQueries({ queryKey: ['backups'] });
-            setCreateOpen(false);
-            setLabelInput('');
-            dispatch(pushToast({ severity: 'success', message: 'Snapshot tạo thành công' }));
-        },
-        onError: (e: any) => dispatch(pushToast({ severity: 'error', message: e?.response?.data?.message ?? t('common.failedAction') })),
+    const { data: planData, isLoading: loadingPlan } = useQuery({
+        queryKey: ['backup-plan'],
+        queryFn: backupApi.getPlan,
+        staleTime: 60_000,
     });
+
+    const [confirmTarget, setConfirmTarget] = useState<{ backup: OrgBackup; action: 'restore' | 'delete' } | null>(null);
+    const [planDialogOpen, setPlanDialogOpen] = useState(false);
+    const [selectedPlan, setSelectedPlan] = useState<3 | 7 | 10>(7);
+    const [planNote, setPlanNote] = useState('');
 
     const deleteMutation = useMutation({
         mutationFn: (id: string) => backupApi.delete(id),
@@ -121,108 +117,182 @@ function BackupSection() {
         onError: (e: any) => dispatch(pushToast({ severity: 'error', message: e?.response?.data?.message ?? t('common.failedAction') })),
     });
 
+    const requestPlanMutation = useMutation({
+        mutationFn: () => backupApi.requestPlan(selectedPlan, planNote.trim() || undefined),
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ['backup-plan'] });
+            setPlanDialogOpen(false);
+            setPlanNote('');
+            dispatch(pushToast({ severity: 'success', message: 'Đã gửi yêu cầu. Super Admin sẽ xét duyệt sớm.' }));
+        },
+        onError: (e: any) => dispatch(pushToast({ severity: 'error', message: e?.response?.data?.message ?? t('common.failedAction') })),
+    });
+
     const isPending = deleteMutation.isPending || restoreMutation.isPending;
+    const pendingRequest = planData?.requests?.find(r => r.status === 'PENDING');
 
     return (
         <>
             <Section
                 icon={<Backup />}
                 title="Backup & Restore"
-                subtitle="Tạo snapshot dữ liệu và khôi phục về bất kỳ thời điểm nào."
+                subtitle="Xem snapshot và khôi phục dữ liệu về bất kỳ thời điểm nào."
             >
-                <Stack spacing={2}>
-                    <Stack direction="row" justifyContent="space-between" alignItems="center">
-                        <Typography variant="body2" color="text.secondary">
-                            {backups.length} snapshot{backups.length !== 1 ? 's' : ''} · AUTO tự động mỗi ngày lúc 02:30 UTC nếu có gói backup.
-                        </Typography>
-                        <Button size="small" startIcon={<Add />} onClick={() => setCreateOpen(true)}>
-                            Tạo snapshot
-                        </Button>
-                    </Stack>
-
-                    {isLoading ? (
-                        <Stack spacing={1}>{[...Array(3)].map((_, i) => <Skeleton key={i} height={40} />)}</Stack>
-                    ) : backups.length === 0 ? (
-                        <Alert severity="info" sx={{ borderRadius: 2 }}>Chưa có snapshot nào. Tạo snapshot đầu tiên để bắt đầu.</Alert>
-                    ) : (
-                        <TableContainer>
-                            <Table size="small">
-                                <TableHead>
-                                    <TableRow>
-                                        <TableCell sx={{ fontWeight: 700 }}>Tên</TableCell>
-                                        <TableCell align="center" sx={{ fontWeight: 700 }}>Loại</TableCell>
-                                        <TableCell align="center" sx={{ fontWeight: 700 }}>Ngày tạo</TableCell>
-                                        <TableCell align="center" sx={{ fontWeight: 700 }}>Thao tác</TableCell>
-                                    </TableRow>
-                                </TableHead>
-                                <TableBody>
-                                    {backups.map((b) => (
-                                        <TableRow key={b.id} hover>
-                                            <TableCell>
-                                                <Typography variant="body2" fontWeight={600}>{b.label}</Typography>
-                                            </TableCell>
-                                            <TableCell align="center">
-                                                <Chip
-                                                    label={b.type === 'AUTO' ? 'Auto' : 'Manual'}
-                                                    size="small"
-                                                    color={b.type === 'AUTO' ? 'default' : 'primary'}
-                                                    variant={b.type === 'AUTO' ? 'outlined' : 'filled'}
-                                                    sx={{ fontWeight: 600, fontSize: '0.65rem' }}
-                                                />
-                                            </TableCell>
-                                            <TableCell align="center">
-                                                <Typography variant="caption" color="text.secondary">
-                                                    {new Date(b.createdAt).toLocaleString('vi-VN')}
-                                                </Typography>
-                                            </TableCell>
-                                            <TableCell align="center">
-                                                <Stack direction="row" justifyContent="center" spacing={0.5}>
-                                                    <Tooltip title="Restore về snapshot này">
-                                                        <IconButton size="small" color="warning" onClick={() => setConfirmTarget({ backup: b, action: 'restore' })}>
-                                                            <RestoreFromTrash sx={{ fontSize: 16 }} />
-                                                        </IconButton>
-                                                    </Tooltip>
-                                                    <Tooltip title="Xóa snapshot">
-                                                        <IconButton size="small" color="error" onClick={() => setConfirmTarget({ backup: b, action: 'delete' })}>
-                                                            <Delete sx={{ fontSize: 16 }} />
-                                                        </IconButton>
-                                                    </Tooltip>
-                                                </Stack>
-                                            </TableCell>
-                                        </TableRow>
-                                    ))}
-                                </TableBody>
-                            </Table>
-                        </TableContainer>
+                <Stack spacing={2.5}>
+                    {/* Plan status */}
+                    {!loadingPlan && (
+                        planData?.backupPlan ? (
+                            <Stack direction="row" alignItems="center" spacing={1.5} sx={{
+                                p: 1.5, borderRadius: 2,
+                                bgcolor: alpha('#22c55e', 0.08),
+                                border: '1px solid', borderColor: alpha('#22c55e', 0.25),
+                            }}>
+                                <CheckCircle sx={{ color: 'success.main', fontSize: 20, flexShrink: 0 }} />
+                                <Box>
+                                    <Typography variant="body2" fontWeight={700}>Gói {planData.backupPlan} ngày</Typography>
+                                    <Typography variant="caption" color="text.secondary">
+                                        Snapshot AUTO tạo lúc 02:30 UTC hàng ngày · Lưu {planData.backupPlan} bản gần nhất
+                                    </Typography>
+                                </Box>
+                            </Stack>
+                        ) : pendingRequest ? (
+                            <Stack direction="row" alignItems="center" spacing={1.5} sx={{
+                                p: 1.5, borderRadius: 2,
+                                bgcolor: alpha('#f59e0b', 0.08),
+                                border: '1px solid', borderColor: alpha('#f59e0b', 0.25),
+                            }}>
+                                <HourglassEmpty sx={{ color: 'warning.main', fontSize: 20, flexShrink: 0 }} />
+                                <Box>
+                                    <Typography variant="body2" fontWeight={700}>Yêu cầu đang chờ xét duyệt</Typography>
+                                    <Typography variant="caption" color="text.secondary">
+                                        Gói {pendingRequest.requestedPlan} ngày · Gửi lúc {new Date(pendingRequest.createdAt).toLocaleString('vi-VN')}
+                                    </Typography>
+                                </Box>
+                            </Stack>
+                        ) : (
+                            <Alert
+                                severity="warning"
+                                sx={{ borderRadius: 2, alignItems: 'center' }}
+                                action={
+                                    <Button size="small" onClick={() => setPlanDialogOpen(true)} sx={{ whiteSpace: 'nowrap' }}>
+                                        Yêu cầu gói
+                                    </Button>
+                                }
+                            >
+                                <Typography variant="body2">
+                                    Chưa có gói backup. Snapshot AUTO chưa được kích hoạt.
+                                </Typography>
+                            </Alert>
+                        )
                     )}
+
+                    {/* Snapshot list */}
+                    <Box>
+                        <Typography variant="body2" color="text.secondary" mb={1}>
+                            {backups.length} snapshot{backups.length !== 1 ? 's' : ''} · Snapshot được tạo bởi Super Admin hoặc AUTO theo gói.
+                        </Typography>
+
+                        {isLoading ? (
+                            <Stack spacing={1}>{[...Array(3)].map((_, i) => <Skeleton key={i} height={40} />)}</Stack>
+                        ) : backups.length === 0 ? (
+                            <Alert severity="info" sx={{ borderRadius: 2 }}>Chưa có snapshot nào.</Alert>
+                        ) : (
+                            <TableContainer>
+                                <Table size="small">
+                                    <TableHead>
+                                        <TableRow>
+                                            <TableCell sx={{ fontWeight: 700 }}>Tên</TableCell>
+                                            <TableCell align="center" sx={{ fontWeight: 700 }}>Loại</TableCell>
+                                            <TableCell align="center" sx={{ fontWeight: 700 }}>Ngày tạo</TableCell>
+                                            <TableCell align="center" sx={{ fontWeight: 700 }}>Thao tác</TableCell>
+                                        </TableRow>
+                                    </TableHead>
+                                    <TableBody>
+                                        {backups.map((b) => (
+                                            <TableRow key={b.id} hover>
+                                                <TableCell>
+                                                    <Typography variant="body2" fontWeight={600}>{b.label}</Typography>
+                                                </TableCell>
+                                                <TableCell align="center">
+                                                    <Chip
+                                                        label={b.type === 'AUTO' ? 'Auto' : 'Manual'}
+                                                        size="small"
+                                                        color={b.type === 'AUTO' ? 'default' : 'primary'}
+                                                        variant={b.type === 'AUTO' ? 'outlined' : 'filled'}
+                                                        sx={{ fontWeight: 600, fontSize: '0.65rem' }}
+                                                    />
+                                                </TableCell>
+                                                <TableCell align="center">
+                                                    <Typography variant="caption" color="text.secondary">
+                                                        {new Date(b.createdAt).toLocaleString('vi-VN')}
+                                                    </Typography>
+                                                </TableCell>
+                                                <TableCell align="center">
+                                                    <Stack direction="row" justifyContent="center" spacing={0.5}>
+                                                        <Tooltip title="Restore về snapshot này">
+                                                            <IconButton size="small" color="warning" onClick={() => setConfirmTarget({ backup: b, action: 'restore' })}>
+                                                                <RestoreFromTrash sx={{ fontSize: 16 }} />
+                                                            </IconButton>
+                                                        </Tooltip>
+                                                        <Tooltip title="Xóa snapshot">
+                                                            <IconButton size="small" color="error" onClick={() => setConfirmTarget({ backup: b, action: 'delete' })}>
+                                                                <Delete sx={{ fontSize: 16 }} />
+                                                            </IconButton>
+                                                        </Tooltip>
+                                                    </Stack>
+                                                </TableCell>
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            </TableContainer>
+                        )}
+                    </Box>
                 </Stack>
             </Section>
 
-            {/* Create snapshot dialog */}
-            <Dialog open={createOpen} onClose={() => setCreateOpen(false)} maxWidth="xs" fullWidth>
-                <DialogTitle fontWeight={700}>Tạo snapshot mới</DialogTitle>
+            {/* Request plan dialog */}
+            <Dialog open={planDialogOpen} onClose={() => setPlanDialogOpen(false)} maxWidth="xs" fullWidth>
+                <DialogTitle fontWeight={700}>Yêu cầu gói backup</DialogTitle>
                 <DialogContent dividers>
-                    <Stack spacing={2} pt={0.5}>
+                    <Stack spacing={2.5} pt={0.5}>
+                        <Typography variant="body2" color="text.secondary">
+                            Chọn số ngày lưu snapshot AUTO. Super Admin sẽ xét duyệt yêu cầu của bạn.
+                        </Typography>
+                        <Stack direction="row" spacing={1}>
+                            {([3, 7, 10] as const).map(n => (
+                                <Button
+                                    key={n}
+                                    variant={selectedPlan === n ? 'contained' : 'outlined'}
+                                    onClick={() => setSelectedPlan(n)}
+                                    size="small"
+                                    sx={{ flex: 1, fontWeight: 700 }}
+                                >
+                                    {n} ngày
+                                </Button>
+                            ))}
+                        </Stack>
                         <TextField
-                            label="Tên snapshot (tùy chọn)"
-                            value={labelInput}
-                            onChange={e => setLabelInput(e.target.value)}
+                            label="Ghi chú (tùy chọn)"
+                            value={planNote}
+                            onChange={e => setPlanNote(e.target.value)}
                             size="small"
                             fullWidth
-                            placeholder={`Backup ${new Date().toLocaleDateString('vi-VN')}`}
-                            autoFocus
+                            multiline
+                            rows={2}
+                            inputProps={{ maxLength: 500 }}
                         />
-                        <Alert severity="info" sx={{ borderRadius: 1.5 }}>
-                            Snapshot sẽ lưu toàn bộ thiết bị, media, playlist, schedule và site hiện tại của tổ chức.
-                        </Alert>
                     </Stack>
                 </DialogContent>
                 <DialogActions sx={{ px: 3, pb: 2 }}>
-                    <Button size="small" onClick={() => setCreateOpen(false)}>{t('common.cancel')}</Button>
-                    <Button size="small" disabled={createMutation.isPending}
-                        startIcon={createMutation.isPending ? <CircularProgress size={14} color="inherit" /> : <Backup />}
-                        onClick={() => createMutation.mutate()}>
-                        Tạo snapshot
+                    <Button size="small" onClick={() => setPlanDialogOpen(false)}>{t('common.cancel')}</Button>
+                    <Button
+                        size="small"
+                        disabled={requestPlanMutation.isPending}
+                        startIcon={requestPlanMutation.isPending ? <CircularProgress size={14} color="inherit" /> : undefined}
+                        onClick={() => requestPlanMutation.mutate()}
+                    >
+                        Gửi yêu cầu
                     </Button>
                 </DialogActions>
             </Dialog>
